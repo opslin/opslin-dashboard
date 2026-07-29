@@ -177,7 +177,13 @@
   --chart-5: var(--opslin-success-default);
   --sidebar: var(--opslin-bg-inverse);
   --sidebar-foreground: var(--opslin-text-on-inverse-muted);
-  --sidebar-hover: var(--opslin-bg-hover);
+  /* Always dark, matching the sidebar's own bg-inverse — the sidebar stays
+     dark regardless of overall site theme, so its hover state must too.
+     --opslin-bg-hover (a theme-flipping token) was wrong here: in light
+     mode it resolved to a light gray, clashing against the permanently-dark
+     sidebar on hover and on the always-visible org switcher (which uses
+     this same token unconditionally, not just on hover). */
+  --sidebar-hover: var(--opslin-bg-inverse-2);
   --sidebar-primary: var(--opslin-accent-bright);
   --sidebar-primary-foreground: var(--opslin-bg-inverse);
   --sidebar-accent: var(--opslin-accent-muted);
@@ -315,7 +321,13 @@
   --chart-5: var(--opslin-success-default);
   --sidebar: var(--opslin-bg-inverse);
   --sidebar-foreground: var(--opslin-text-on-inverse-muted);
-  --sidebar-hover: var(--opslin-bg-hover);
+  /* Always dark, matching the sidebar's own bg-inverse — the sidebar stays
+     dark regardless of overall site theme, so its hover state must too.
+     --opslin-bg-hover (a theme-flipping token) was wrong here: in light
+     mode it resolved to a light gray, clashing against the permanently-dark
+     sidebar on hover and on the always-visible org switcher (which uses
+     this same token unconditionally, not just on hover). */
+  --sidebar-hover: var(--opslin-bg-inverse-2);
   --sidebar-primary: var(--opslin-accent-bright);
   --sidebar-primary-foreground: var(--opslin-bg-inverse);
   --sidebar-accent: var(--opslin-accent-muted);
