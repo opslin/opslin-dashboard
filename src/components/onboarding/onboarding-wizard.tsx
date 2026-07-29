@@ -102,16 +102,16 @@ export function OnboardingWizard() {
         <div className="mx-auto max-w-5xl p-6">
             <div className="mb-6">
                 <p className="text-sm font-medium text-primary">First deployment setup</p>
-                <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">
+                <h1 className="mt-2 text-3xl font-semibold tracking-normal text-foreground">
                     Connect a server, choose a repository, deploy once
                 </h1>
-                <p className="mt-2 max-w-3xl text-slate-600">
+                <p className="mt-2 max-w-3xl text-muted-foreground">
                     Opslin needs one live agent and one source repository before the dashboard has real deployment data.
                 </p>
             </div>
 
             <Card className="overflow-hidden">
-                <CardHeader className="border-b border-slate-100">
+                <CardHeader className="border-b border-border">
                     <div className="grid gap-3 md:grid-cols-4">
                         {ONBOARDING_STEPS.map((step, index) => {
                             const active = index === stepIndex;
@@ -123,21 +123,21 @@ export function OnboardingWizard() {
                                     className={cn(
                                         "flex items-center gap-3 rounded-md border px-3 py-2",
                                         active && "border-primary bg-primary/10",
-                                        completed && "border-emerald-200 bg-emerald-50",
-                                        !active && !completed && "border-slate-200 bg-white"
+                                        completed && "border-success/25 bg-success-muted",
+                                        !active && !completed && "border-border bg-card"
                                     )}
                                 >
                                     {completed ? (
-                                        <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                                        <CheckCircle2 className="h-5 w-5 text-success-text" />
                                     ) : (
                                         <span className={cn(
                                             "flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold",
-                                            active ? "bg-primary text-primary-foreground" : "bg-slate-100 text-slate-500"
+                                            active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
                                         )}>
                                             {index + 1}
                                         </span>
                                     )}
-                                    <span className="text-sm font-medium text-slate-900">{step.label}</span>
+                                    <span className="text-sm font-medium text-foreground">{step.label}</span>
                                 </div>
                             );
                         })}
@@ -170,14 +170,14 @@ export function OnboardingWizard() {
                                 </div>
                             </div>
 
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                            <div className="rounded-lg border border-border bg-muted p-4">
                                 <div className="flex items-center gap-2">
                                     {liveServers.length > 0 ? (
-                                        <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                                        <CheckCircle2 className="h-5 w-5 text-success-text" />
                                     ) : (
-                                        <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                                        <Loader2 className="h-5 w-5 animate-spin text-info-text" />
                                     )}
-                                    <p className="font-medium text-slate-900">
+                                    <p className="font-medium text-foreground">
                                         {liveServers.length > 0 ? "Server detected" : "Waiting for server"}
                                     </p>
                                 </div>
@@ -190,7 +190,7 @@ export function OnboardingWizard() {
                                             data-testid="onboarding-server-select"
                                             value={activeServerId}
                                             onChange={(event) => setSelectedServerId(event.target.value)}
-                                            className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                                            className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
                                         >
                                             {liveServers.map((server) => (
                                                 <option key={server.id} value={server.id}>
@@ -200,7 +200,7 @@ export function OnboardingWizard() {
                                         </select>
                                     </div>
                                 ) : (
-                                    <p className="mt-4 text-sm text-slate-600">
+                                    <p className="mt-4 text-sm text-muted-foreground">
                                         Keep this page open after running the installer. The server appears here when the agent connects and is claimed.
                                     </p>
                                 )}
@@ -223,7 +223,7 @@ export function OnboardingWizard() {
                                     Connect GitHub
                                 </Button>
                                 {githubConnected && (
-                                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                                    <div className="rounded-md border border-success/25 bg-success-muted px-3 py-2 text-sm text-success-text">
                                         GitHub repositories are available.
                                     </div>
                                 )}
@@ -293,7 +293,7 @@ export function OnboardingWizard() {
                                     <Input value={branch || "main"} readOnly />
                                 </div>
                             </div>
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                            <div className="rounded-lg border border-border bg-muted p-4 text-sm text-foreground">
                                 <p><span className="font-medium">Server:</span> {liveServers.find((server) => server.id === activeServerId)?.name ?? activeServerId}</p>
                                 <p className="mt-1"><span className="font-medium">Repository:</span> {gitUrl}</p>
                             </div>
@@ -301,7 +301,7 @@ export function OnboardingWizard() {
                     )}
 
                     {deployMutation.error && (
-                        <div className="mt-5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        <div className="mt-5 rounded-md border border-danger/25 bg-danger-muted px-3 py-2 text-sm text-danger-text">
                             {(deployMutation.error as Error).message}
                         </div>
                     )}
@@ -348,7 +348,7 @@ export function OnboardingWizard() {
                 </CardContent>
             </Card>
 
-            <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
+            <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
                 <Laptop className="h-4 w-4" />
                 <span>MacBook mode is for local testing. Use the Linux command for a VPS.</span>
             </div>
