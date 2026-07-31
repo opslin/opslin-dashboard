@@ -8,7 +8,7 @@ import {
   Clock, Copy, Database as DatabaseIcon, ExternalLink, FileText, Globe,
   HardDrive, Info, MoreHorizontal, MonitorDot, Plus, Power, RefreshCw,
   Server, Shield, ShieldCheck, Terminal, Trash2, Wifi, WifiOff, ServerCog,
-  TerminalSquare, Package, HeartPulse, Container, RotateCw,
+  TerminalSquare, Package, HeartPulse, Container, RotateCw, Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,6 +25,7 @@ import { ServerObservabilityPanel } from "@/components/servers/server-observabil
 import { ServerDriftPanel } from "@/components/servers/server-drift-panel";
 import { AgentInstallCommands } from "@/components/servers/agent-install-commands";
 import { AgentUpdateModal } from "@/components/servers/agent-update-modal";
+import { ServerCleanupModal } from "@/components/servers/server-cleanup-modal";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -373,6 +374,7 @@ export default function ServerDetailPage() {
   const queryClient = useQueryClient();
   const serverId = params.id as string;
   const [agentUpdateOpen, setAgentUpdateOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
 
   const { data: server, isLoading, error } = useQuery({
     queryKey: ["server", serverId],
@@ -530,6 +532,10 @@ export default function ServerDetailPage() {
               <MoreHorizontal className="mr-1.5 h-3.5 w-3.5" />
               Actions
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setCleanupOpen(true)}>
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              Clean &amp; Secure
+            </Button>
             <Button
               size="sm"
               onClick={() => setAgentUpdateOpen(true)}
@@ -560,6 +566,7 @@ export default function ServerDetailPage() {
       </Card>
 
       <AgentUpdateModal serverId={serverId} open={agentUpdateOpen} onOpenChange={setAgentUpdateOpen} />
+      <ServerCleanupModal serverId={serverId} open={cleanupOpen} onOpenChange={setCleanupOpen} />
 
       {/* Disconnected warning */}
       {!isLive && (

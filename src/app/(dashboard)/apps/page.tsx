@@ -47,9 +47,13 @@ function envLabel(app: AppWithServer): string {
   return "Production";
 }
 
-function envDotColor(label: string): string {
-  if (label === "Production") return "bg-success";
-  if (label === "Staging") return "bg-warning";
+// This dot is a branch/tier category (which branch this deploys from),
+// not a health signal — deliberately neutral, not success/warning colors,
+// so it never visually contradicts the real <StatusBadge> shown right below
+// it (a Production-branch app can be actively failing; a green dot claiming
+// otherwise right next to a red "Delete Failed" badge was genuinely
+// misleading).
+function envDotColor(_label: string): string {
   return "bg-muted-foreground";
 }
 

@@ -488,6 +488,18 @@ class ApiClient {
         return this.get<ServerJobStatus>(`/servers/${serverId}/jobs/${jobId}`);
     }
 
+    async runServerCleanup(serverId: string) {
+        return this.post<ServerCleanupQueued>(`/servers/${serverId}/cleanup`, {});
+    }
+
+    async getServerHardeningCommits(serverId: string) {
+        return this.get<HardeningCommit[]>(`/servers/${serverId}/hardening`);
+    }
+
+    async keepHardeningCommit(serverId: string, commitId: string) {
+        return this.post<HardeningCommit>(`/servers/${serverId}/hardening/${commitId}/keep`, {});
+    }
+
     async getCapacityAdvisory(serverId: string) {
         return this.get<CapacityAdvisory>(`/servers/${serverId}/capacity-advisory`);
     }
@@ -1959,6 +1971,82 @@ export interface AgentControlQueued {
     serverId: string;
     action: AgentControlActionName;
     status: "queued";
+}
+
+export interface ServerCleanupQueued {
+    jobId: string;
+    serverId: string;
+    status: "queued";
+}
+
+export interface ServerCleanupPruneStep {
+    step: string;
+    reclaimedSpace?: string;
+    error?: string;
+}
+
+export interface ServerCleanupAppResult {
+    appId: string;
+    appName: string;
+    healthyBefore: boolean;
+    healthyAfter: boolean;
+    restartAttempted: boolean;
+    healthyAfterRestart?: boolean;
+    restartError?: string;
+}
+
+// Mirrors opslin-agent/internal/hardening.ImmediateFinding /
+// ConnectivityRiskFinding.
+export interface HardeningImmediateFinding {
+    kind: string;
+    description: string;
+    applied: boolean;
+    error?: string;
+}
+
+export interface HardeningConnectivityRiskFinding {
+    kind: string;
+    description: string;
+    applied: boolean;
+    snapshot?: string;
+    error?: string;
+}
+
+export interface HardeningScanResult {
+    startedAt: string;
+    finishedAt: string;
+    immediate: HardeningImmediateFinding[];
+    connectivityRisk: HardeningConnectivityRiskFinding[];
+}
+
+// Shape of ServerJobStatus.result for a SERVER_CLEANUP job — mirrors
+// opslin-agent/internal/cleanup.Result.
+export interface ServerCleanupResult {
+    startedAt: string;
+    finishedAt: string;
+    prunes: ServerCleanupPruneStep[];
+    hardening: HardeningScanResult;
+    apps: ServerCleanupAppResult[];
+}
+
+export type HardeningCommitStatus =
+    | "PENDING_APPLY"
+    | "PENDING_CONFIRMATION"
+    | "ACTIVE"
+    | "AUTO_REVERTED"
+    | "REVERTED"
+    | "FAILED";
+
+export interface HardeningCommit {
+    id: string;
+    serverId: string;
+    kind: "SSH_CONFIG" | "UFW_BASELINE" | "FAIL2BAN_BASELINE" | "EXPOSED_PORTS";
+    status: HardeningCommitStatus;
+    preview: unknown;
+    createdAt: string;
+    confirmedAt?: string | null;
+    revertedAt?: string | null;
+    expiresAt?: string | null;
 }
 
 export interface AgentControlAction {
