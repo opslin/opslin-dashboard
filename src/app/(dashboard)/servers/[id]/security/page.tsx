@@ -17,8 +17,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PlanGate } from "@/components/PlanGate";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { api, type CloudflareWAFTemplate, type FirewallAttackWindow, type FirewallPolicyInput, type FirewallPreviewResponse, type FirewallProfile } from "@/lib/api";
+import { api, ApiRequestError, type CloudflareWAFTemplate, type FirewallAttackWindow, type FirewallPolicyInput, type FirewallPreviewResponse, type FirewallProfile } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
+
+function toastActionError(error: unknown, fallback: string) {
+    if (error instanceof ApiRequestError && error.details.message) {
+        toast.error(error.details.message);
+        return;
+    }
+    toast.error(error instanceof Error ? error.message : fallback);
+}
 
 const profiles: FirewallProfile[] = ["WEB", "API_ONLY", "INTERNAL", "CUSTOM"];
 
@@ -102,6 +110,7 @@ export default function ServerSecurityPage() {
     const [jobStatus, setJobStatus] = useState<{ jobId: string; phase?: string; line?: string; status?: string } | null>(null);
     const [attackWindow, setAttackWindow] = useState<FirewallAttackWindow>("24h");
     const [zoneDrafts, setZoneDrafts] = useState<Record<string, string>>({});
+    const [advancedOpen, setAdvancedOpen] = useState(false);
 
     const policyInput = useMemo(
         () => buildPolicyInput(profile, sshCidrs, monitoringIps, customRuleText),
@@ -144,26 +153,48 @@ export default function ServerSecurityPage() {
     const discoverMutation = useMutation({
         mutationFn: () => api.discoverFirewall(serverId),
         onSuccess: (result) => { setDiscovery(result.discovery); toast.success("Discovery completed"); },
+        onError: (error) => toastActionError(error, "Discovery failed"),
     });
     const previewMutation = useMutation({
         mutationFn: () => api.previewFirewall(serverId, policyInput),
         onSuccess: (result) => { setDiscovery(result.discovery); setPreview(result); toast.success("Preview ready"); },
+        onError: (error) => toastActionError(error, "Preview failed"),
     });
     const applyMutation = useMutation({
         mutationFn: () => api.applyFirewall(serverId, policyInput),
         onSuccess: (result) => { setPreview(result.preview); setJobStatus({ jobId: result.jobId, status: result.status }); queryClient.invalidateQueries({ queryKey: ["firewall-state", serverId] }); toast.success("Firewall apply queued"); },
+        onError: (error) => toastActionError(error, "Firewall apply failed"),
+    });
+    // One-click path: applies the same safe "WEB" defaults the advanced form
+    // starts with (SSH open, HTTP/HTTPS + discovered app ports, auto-revert
+    // still fully in effect) without requiring the user to walk the 5-stage
+    // form themselves. Uses fixed defaults rather than whatever's currently
+    // typed into the advanced form, so toggling Advanced open never changes
+    // what this button does.
+    const secureMutation = useMutation({
+        mutationFn: () => api.applyFirewall(serverId, {
+            profile: "WEB",
+            sshCidrs: ["0.0.0.0/0"],
+            monitoringIps: ["127.0.0.1/32"],
+            customRules: [],
+        }),
+        onSuccess: (result) => { setPreview(result.preview); setJobStatus({ jobId: result.jobId, status: result.status }); queryClient.invalidateQueries({ queryKey: ["firewall-state", serverId] }); toast.success("Securing server — firewall apply queued"); },
+        onError: (error) => toastActionError(error, "Couldn't secure this server"),
     });
     const keepMutation = useMutation({
         mutationFn: (commitId: string) => api.keepFirewall(serverId, commitId),
         onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["firewall-state", serverId] }); toast.success("Firewall kept"); },
+        onError: (error) => toastActionError(error, "Couldn't keep firewall"),
     });
     const revertMutation = useMutation({
         mutationFn: (commitId: string) => api.revertFirewall(serverId, commitId),
         onSuccess: (result) => { setJobStatus({ jobId: result.jobId, status: result.status }); queryClient.invalidateQueries({ queryKey: ["firewall-state", serverId] }); toast.success("Firewall revert queued"); },
+        onError: (error) => toastActionError(error, "Couldn't revert firewall"),
     });
     const saveTokenMutation = useMutation({
         mutationFn: () => api.saveCloudflareToken(serverId, cloudflareToken),
         onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["firewall-state", serverId] }); setCloudflareToken(""); toast.success("Cloudflare token saved"); },
+        onError: (error) => toastActionError(error, "Couldn't save Cloudflare token"),
     });
 
     const latestCommit = state?.commits?.[0] || null;
@@ -225,10 +256,54 @@ export default function ServerSecurityPage() {
                 </Button>
             </div>
 
-            {/* Stepper */}
-            <div className="rounded-xl border border-border bg-card p-5">
-                <SecurityStepper currentStage={currentStage} />
+            {/* Primary one-click action — safe WEB-profile defaults, same auto-revert
+                protection as the advanced flow below. This is the only thing most users
+                need; the 5-stage form stays available under Advanced for anyone who
+                wants manual control over CIDRs/ports. */}
+            <div className="rounded-xl border border-border bg-card p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="h-11 w-11 rounded-full bg-success-muted flex items-center justify-center shrink-0">
+                            <ShieldCheck size={22} className="text-success" />
+                        </div>
+                        <div>
+                            <h2 className="text-base font-semibold text-foreground">Secure this server</h2>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                                Applies a safe firewall (SSH access + web ports) with automatic rollback if anything breaks. Takes about a minute.
+                            </p>
+                        </div>
+                    </div>
+                    <Button
+                        size="lg"
+                        className="h-11 px-6 bg-success hover:bg-success/90 text-success-foreground gap-2 font-medium shrink-0"
+                        onClick={() => secureMutation.mutate()}
+                        disabled={secureMutation.isPending || applyMutation.isPending}
+                    >
+                        <ShieldCheck size={18} /> {secureMutation.isPending ? "Securing…" : "Secure this server"}
+                    </Button>
+                </div>
+                {jobStatus && (
+                    <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3 text-xs">
+                        <div className="font-medium text-foreground">Job: <span className="font-mono text-muted-foreground">{jobStatus.jobId}</span></div>
+                        <div className="text-muted-foreground mt-1">Status: <span className="text-foreground">{jobStatus.status || "running"}</span> • Phase: <span className="text-foreground">{jobStatus.phase || "dispatching"}</span></div>
+                        {jobStatus.line && <div className="text-muted-foreground mt-0.5 font-mono">{jobStatus.line}</div>}
+                    </div>
+                )}
+                <button
+                    type="button"
+                    onClick={() => setAdvancedOpen(o => !o)}
+                    className="mt-4 text-xs font-medium text-muted-foreground hover:text-foreground flex items-center gap-1"
+                >
+                    <ChevronRight className={`h-3.5 w-3.5 transition-transform ${advancedOpen ? "rotate-90" : ""}`} />
+                    Advanced: manual 5-stage control
+                </button>
             </div>
+
+            {advancedOpen && (
+                <div className="rounded-xl border border-border bg-card p-5">
+                    <SecurityStepper currentStage={currentStage} />
+                </div>
+            )}
 
             {/* Pending confirmation banner — State-tier (200ms ease-out) entrance/exit
                 since this is a state change (a confirmed-commit window opening/closing),
@@ -263,6 +338,7 @@ export default function ServerSecurityPage() {
             <div className="flex flex-col md:flex-row gap-5 items-start">
                 {/* Left: 70% main content */}
                 <div className="flex-1 min-w-0 space-y-5 w-full">
+                    {advancedOpen && (
                     <PlanGate feature="server.firewallControls">
                         {/* 1. Discovery */}
                         <div className="rounded-xl border border-border bg-card p-5">
@@ -439,6 +515,7 @@ export default function ServerSecurityPage() {
                             )}
                         </div>
                     </PlanGate>
+                    )}
 
                     {/* 5. Monitoring */}
                     <div className="rounded-xl border border-border bg-card p-5">
@@ -604,6 +681,8 @@ export default function ServerSecurityPage() {
                         </div>
                     </div>
 
+                    {advancedOpen && (
+                    <>
                     {/* Configuration Guide */}
                     <div className="rounded-xl border border-border bg-card p-5">
                         <div className="flex items-center gap-2 mb-3">
@@ -656,6 +735,8 @@ export default function ServerSecurityPage() {
                             ))}
                         </div>
                     </div>
+                    </>
+                    )}
 
                     {/* Tips */}
                     <div className="rounded-xl border border-warning/30 bg-warning-muted/50 p-5">
@@ -666,7 +747,7 @@ export default function ServerSecurityPage() {
                         <div className="space-y-2.5">
                             {[
                                 { icon: Lock, title: "Use narrow CIDRs", desc: "Restrict access to trusted IP ranges." },
-                                { icon: RotateCw, title: "Enable auto-revert", desc: "Rollback on failure within 90s." },
+                                { icon: RotateCw, title: "Enable auto-revert", desc: "Rollback automatically if a change breaks connectivity, within 5 minutes." },
                                 { icon: LineChart, title: "Monitor regularly", desc: "Check attack map and logs often." },
                             ].map(tip => (
                                 <div key={tip.title} className="flex items-start gap-2.5">

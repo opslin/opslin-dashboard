@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
     ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, File, Link2, Loader2, Rocket, Search, Settings2, ShieldCheck, X, RefreshCw, Eye, EyeOff,
-    Play, Github, GitBranch, CloudUpload, Shield, Server, Info, Lightbulb, Settings, KeyRound, HeartPulse,
+    Play, Github, GitBranch, CloudUpload, Shield, Server, Info, Lightbulb, Settings, KeyRound, HeartPulse, Lock,
 } from "lucide-react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
@@ -440,10 +440,17 @@ function NewAppPageContent() {
                                                                 isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/30"
                                                             )}
                                                         >
-                                                            <Github size={28} className="shrink-0" />
+                                                            {repo.private ? (
+                                                                <Lock size={28} className="shrink-0 text-muted-foreground" />
+                                                            ) : (
+                                                                <Github size={28} className="shrink-0" />
+                                                            )}
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex items-center gap-2">
                                                                     <span className="text-sm font-medium text-foreground truncate">{repo.fullName}</span>
+                                                                    <span className="inline-flex items-center rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-[10px] font-semibold shrink-0">
+                                                                        {repo.private ? "Private" : "Public"}
+                                                                    </span>
                                                                     {repo.language && (
                                                                         <span className="inline-flex items-center rounded-full bg-warning-muted text-warning-text px-2 py-0.5 text-[10px] font-semibold shrink-0">{repo.language}</span>
                                                                     )}
