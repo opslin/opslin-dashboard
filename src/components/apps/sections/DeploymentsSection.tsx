@@ -909,6 +909,8 @@ export function DeploymentsSection({
                 repoFullName={repoFullName}
                 currentMode={currentDeployMode}
                 hasSafeDeployGate={Boolean(activeDeployGate)}
+                gateId={activeDeployGate?.id}
+                currentTestRunner={activeDeployGate?.testRunner}
                 onSetupComplete={onSetupComplete}
             />
 

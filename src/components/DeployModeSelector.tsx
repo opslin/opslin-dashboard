@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, LockKeyhole, Rocket, ShieldCheck, Stethoscope } from "lucide-react";
+import { CheckCircle2, LockKeyhole, Loader2, Rocket, Server, ShieldCheck, Stethoscope } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PlanGate } from "@/components/PlanGate";
@@ -9,7 +10,7 @@ import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { usePlan } from "@/hooks/usePlan";
 import { cn } from "@/lib/utils";
 import { SafeDeployPermissionModal } from "@/components/SafeDeployPermissionModal";
-import type { DeployGateMode } from "@/lib/api";
+import { api, type DeployGateMode, type DeployGateTestRunner } from "@/lib/api";
 
 export type DeployMode = "fast" | DeployGateMode;
 
@@ -20,10 +21,103 @@ type DeployModeSelectorProps = {
     repoFullName: string;
     currentMode: DeployMode;
     hasSafeDeployGate: boolean;
+    gateId?: string | null;
+    currentTestRunner?: string | null;
     disabled?: boolean;
     onModeChange?: (mode: DeployMode) => void;
     onSetupComplete?: () => void;
 };
+
+const testRunnerOptions: Array<{ value: DeployGateTestRunner; title: string; description: string; icon: typeof ShieldCheck }> = [
+    {
+        value: "github_actions",
+        title: "GitHub Actions",
+        description: "Free — runs on GitHub's compute, not your server.",
+        icon: ShieldCheck,
+    },
+    {
+        value: "agent",
+        title: "Your own server",
+        description: "No workflow file needed — but costs real CPU/RAM/time on your VPS on every push, including pushes that will fail.",
+        icon: Server,
+    },
+];
+
+function TestRunnerRow({
+    idPrefix,
+    appId,
+    branch,
+    gateId,
+    currentTestRunner,
+    disabled,
+    onChanged,
+}: {
+    idPrefix: string;
+    appId: string;
+    branch: string;
+    gateId: string;
+    currentTestRunner: string;
+    disabled?: boolean;
+    onChanged?: () => void;
+}) {
+    const [loading, setLoading] = useState(false);
+
+    const selectRunner = async (value: DeployGateTestRunner) => {
+        if (value === currentTestRunner || loading || disabled) {
+            return;
+        }
+        setLoading(true);
+        try {
+            const response = await api.updateDeployGate(appId, gateId, { testRunner: value });
+            if (value === "github_actions" && response.gate.setupStatus === "not_configured") {
+                await api.setupSafeDeploy(appId, { branch });
+            }
+            toast.success(value === "agent" ? "Tests now run on your own server" : "Tests now run on GitHub Actions");
+            onChanged?.();
+        } catch (caught) {
+            toast.error(caught instanceof Error ? caught.message : "Could not update the test runner");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="border-t border-border/70 p-5">
+            <p className="text-sm font-semibold text-foreground">Test runner</p>
+            <p className="mt-1 text-sm text-muted-foreground">Where Opslin runs your test suite before this gate lets a deploy through.</p>
+            <div role="radiogroup" aria-label="Test runner" className="mt-3 grid gap-2 sm:grid-cols-2">
+                {testRunnerOptions.map((option) => {
+                    const selected = currentTestRunner === option.value;
+                    const Icon = option.icon;
+                    return (
+                        <button
+                            id={`${idPrefix}-test-runner-${option.value}`}
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            disabled={disabled || loading}
+                            onClick={() => selectRunner(option.value)}
+                            className={cn(
+                                "flex flex-col gap-1 rounded-lg border p-3 text-left transition-all",
+                                "bg-card/70 hover:border-primary/45 hover:bg-card",
+                                selected ? "border-primary/70 ring-2 ring-primary/20" : "border-border/80",
+                                disabled || loading ? "cursor-not-allowed opacity-70" : "cursor-pointer"
+                            )}
+                        >
+                            <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                                {loading && !selected ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+                                {option.title}
+                                {selected ? <CheckCircle2 className="h-4 w-4 text-success-text" /> : null}
+                            </span>
+                            <span className="text-xs text-muted-foreground">{option.description}</span>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
 
 type ModeOption = {
     mode: DeployMode;
@@ -132,6 +226,8 @@ export function DeployModeSelector({
     repoFullName,
     currentMode,
     hasSafeDeployGate,
+    gateId,
+    currentTestRunner,
     disabled,
     onModeChange,
     onSetupComplete,
@@ -208,6 +304,18 @@ export function DeployModeSelector({
                     );
                 })}
             </div>
+
+            {hasSafeDeployGate && gateId ? (
+                <TestRunnerRow
+                    idPrefix={idPrefix}
+                    appId={appId}
+                    branch={branch}
+                    gateId={gateId}
+                    currentTestRunner={currentTestRunner || "github_actions"}
+                    disabled={disabled}
+                    onChanged={onSetupComplete}
+                />
+            ) : null}
 
             <Dialog open={Boolean(upgradeFeature)} onOpenChange={(open) => !open && setUpgradeFeature(null)}>
                 <DialogContent className="max-w-md" showCloseButton={false}>
