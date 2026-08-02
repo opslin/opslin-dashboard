@@ -98,6 +98,7 @@ const activeDeployGate: DeployGateSummary = {
     repoFullName: "acme/checkout",
     branch: "main",
     mode: "safe",
+    testRunner: "github_actions",
     tokenLastUsedAt: null,
     enabled: true,
     secretsInjected: true,
@@ -477,6 +478,41 @@ describe("DeploymentsSection", () => {
             "https://github.com/acme/checkout/actions/runs/123"
         );
         expect(screen.queryByTestId("deploy-error-card")).not.toBeInTheDocument();
+    });
+
+    it("surfaces a failed agent test-runner CI run with a test-specific message and no GitHub run link", () => {
+        renderDeployments({
+            app: { ...app, status: "running" },
+            activeDeployGate: {
+                ...activeDeployGate,
+                testRunner: "agent",
+                lastCiRun: {
+                    id: "ci-agent-1",
+                    deployGateId: "gate-1",
+                    deploymentId: null,
+                    provider: "agent",
+                    repoFullName: "acme/checkout",
+                    branch: "main",
+                    status: "failed",
+                    commitSha: "dddddddddddd",
+                    runId: null,
+                    runUrl: null,
+                    failureReason: null,
+                    createdAt: "2026-01-03T00:00:00.000Z",
+                    startedAt: "2026-01-03T00:00:00.000Z",
+                    finishedAt: "2026-01-03T00:02:00.000Z",
+                },
+                lastDeployment: deployments[0],
+                lastDeploymentStatus: "succeeded",
+            },
+            deployments: [deployments[0], deployments[1]],
+            latestDeployment: deployments[0],
+        });
+
+        expect(screen.getByTestId("deployment-command-center")).toHaveTextContent("Deploy blocked by CI");
+        expect(screen.getAllByText("The test command failed before Opslin started a deployment.").length).toBeGreaterThanOrEqual(1);
+        expect(screen.getByText("CI FAILED")).toBeVisible();
+        expect(screen.queryByRole("link", { name: /View GitHub Run/i })).not.toBeInTheDocument();
     });
 
     it("dedupes same-SHA pending CI noise behind the failed GitHub Actions run", () => {

@@ -207,6 +207,46 @@ describe("DeploymentTimeline", () => {
         expect(screen.getByText(/abc1234/)).toBeVisible();
     });
 
+    it("shows a provider-aware label while an agent-runner test is running (not GitHub Actions)", () => {
+        render(
+            <DeploymentTimeline
+                appId="app-1"
+                deployment={{ ...baseDeployment, status: "pending" }}
+                mode="safe"
+                ciRun={{
+                    id: "ci-1",
+                    provider: "agent",
+                    status: "pending",
+                    commitSha: "abc1234",
+                    createdAt: "2026-04-29T00:00:00.000Z",
+                }}
+            />,
+            { wrapper }
+        );
+
+        expect(screen.getByText("Running Tests on Your Server")).toBeVisible();
+        expect(screen.queryByText("GitHub Actions Running")).toBeNull();
+    });
+
+    it("keeps the GitHub Actions label for a github-provider (or legacy providerless) pending CI run", () => {
+        render(
+            <DeploymentTimeline
+                appId="app-1"
+                deployment={{ ...baseDeployment, status: "pending" }}
+                mode="safe"
+                ciRun={{
+                    id: "ci-1",
+                    status: "pending",
+                    commitSha: "abc1234",
+                    createdAt: "2026-04-29T00:00:00.000Z",
+                }}
+            />,
+            { wrapper }
+        );
+
+        expect(screen.getByText("GitHub Actions Running")).toBeVisible();
+    });
+
     it("shows CI Failed when ciRun status is failed", () => {
         render(
             <DeploymentTimeline

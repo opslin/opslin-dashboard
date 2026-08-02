@@ -238,7 +238,9 @@ export function DeploymentTimeline({
                         ? queuedWorkerDetail(currentDeployment)
                         : visual === "active" && progressLine(currentDeployment)
                             ? progressLine(currentDeployment)!
-                            : stage.detail;
+                            : stage.key === "ci_running" && ciRun?.provider === "agent"
+                                ? "Opslin's agent is running your test command on your server"
+                                : stage.detail;
                     return (
                         <li
                             id={`${idPrefix}-stage-${stage.key}`}
@@ -265,7 +267,11 @@ export function DeploymentTimeline({
                             )}>
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <p className="text-sm font-semibold text-foreground">
-                                        {currentState === "ci_failed" && stage.key === "ci_passed" ? "CI Failed" : stage.label}
+                                        {currentState === "ci_failed" && stage.key === "ci_passed"
+                                            ? "CI Failed"
+                                            : stage.key === "ci_running" && ciRun?.provider === "agent"
+                                                ? "Running Tests on Your Server"
+                                                : stage.label}
                                     </p>
                                     {visual === "active" ? (
                                         <Badge variant="outline" className="rounded-md border-info/25 bg-info/10 text-info-text">

@@ -2352,6 +2352,13 @@ export interface DeploymentRecord {
 
 export type DeployGateMode = "safe" | "safe_with_health";
 
+// Orthogonal to DeployGateMode: which runner satisfies the gate.
+// "github_actions" (default) waits for an external workflow to call back;
+// "agent" runs the test command on the customer's own VPS as part of the
+// deploy job itself — no workflow PR required, but costs real VPS resources
+// on every push.
+export type DeployGateTestRunner = "github_actions" | "agent";
+
 export interface CiRunSummary {
     id: string;
     deployGateId?: string | null;
@@ -2476,6 +2483,7 @@ export interface DeployGateSummary {
     repoFullName: string;
     branch: string;
     mode: DeployGateMode | string;
+    testRunner: DeployGateTestRunner | string;
     workflowPath?: string | null;
     workflowBranch?: string | null;
     workflowPrUrl?: string | null;
@@ -2500,6 +2508,7 @@ export interface DeployGateSummary {
 export type CreateDeployGateInput = {
     branch: string;
     mode: DeployGateMode;
+    testRunner?: DeployGateTestRunner;
     repoFullName: string;
 };
 

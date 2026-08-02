@@ -306,7 +306,12 @@ function ciRunTimeMillis(ciRun?: CiRunSummary | null) {
 }
 
 function ciRunFailureMessage(ciRun?: CiRunSummary | null) {
-    return ciRun?.failureReason || "GitHub Actions failed before Opslin started a deployment.";
+    if (ciRun?.failureReason) {
+        return ciRun.failureReason;
+    }
+    return ciRun?.provider === "agent"
+        ? "The test command failed before Opslin started a deployment."
+        : "GitHub Actions failed before Opslin started a deployment.";
 }
 
 function deploymentHistoryTimeMillis(deployment: DeploymentRecord) {

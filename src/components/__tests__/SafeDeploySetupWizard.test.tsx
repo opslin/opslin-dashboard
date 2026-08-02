@@ -19,6 +19,7 @@ function gate(overrides: Partial<DeployGateSummary> = {}): DeployGateSummary {
         repoFullName: "acme/api",
         branch: "main",
         mode: "safe",
+        testRunner: "github_actions",
         workflowPath: ".github/workflows/opslin-safe-deploy.yml",
         workflowBranch: "opslin/setup-safe-deploy/app-1/20260503-120000",
         workflowPrUrl: "https://github.com/acme/api/pull/1",
