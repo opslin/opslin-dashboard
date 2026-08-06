@@ -33,28 +33,33 @@ export function selectCurrentDeploymentTruth(
         return null;
     }
 
+    // `deployments` is fetched newest-first (apps-service.ts, orderBy startedAt desc) — that
+    // ordering is the invariant this whole function relies on.
     const isRealAttempt = (deployment: DeploymentRecord) => !isLockBusyDeployment(deployment);
-    const running = deployments.find((deployment) => deployment.status === "running" && isRealAttempt(deployment));
+    const realAttempts = deployments.filter(isRealAttempt);
+    if (realAttempts.length === 0) {
+        return deployments[0];
+    }
+
+    const running = realAttempts.find((deployment) => deployment.status === "running");
     if (running) {
         return running;
     }
 
-    const pending = deployments.find((deployment) => deployment.status === "pending" && isRealAttempt(deployment));
+    const pending = realAttempts.find((deployment) => deployment.status === "pending");
     if (pending) {
         return pending;
     }
 
-    const liveDeployment = deployments.find((deployment) =>
-        (deployment.status === "succeeded" || deployment.status === "rolled_back") && isRealAttempt(deployment)
-    );
-    if (liveDeployment) {
-        return liveDeployment;
-    }
-
-    const newestRealAttempt = deployments.find(isRealAttempt);
-    if (newestRealAttempt) {
-        return newestRealAttempt;
-    }
-
-    return deployments[0];
+    // The newest real attempt is the current truth once it has reached ANY terminal state —
+    // succeeded, failed, aborted, or rolled_back. A previous version of this function instead
+    // searched all of history for the nearest succeeded/rolled_back row before ever checking
+    // whether the newest attempt itself was terminal, which meant a deploy that had just
+    // failed (e.g. against a disconnected server) got silently swapped for an older
+    // successful deployment — driving a "Your app is LIVE!" celebration and a green
+    // "Succeeded" badge for a deploy that had, in reality, just failed. Reporting a failure as
+    // a failure is the whole point of this selector; only fall back to scanning history if the
+    // newest real attempt is somehow still non-terminal (shouldn't normally happen once
+    // running/pending are ruled out above).
+    return realAttempts[0];
 }

@@ -180,40 +180,44 @@ function ModeButton({
             disabled={disabled}
             onClick={onClick}
             className={cn(
-                "group flex min-h-36 w-full flex-col justify-between rounded-lg border p-4 text-left transition-all",
-                "bg-card/70 shadow-sm backdrop-blur hover:border-primary/45 hover:bg-card",
-                selected ? "border-primary/70 ring-2 ring-primary/20" : "border-border/80",
+                "group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
+                "bg-card/40 hover:bg-card",
+                selected ? "bg-primary/5" : "",
                 locked ? "opacity-85" : "",
                 disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
             )}
         >
-            <span className="flex items-start justify-between gap-3">
-                <span className={cn(
-                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-md border",
-                    selected ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-secondary text-muted-foreground"
-                )}>
-                    <Icon className="h-5 w-5" />
-                </span>
+            <span className={cn(
+                "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border",
+                selected ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-secondary text-muted-foreground"
+            )}>
+                <Icon className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
-                    {locked ? (
-                        <LockKeyhole className="h-4 w-4 text-muted-foreground" />
-                    ) : selected ? (
-                        <CheckCircle2 className="h-4 w-4 text-success-text" />
-                    ) : null}
+                    <span className="text-sm font-semibold text-foreground">{option.title}</span>
                     <Badge
                         variant="outline"
                         className={cn(
-                            "rounded-md border-border/80 bg-background/60",
+                            "rounded-md border-border/80 bg-background/60 text-[10px]",
                             locked ? "text-warning-text" : "text-muted-foreground"
                         )}
                     >
                         {option.requiredPlan === "Included" ? "Included" : `${option.requiredPlan}+`}
                     </Badge>
                 </span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground sm:whitespace-normal">
+                    {option.description}
+                </span>
             </span>
-            <span className="mt-4 block space-y-1.5">
-                <span className="block text-sm font-semibold text-foreground">{option.title}</span>
-                <span className="block text-sm leading-5 text-muted-foreground">{option.description}</span>
+            <span className="shrink-0">
+                {locked ? (
+                    <LockKeyhole className="h-4 w-4 text-muted-foreground" />
+                ) : selected ? (
+                    <CheckCircle2 className="h-4 w-4 text-success-text" />
+                ) : (
+                    <span className="block h-4 w-4 rounded-full border border-border" />
+                )}
             </span>
         </button>
     );
@@ -273,7 +277,11 @@ export function DeployModeSelector({
                     </Badge>
                 </div>
             </div>
-            <div className="grid gap-3 p-5 lg:grid-cols-3" role="radiogroup" aria-label="Deployment mode">
+            <div
+                className="mx-5 my-4 divide-y divide-border/70 overflow-hidden rounded-lg border border-border/80"
+                role="radiogroup"
+                aria-label="Deployment mode"
+            >
                 {modeOptions.map((option) => {
                     const selected = currentMode === option.mode;
                     const locked = Boolean(option.requiredFeature && !can(option.requiredFeature));

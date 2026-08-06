@@ -44,10 +44,6 @@ vi.mock("@/components/SafeDeploySetupWizard", () => ({
     SafeDeploySetupWizard: () => <div data-testid="safe-deploy-setup">Safe deploy setup</div>,
 }));
 
-vi.mock("@/components/DeploymentTimeline", () => ({
-    DeploymentTimeline: () => <div data-testid="deployment-timeline">Deployment timeline</div>,
-}));
-
 vi.mock("@/components/DeploymentCheckReportCard", () => ({
     DeploymentCheckReportCard: () => <div data-testid="deployment-check-report">Deployment check report</div>,
 }));
@@ -258,9 +254,14 @@ describe("AppDetailPage extraction smoke", () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(await screen.findByTestId("deployment-timeline")).toBeVisible();
         expect(screen.getByText("Deployment History")).toBeVisible();
 
+        // Deployment history rows render once the deployments query resolves; wait for the
+        // per-row rollback button (not just the static "Actions" card one) before clicking, or
+        // this races the query and clicks a still-disabled button.
+        await waitFor(() => {
+            expect(screen.getAllByRole("button", { name: /Rollback/i }).length).toBeGreaterThan(1);
+        });
         fireEvent.click(screen.getAllByRole("button", { name: /Rollback/i })[0]);
 
         expect(await screen.findByText("Roll back to version previous123456?")).toBeVisible();

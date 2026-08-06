@@ -21,7 +21,6 @@ import {
 import { toast } from "sonner";
 import { DeployModeSelector, type DeployMode } from "@/components/DeployModeSelector";
 import { DeploymentCheckReportCard } from "@/components/DeploymentCheckReportCard";
-import { DeploymentTimeline } from "@/components/DeploymentTimeline";
 import { DeployLiveView } from "@/components/deploy/live/deploy-live-view";
 import { SafeDeploySetupWizard } from "@/components/SafeDeploySetupWizard";
 import { ErrorCard } from "@/components/apps/error-card";
@@ -878,10 +877,14 @@ export function DeploymentsSection({
                 onViewLogs={onViewLogs}
             />
 
-            {/* Unified deploy live view (doc 04 §2) — real phase_progress timeline,
-                context rail, and log excerpt. Replaces the old SVG beam-and-particle
-                panel. Only renders when there's an active or recent deployment. */}
-            {truthDeployment?.id && (
+            {/* Live deploy view (phase_progress timeline + context rail + log excerpt) —
+                shown only while a deployment is actually in flight. Once it settles
+                (succeeded/failed/aborted/rolled_back), DeploymentCommandCenter above already
+                shows the current state compactly, and the ErrorCard below covers failures —
+                leaving a full log+timeline block permanently in the page for an already-done
+                deploy was exactly the clutter this was designed away from. Logs for a settled
+                deployment are still one click away via "View Logs". */}
+            {truthDeployment?.id && ["pending", "running"].includes(truthDeployment.status) && (
                 <DeployLiveView
                     mode="inline"
                     appId={app.id}
@@ -933,19 +936,6 @@ export function DeploymentsSection({
                     quickFixPending={quickFixPending}
                 />
             ) : null}
-
-            <DeploymentTimeline
-                idPrefix={`deployment-timeline-${app.id}`}
-                appId={app.id}
-                deploymentId={blockedCiRun ? undefined : truthDeployment?.id}
-                deployment={blockedCiRun ? null : truthDeployment}
-                mode={currentDeployMode}
-                ciRun={blockedCiRun ?? ciRun}
-                errorMessage={blockedCiRun
-                    ? ciRunFailureMessage(blockedCiRun)
-                    : truthErrorClassification?.summary ?? truthDeployment?.healthLog ?? null}
-                poll={Boolean(!blockedCiRun && truthDeployment && ["pending", "running"].includes(truthDeployment.status))}
-            />
 
             <DeploymentCheckReportCard
                 idPrefix={`deployment-check-report-${app.id}`}

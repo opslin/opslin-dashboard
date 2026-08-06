@@ -46,12 +46,20 @@ describe("deployment selectors", () => {
         expect(selectCurrentDeploymentTruth([failed, running])?.id).toBe("running");
     });
 
-    it("keeps the last live release selected when a newer deployment fails", () => {
+    it("reports a fresh failure as truth instead of silently falling back to an older success", () => {
+        // This was the exact bug behind a live "Your app is LIVE!" celebration + green
+        // "Succeeded" badge appearing for a deploy that had actually just failed (against a
+        // disconnected server): the previous version of selectCurrentDeploymentTruth searched
+        // all of history for *any* succeeded/rolled_back deployment before ever checking
+        // whether the newest attempt was itself terminal. Reporting a failure as a failure is
+        // the entire point of a "current truth" selector — the previously-live version staying
+        // up is a separate concern (DeploymentsSection's own `getLiveRelease`/`liveRelease`),
+        // not something this selector should silently substitute in.
         const failed = deployment({
             id: "failed",
             status: "failed",
             startedAt: "2026-01-01T00:03:00.000Z",
-            healthLog: "Build step failed",
+            healthLog: "Agent not connected for server ip-172-31-2-13",
         });
         const live = deployment({
             id: "live",
@@ -60,6 +68,23 @@ describe("deployment selectors", () => {
             finishedAt: "2026-01-01T00:02:00.000Z",
         });
 
-        expect(selectCurrentDeploymentTruth([failed, live])?.id).toBe("live");
+        expect(selectCurrentDeploymentTruth([failed, live])?.id).toBe("failed");
+    });
+
+    it("still prefers a genuinely live release over an aborted duplicate attempt", () => {
+        const aborted = deployment({
+            id: "aborted",
+            status: "aborted",
+            startedAt: "2026-01-01T00:03:00.000Z",
+        });
+        const live = deployment({
+            id: "live",
+            status: "succeeded",
+            startedAt: "2026-01-01T00:00:00.000Z",
+        });
+
+        // The newest real attempt is still what gets reported, even when it's "aborted" rather
+        // than "failed" — both are terminal failure states from the user's point of view.
+        expect(selectCurrentDeploymentTruth([aborted, live])?.id).toBe("aborted");
     });
 });

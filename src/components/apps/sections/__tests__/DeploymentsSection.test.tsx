@@ -19,10 +19,6 @@ vi.mock("@/components/SafeDeploySetupWizard", () => ({
     SafeDeploySetupWizard: () => <div data-testid="safe-deploy-setup">Safe deploy setup</div>,
 }));
 
-vi.mock("@/components/DeploymentTimeline", () => ({
-    DeploymentTimeline: () => <div data-testid="deployment-timeline">Deployment timeline</div>,
-}));
-
 vi.mock("@/components/DeploymentCheckReportCard", () => ({
     DeploymentCheckReportCard: ({ report }: { report: unknown }) => (
         report ? <div data-testid="deployment-check-report">Deployment check report</div> : null
@@ -154,12 +150,11 @@ describe("DeploymentsSection", () => {
         vi.clearAllMocks();
     });
 
-    it("renders deployment controls, timeline, and history status badges", () => {
+    it("renders deployment controls and history status badges", () => {
         renderDeployments();
 
         expect(screen.getByTestId("deploy-mode-selector")).toBeVisible();
         expect(screen.getByTestId("deployment-command-center")).toBeVisible();
-        expect(screen.getByTestId("deployment-timeline")).toBeVisible();
         expect(screen.getByText("Deployment History")).toBeVisible();
         expect(screen.getAllByText("aaaaaaa").length).toBeGreaterThan(0);
         expect(screen.getAllByText("SUCCEEDED").length).toBeGreaterThan(0);
