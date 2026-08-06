@@ -1,8 +1,9 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsSection } from "../SettingsSection";
 import type { ComponentProps, ReactNode } from "react";
-import type { App, Server } from "@/lib/api";
+import { api, type App, type Server } from "@/lib/api";
 
 vi.mock("next/link", () => ({
     default: ({ href, children, ...props }: { href: string; children: ReactNode }) => (
@@ -15,6 +16,21 @@ vi.mock("sonner", () => ({
         success: vi.fn(),
     },
 }));
+
+// BuildpackVersionSelector (rendered inside the Build Configuration card) calls
+// useQueryClient() and fires a real useQuery — this test file never wrapped render() in a
+// QueryClientProvider, so every test here crashed with "No QueryClient set" before a single
+// assertion ran (confirmed: 7/7 failing pre-existing, zero real coverage of this section).
+vi.mock("@/lib/api", async () => {
+    const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+    return {
+        ...actual,
+        api: {
+            ...actual.api,
+            listBuildpackVersions: vi.fn(),
+        },
+    };
+});
 
 const app: App = {
     id: "app-1",
@@ -79,15 +95,22 @@ function renderSettings(overrides: Partial<ComponentProps<typeof SettingsSection
         ...overrides,
     };
 
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
     return {
         props,
-        ...render(<SettingsSection {...props} />),
+        ...render(
+            <QueryClientProvider client={queryClient}>
+                <SettingsSection {...props} />
+            </QueryClientProvider>
+        ),
     };
 }
 
 describe("SettingsSection", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(api.listBuildpackVersions).mockResolvedValue({ versions: [] });
         Object.assign(navigator, {
             clipboard: {
                 writeText: vi.fn(),

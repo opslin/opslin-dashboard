@@ -34,6 +34,22 @@ export function memoryPercent(metric?: Pick<AppMetricCurrent, "memoryUsed" | "me
   return Math.max(0, Math.min(100, ((metric.memoryUsed || 0) / metric.memoryLimit) * 100));
 }
 
+// `effectiveStatus` (real-time — layers server connectivity + health-check staleness on top of
+// the last-persisted `healthStatus` row, see opslin-api's computeEffectiveAppStatus) is what
+// should actually be displayed. The raw `healthStatus` column stops updating the instant the
+// agent disconnects, so showing it alone can read "healthy" for a server that's been offline
+// for hours. Falls back to the raw value only when the API response predates this field.
+export function resolveEffectiveHealthLabel(
+  current?: Partial<Pick<AppMetricCurrent, "healthStatus" | "effectiveStatus">> | null
+): "offline" | "stale" | "unhealthy" | "healthy" | "unknown" {
+  const effective = current?.effectiveStatus;
+  if (effective === "offline" || effective === "stale" || effective === "unhealthy") {
+    return effective;
+  }
+  const raw = (current?.healthStatus || "unknown").toLowerCase();
+  return raw === "healthy" || raw === "unhealthy" ? raw : "unknown";
+}
+
 export function latestMetricPoint(history?: AppMetricHistory | null) {
   const index = history?.series.timestamps.length ? history.series.timestamps.length - 1 : -1;
   if (index < 0 || !history) {

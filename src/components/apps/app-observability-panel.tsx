@@ -12,6 +12,7 @@ import { EnhancedLogViewer } from "@/components/logs/enhanced-log-viewer";
 import { PlanGate } from "@/components/PlanGate";
 import type { LogLineRecord } from "@/components/logs/log-viewer";
 import { chartColors } from "@/lib/design-system";
+import { resolveEffectiveHealthLabel } from "@/lib/live-monitor";
 import { ChartLoading, useRecharts } from "@/components/charts/use-recharts";
 
 type RuntimeLogLine = LogLineRecord;
@@ -19,16 +20,13 @@ type AppMetricPoint = { timestamp: string; cpu: number; memory: number };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
-function healthBadgeClass(status: string) {
-    switch (status) {
-        case "healthy":
-            return "bg-chart-5/15 text-chart-5";
-        case "unhealthy":
-            return "bg-chart-3/15 text-chart-3";
-        default:
-            return "bg-secondary text-muted-foreground";
-    }
-}
+const HEALTH_BADGE: Record<ReturnType<typeof resolveEffectiveHealthLabel>, string> = {
+    offline: "bg-secondary text-muted-foreground",
+    stale: "bg-chart-4/15 text-chart-4",
+    unhealthy: "bg-chart-3/15 text-chart-3",
+    healthy: "bg-chart-5/15 text-chart-5",
+    unknown: "bg-secondary text-muted-foreground",
+};
 
 function AppMetricsSparklines({ chartData }: { chartData: AppMetricPoint[] }) {
     const recharts = useRecharts();
@@ -106,6 +104,8 @@ export function AppObservabilityPanel({
         refetchInterval: enabled ? refreshIntervalMs : false,
     });
 
+    const healthLabel = resolveEffectiveHealthLabel(current);
+
     useEffect(() => {
         if (!enabled) {
             return;
@@ -179,8 +179,8 @@ export function AppObservabilityPanel({
                         </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Badge className={healthBadgeClass(current?.healthStatus || "unknown")}>
-                            {(current?.healthStatus || "unknown").toUpperCase()}
+                        <Badge className={HEALTH_BADGE[healthLabel]}>
+                            {healthLabel.toUpperCase()}
                         </Badge>
                         <Badge variant="outline">
                             {current?.restartCount || 0} restarts

@@ -7,23 +7,20 @@ import { api, type DeploymentRecord } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRelativeTime } from "@/lib/utils";
-import { formatBytes, memoryPercent } from "@/lib/live-monitor";
+import { formatBytes, memoryPercent, resolveEffectiveHealthLabel } from "@/lib/live-monitor";
 import { chartColors } from "@/lib/design-system";
 import { ChartLoading, useRecharts } from "@/components/charts/use-recharts";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 type LiveMetricPoint = { timestamp: string; cpu: number; memory: number };
 
-function healthTone(status?: string) {
-  switch ((status || "unknown").toLowerCase()) {
-    case "healthy":
-      return "bg-success-muted text-success-text border-success/30";
-    case "unhealthy":
-      return "bg-danger-muted text-danger-text border-danger/30";
-    default:
-      return "bg-secondary text-muted-foreground";
-  }
-}
+const HEALTH_DISPLAY: Record<ReturnType<typeof resolveEffectiveHealthLabel>, { label: string; tone: string }> = {
+  offline: { label: "Offline", tone: "bg-secondary text-muted-foreground border-border" },
+  stale: { label: "Stale", tone: "bg-warning-muted text-warning-text border-warning/30" },
+  unhealthy: { label: "Unhealthy", tone: "bg-danger-muted text-danger-text border-danger/30" },
+  healthy: { label: "Healthy", tone: "bg-success-muted text-success-text border-success/30" },
+  unknown: { label: "Unknown", tone: "bg-secondary text-muted-foreground border-border" },
+};
 
 function MiniSparkline({ data, color }: { data: number[]; color: string }) {
   if (!data || data.length < 2) return <div className="h-6" />;
@@ -87,15 +84,18 @@ export function AppLiveMonitor({
   const [connectionState, setConnectionState] = useState<"connecting" | "connected" | "reconnecting" | "closed">("connecting");
   const [lastLiveMessageAt, setLastLiveMessageAt] = useState<string | null>(null);
 
+  // Query keys deliberately match AppObservabilityPanel's (same appId, same default "1h"
+  // range) — both panels render together in MetricsSection, and this lets React Query dedupe
+  // them into one shared poll instead of two independent 60s intervals hitting the same data.
   const { data: current } = useQuery({
-    queryKey: ["phase03", "appMetricsCurrent", appId],
+    queryKey: ["appMetricsCurrent", appId],
     queryFn: () => api.getAppMetricsCurrent(appId),
     enabled,
     refetchInterval: enabled ? refreshIntervalMs : false,
   });
 
   const { data: history } = useQuery({
-    queryKey: ["phase03", "appMetricsHistory", appId],
+    queryKey: ["appMetricsHistory", appId, "1h"],
     queryFn: () => api.getAppMetricsHistory(appId, "1h"),
     enabled,
     refetchInterval: enabled ? refreshIntervalMs : false,
@@ -152,6 +152,7 @@ export function AppLiveMonitor({
     }));
   }, [history]);
 
+  const healthDisplay = HEALTH_DISPLAY[resolveEffectiveHealthLabel(current)];
   const latestDeploy = deployments[0];
   const memory = memoryPercent(current);
 
@@ -212,14 +213,14 @@ export function AppLiveMonitor({
             <div className="flex items-center justify-between">
               <HeartPulse className={
                 "size-4 " +
-                ((current?.healthStatus || "").toLowerCase() === "healthy" ? "text-success-text" :
-                 (current?.healthStatus || "").toLowerCase() === "unhealthy" ? "text-danger-text" : "text-muted-foreground")
+                (healthDisplay.label === "Healthy" ? "text-success-text" :
+                 healthDisplay.label === "Unhealthy" ? "text-danger-text" : "text-muted-foreground")
               } />
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Health</span>
             </div>
-            <p className="mt-2 text-base font-semibold text-foreground capitalize">{(current?.healthStatus || "unknown").toLowerCase()}</p>
-            <Badge className={"mt-2 border " + healthTone(current?.healthStatus)}>
-              {(current?.healthStatus || "unknown").toUpperCase()}
+            <p className="mt-2 text-base font-semibold text-foreground">{healthDisplay.label}</p>
+            <Badge className={"mt-2 border " + healthDisplay.tone}>
+              {healthDisplay.label.toUpperCase()}
             </Badge>
           </div>
           <div className="rounded-lg border border-border/70 bg-card p-4">

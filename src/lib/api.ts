@@ -2671,6 +2671,11 @@ export interface AppMetricCurrent {
     name: string;
     status: string;
     healthStatus: "healthy" | "unhealthy" | "unknown";
+    // Same real-time, never-stored connectivity layer as `App.effectiveStatus` — reflects
+    // whether the server's agent is actually connected right now, not just the last-persisted
+    // health-check row (which stops updating the instant the agent disconnects).
+    serverConnected?: boolean;
+    effectiveStatus?: "running" | "offline" | "unhealthy" | "stale" | AppMetricCurrent["status"];
     healthCheckedAt?: string | null;
     healthPath: string;
     timestamp?: string;
@@ -2696,6 +2701,8 @@ export interface AppMetricHistory {
         restartCount: number[];
     };
     healthStatus: "healthy" | "unhealthy" | "unknown";
+    serverConnected?: boolean;
+    effectiveStatus?: "running" | "offline" | "unhealthy" | "stale" | string;
     healthChecks: {
         total: number;
         healthy: number;

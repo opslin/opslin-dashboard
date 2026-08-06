@@ -1,8 +1,23 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EnvironmentSection } from "../EnvironmentSection";
-import { MASKED_ENV_VALUE, envRecordToMaskedList } from "../env-helpers";
+import { envRecordToMaskedList } from "../env-helpers";
+import { api } from "@/lib/api";
 import type { ComponentProps } from "react";
+
+// QuickDatabaseConnectDialog (rendered inside EnvironmentSection, even while closed — Dialog
+// content is conditionally *visible*, not conditionally *mounted*) calls useQueryClient() and
+// a real useQuery — this test file never wrapped render() in a QueryClientProvider, so every
+// test here crashed with "No QueryClient set" before a single assertion ran (confirmed: 4/4
+// failing pre-existing, zero real coverage of this section). Stubbed via vi.spyOn on the real
+// `api` singleton rather than vi.mock("@/lib/api", ...) — `api` is a class instance, and
+// `{...actual.api}`-style spreads silently drop every prototype method that isn't explicitly
+// re-listed, which broke `usePlan()`'s unrelated `api.getCurrentPlan()` call (also used inside
+// this same dialog) the first time this was tried.
+function stubApiForDialog() {
+    vi.spyOn(api, "getDatabases").mockResolvedValue([]);
+}
 
 function renderEnvironment(overrides: Partial<ComponentProps<typeof EnvironmentSection>> = {}) {
     const props: ComponentProps<typeof EnvironmentSection> = {
@@ -23,15 +38,22 @@ function renderEnvironment(overrides: Partial<ComponentProps<typeof EnvironmentS
         ...overrides,
     };
 
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
     return {
         props,
-        ...render(<EnvironmentSection {...props} />),
+        ...render(
+            <QueryClientProvider client={queryClient}>
+                <EnvironmentSection {...props} />
+            </QueryClientProvider>
+        ),
     };
 }
 
 describe("EnvironmentSection", () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.restoreAllMocks();
+        stubApiForDialog();
     });
 
     it("renders the env editor and masks secret-like keys", () => {
@@ -40,8 +62,12 @@ describe("EnvironmentSection", () => {
         expect(screen.getAllByText("Environment Variables").length).toBeGreaterThan(0);
         expect(screen.getByText(/Frontend frameworks expose only public prefixes/i)).toBeVisible();
         expect(screen.getByDisplayValue("API_TOKEN")).toBeVisible();
-        expect(screen.getByDisplayValue(MASKED_ENV_VALUE)).toBeVisible();
+        // Secret-like values render as a masked bullet span with a reveal toggle, not as a
+        // plain input carrying a literal masked placeholder — the real value never touches the
+        // DOM at all unless explicitly revealed.
+        expect(screen.getAllByTitle("Show value").length).toBeGreaterThan(0);
         expect(screen.queryByDisplayValue("super-secret-token")).not.toBeInTheDocument();
+        expect(screen.queryByText("super-secret-token")).not.toBeInTheDocument();
         expect(screen.getByDisplayValue("PUBLIC_URL")).toBeVisible();
         expect(screen.getByDisplayValue("https://example.com")).toBeVisible();
     });
@@ -72,7 +98,9 @@ describe("EnvironmentSection", () => {
         expect(screen.getByText("Environment changes are paused while cleanup is pending.")).toBeVisible();
         expect(screen.getByRole("button", { name: /Save Only/i })).toBeDisabled();
         expect(screen.getByRole("button", { name: /Save & Redeploy/i })).toBeDisabled();
-        expect(screen.getByRole("button", { name: /Add Environment Variable/i })).toBeDisabled();
+        // Exact, case-sensitive match — there's also an icon-only "Add variable" (lowercase)
+        // confirm button on the draft row whose accessible name would otherwise also match.
+        expect(screen.getByRole("button", { name: "Add Variable" })).toBeDisabled();
         expect(screen.queryByDisplayValue("super-secret-token")).not.toBeInTheDocument();
     });
 });

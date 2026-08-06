@@ -60,6 +60,9 @@ export function MetricsSection({ appId, serverId, deployments, active }: Metrics
                             <p className="text-xs text-muted-foreground mt-0.5">
                                 Real-time container telemetry and request analytics. Data refreshes every 60s.
                             </p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                                If metrics are not available yet, deploy the app and keep the server agent connected.
+                            </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
