@@ -12,7 +12,7 @@ import { formatRelativeTime } from "@/lib/utils";
 
 type AppHeaderProps = {
     app: App;
-    server: Pick<Server, "name"> & { ip?: string | null; publicIp?: string | null; hostname?: string | null };
+    server: Pick<Server, "name"> & { ip?: string | null; publicIp?: string | null; hostname?: string | null; status?: string; isLiveConnected?: boolean };
     livePreviewUrl?: string | null;
     deleteFailureReason?: string | null;
     deployPending: boolean;
@@ -42,6 +42,13 @@ export function AppHeader({
     const isStopping = app.status === "stopping";
     const deleteLocked = isDeleting || isDeleteFailed;
     const deployedAgo = app.deployedAt ? formatRelativeTime(app.deployedAt) : null;
+    // Display-only: what to actually show as "is this running right now" (badge, pulse, live
+    // preview link). Distinct from `app.status` below, which still drives which action buttons
+    // are valid to offer (Stop/Deploy/Delete) — those are backend lifecycle decisions, not
+    // "is it currently reachable" ones, so they intentionally keep using the stored status.
+    const isLive = server.isLiveConnected ?? server.status === "connected";
+    const displayStatus = app.effectiveStatus ?? (app.status === "running" && !isLive ? "offline" : app.status);
+    const isDisplayRunning = displayStatus === "running";
 
     // Resolve the live preview URL: prefer explicit prop, then preferredUrl, then primaryDomain
     const previewUrl = livePreviewUrl
@@ -76,14 +83,14 @@ export function AppHeader({
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                             <h1 className="text-xl font-bold text-foreground truncate">{app.name}</h1>
-                            {app.status === "running" && (
+                            {isDisplayRunning && (
                                 <CheckCircle2 className="h-5 w-5 text-success-text flex-shrink-0" />
                             )}
-                            <StatusBadge status={app.status} />
+                            <StatusBadge status={displayStatus} />
                         </div>
                         {headerDomain && (
                             <p className="text-sm text-foreground mt-1 flex items-center gap-1.5 min-w-0">
-                                {app.status === "running" && <LivePulse />}
+                                {isDisplayRunning && <LivePulse />}
                                 <a
                                     href={previewUrl || `http://${headerDomain}`}
                                     target="_blank"
@@ -106,7 +113,7 @@ export function AppHeader({
                 {/* Right: Action buttons */}
                 <div className="flex flex-wrap items-center gap-2.5">
                     {/* Live Preview button */}
-                    {previewUrl && app.status === "running" && (
+                    {previewUrl && isDisplayRunning && (
                         <Button asChild variant="outline" size="sm" className="h-9 px-4 text-sm">
                             <a href={previewUrl} target="_blank" rel="noopener noreferrer">
                                 <ExternalLink className="h-4 w-4 mr-1.5" />

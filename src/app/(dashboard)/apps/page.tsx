@@ -267,9 +267,9 @@ export default function AppsPage() {
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <StatusBadge status={app.status} />
+                    <StatusBadge status={app.effectiveStatus ?? (app.status === "running" && !serverLive ? "offline" : app.status)} />
                     {!serverLive ? (
-                      <span className="text-[11px] text-muted-foreground">Server offline</span>
+                      <span className="text-[11px] text-danger-text">Server offline</span>
                     ) : null}
                   </div>
 

@@ -90,6 +90,7 @@ describe("Phase 03 log parsing and activity utilities", () => {
     expect(latestMetricPoint({
       range: "1h",
       healthStatus: "healthy",
+      healthChecks: { total: 0, healthy: 0, uptimePercent: null },
       series: {
         timestamps: ["a", "b"],
         cpu: [10, 20],

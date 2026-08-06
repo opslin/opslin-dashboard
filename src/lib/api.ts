@@ -890,6 +890,10 @@ class ApiClient {
         return this.get<RequestErrorResponse>(`/metrics/apps/${appId}/requests/errors?window=${window}`);
     }
 
+    async getRequestSummary(appId: string, window: "1h" | "24h" | "7d" = "24h") {
+        return this.get<RequestSummaryResponse>(`/metrics/apps/${appId}/requests/summary?window=${window}`);
+    }
+
     async getRequestHeatmap(appId: string) {
         return this.get<RequestHeatmapResponse>(`/metrics/apps/${appId}/requests/heatmap`);
     }
@@ -2214,6 +2218,14 @@ export interface App {
     publicStatus?: boolean;
     status: "deploying" | "running" | "stopping" | "stopped" | "deleting" | "delete_failed" | "error" | "pending";
     healthStatus?: "healthy" | "unhealthy" | "unknown";
+    healthCheckedAt?: string | null;
+    // Real-time — computed fresh per-request from the server's actual live connection state,
+    // never stored. Absent on routes that don't compute it (falls back to `status` alone).
+    // `effectiveStatus` is what should be displayed as "is this app actually up right now" —
+    // `status` keeps meaning exactly what it always has (set at deploy/stop/restart
+    // completion), so deployment success and current reachability stay two distinct signals.
+    serverConnected?: boolean;
+    effectiveStatus?: "running" | "offline" | "unhealthy" | "stale" | App["status"];
     gitUrl?: string;
     branch?: string;
     port?: number | null;
@@ -2249,6 +2261,8 @@ export interface AppWithServer extends App {
         hostname?: string | null;
         ip?: string | null;
         publicIp?: string | null;
+        status?: string;
+        isLiveConnected?: boolean;
     };
 }
 
@@ -2682,6 +2696,24 @@ export interface AppMetricHistory {
         restartCount: number[];
     };
     healthStatus: "healthy" | "unhealthy" | "unknown";
+    healthChecks: {
+        total: number;
+        healthy: number;
+        // null when there's no health-check data at all for this window and the app's
+        // current healthStatus is itself "unknown" — genuinely no signal to report.
+        uptimePercent: number | null;
+    };
+}
+
+export interface RequestSummaryResponse {
+    appId: string;
+    window: string;
+    totalRequests: number;
+    errorRequests: number;
+    errorRate: number;
+    successRate: number;
+    avgResponseMs: number;
+    bytesPerSecond: number;
 }
 
 export interface RequestFeedEvent {
