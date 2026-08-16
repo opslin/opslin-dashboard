@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { LivePulse } from "@/components/patterns/live-pulse";
 import { useAuth } from "@/hooks/use-auth";
+import { trackEvent } from "@/lib/user-activity";
 
 type ClaimStatus = "loading" | "pending" | "claiming" | "success" | "expired" | "error";
 
@@ -50,6 +51,18 @@ export default function ClaimPage() {
             checkStatus();
         }
     }, [token, router]);
+
+    // This page sits outside (dashboard)/layout.tsx, so its own visit isn't
+    // covered by that layout's generic page-view hook. Only tracked once a
+    // user is actually logged in (an anonymous visitor has no user to
+    // attribute the event to, and the tracking endpoint requires auth
+    // anyway) — landing here is one of the more important funnel steps
+    // ("pending to connect server").
+    useEffect(() => {
+        if (user) {
+            trackEvent("page_view", { path: `/claim/${token}` });
+        }
+    }, [user, token]);
 
     const handleClaim = async () => {
         if (!user) {

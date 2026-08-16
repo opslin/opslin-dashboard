@@ -12,6 +12,7 @@ import { TrialBanner } from "@/components/pricing/trial-banner";
 import { api } from "@/lib/api";
 import { getVerifyEmailRedirectTarget } from "@/lib/auth-redirect";
 import { shouldBypassEmailVerification, shouldBypassOnboarding } from "@/lib/onboarding-routes";
+import { trackEvent } from "@/lib/user-activity";
 
 export default function DashboardLayout({
     children,
@@ -49,6 +50,18 @@ export default function DashboardLayout({
             router.push(getVerifyEmailRedirectTarget(pathname));
         }
     }, [bypassEmailVerification, isAuthenticated, isPublicPricingRoute, loading, pathname, router, user?.emailVerified]);
+
+    // Single insertion point for "did the user visit page X" — fires once
+    // per route change across every page under (dashboard)/, including
+    // visits where the user takes no further action, since it fires
+    // unconditionally on navigation. Gated the same way the servers/plan
+    // queries above are, so it doesn't fire during the pre-auth redirect or
+    // the email-verification-gate flash.
+    useEffect(() => {
+        if (isAuthenticated && !requiresEmailVerification) {
+            trackEvent("page_view", { path: pathname });
+        }
+    }, [isAuthenticated, pathname, requiresEmailVerification]);
 
     if (loading) {
         return (
