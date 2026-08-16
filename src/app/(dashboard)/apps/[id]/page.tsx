@@ -359,6 +359,10 @@ function AppDetailPageContent() {
                 toast.error("Deploy blocked by preflight checks");
                 return;
             }
+            if (deployError instanceof ApiRequestError && deployError.details.code === "agent_disconnected") {
+                toast.error("Server is disconnected — reconnect the agent before deploying");
+                return;
+            }
             toast.error(deployError instanceof Error ? deployError.message : "Deploy request failed");
         },
     });
