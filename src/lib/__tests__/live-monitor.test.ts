@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveEffectiveHealthLabel } from "../live-monitor";
+import { OFFLINE_METRICS_REFETCH_MS, resolveEffectiveHealthLabel, resolveMetricsRefetchInterval } from "../live-monitor";
 
 describe("resolveEffectiveHealthLabel", () => {
     it("reports offline when effectiveStatus says the server is disconnected, even if healthStatus still says healthy", () => {
@@ -28,5 +28,36 @@ describe("resolveEffectiveHealthLabel", () => {
     it("defaults to unknown when given nothing", () => {
         expect(resolveEffectiveHealthLabel(undefined)).toBe("unknown");
         expect(resolveEffectiveHealthLabel({})).toBe("unknown");
+    });
+
+    it("reports offline from serverConnected even when effectiveStatus is a non-\"running\" lifecycle status", () => {
+        // Live bug: a failed deploy leaves App.status "error" (not "running"), so
+        // computeEffectiveAppStatus passes effectiveStatus through as "error" instead of
+        // overriding to "offline" — that override only fires for status === "running". Without
+        // this direct serverConnected check, the widget fell through to the last-persisted
+        // (days-stale) healthStatus and showed "Healthy" for a server confirmed disconnected.
+        expect(
+            resolveEffectiveHealthLabel({ healthStatus: "healthy", effectiveStatus: "error", serverConnected: false })
+        ).toBe("offline");
+    });
+
+    it("serverConnected: false wins even over an explicit effectiveStatus of \"running\"", () => {
+        expect(
+            resolveEffectiveHealthLabel({ healthStatus: "healthy", effectiveStatus: "running", serverConnected: false })
+        ).toBe("offline");
+    });
+});
+
+describe("resolveMetricsRefetchInterval", () => {
+    it("backs off to the offline interval once serverConnected is confirmed false", () => {
+        expect(resolveMetricsRefetchInterval(false, 60_000)).toBe(OFFLINE_METRICS_REFETCH_MS);
+    });
+
+    it("uses the normal interval while connected", () => {
+        expect(resolveMetricsRefetchInterval(true, 60_000)).toBe(60_000);
+    });
+
+    it("uses the normal interval when connectivity is unknown (no response yet)", () => {
+        expect(resolveMetricsRefetchInterval(undefined, 60_000)).toBe(60_000);
     });
 });

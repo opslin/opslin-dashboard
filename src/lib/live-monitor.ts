@@ -39,15 +39,41 @@ export function memoryPercent(metric?: Pick<AppMetricCurrent, "memoryUsed" | "me
 // should actually be displayed. The raw `healthStatus` column stops updating the instant the
 // agent disconnects, so showing it alone can read "healthy" for a server that's been offline
 // for hours. Falls back to the raw value only when the API response predates this field.
+//
+// `serverConnected` is checked directly, ahead of `effectiveStatus`: `computeEffectiveAppStatus`
+// only overrides to "offline" while `App.status === "running"` (by design — a stopped/errored app
+// should still read "stopped"/"error" as its lifecycle status elsewhere). But this health widget
+// isn't showing lifecycle status, it's showing live reachability — which is exactly "no" whenever
+// the server's disconnected, regardless of what status the app was last in. Without this check, an
+// app whose last deploy failed (status "error") but whose server later disconnects falls through
+// effectiveStatus's non-"running" passthrough and displays its last known (possibly days-stale)
+// healthStatus as if it were current.
 export function resolveEffectiveHealthLabel(
-  current?: Partial<Pick<AppMetricCurrent, "healthStatus" | "effectiveStatus">> | null
+  current?: Partial<Pick<AppMetricCurrent, "healthStatus" | "effectiveStatus" | "serverConnected">> | null
 ): "offline" | "stale" | "unhealthy" | "healthy" | "unknown" {
+  if (current?.serverConnected === false) {
+    return "offline";
+  }
   const effective = current?.effectiveStatus;
   if (effective === "offline" || effective === "stale" || effective === "unhealthy") {
     return effective;
   }
   const raw = (current?.healthStatus || "unknown").toLowerCase();
   return raw === "healthy" || raw === "unhealthy" ? raw : "unknown";
+}
+
+// Real-time metrics are pushed by the agent; while its server is known-disconnected, nothing new
+// will ever arrive, so polling every `baseIntervalMs` (default 60s) just repeats the same stale
+// answer against real backend load (ClickHouse/Postgres query + isAgentConnected's Redis check)
+// for no benefit. Back off hard once we know; a normal-cadence poll resumes automatically the
+// moment `serverConnected` flips back to true.
+export const OFFLINE_METRICS_REFETCH_MS = 5 * 60_000;
+
+export function resolveMetricsRefetchInterval(
+  serverConnected: boolean | undefined,
+  baseIntervalMs: number
+): number {
+  return serverConnected === false ? OFFLINE_METRICS_REFETCH_MS : baseIntervalMs;
 }
 
 export function latestMetricPoint(history?: AppMetricHistory | null) {

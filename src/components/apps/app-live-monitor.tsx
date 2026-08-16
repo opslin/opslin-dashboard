@@ -7,7 +7,7 @@ import { api, type DeploymentRecord } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRelativeTime } from "@/lib/utils";
-import { formatBytes, memoryPercent, resolveEffectiveHealthLabel } from "@/lib/live-monitor";
+import { formatBytes, memoryPercent, resolveEffectiveHealthLabel, resolveMetricsRefetchInterval } from "@/lib/live-monitor";
 import { chartColors } from "@/lib/design-system";
 import { ChartLoading, useRecharts } from "@/components/charts/use-recharts";
 
@@ -91,18 +91,22 @@ export function AppLiveMonitor({
     queryKey: ["appMetricsCurrent", appId],
     queryFn: () => api.getAppMetricsCurrent(appId),
     enabled,
-    refetchInterval: enabled ? refreshIntervalMs : false,
+    refetchInterval: (query) =>
+      enabled ? resolveMetricsRefetchInterval(query.state.data?.serverConnected, refreshIntervalMs) : false,
   });
 
   const { data: history } = useQuery({
     queryKey: ["appMetricsHistory", appId, "1h"],
     queryFn: () => api.getAppMetricsHistory(appId, "1h"),
     enabled,
-    refetchInterval: enabled ? refreshIntervalMs : false,
+    refetchInterval: (query) =>
+      enabled ? resolveMetricsRefetchInterval(query.state.data?.serverConnected, refreshIntervalMs) : false,
   });
 
+  const serverKnownOffline = current?.serverConnected === false;
+
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || serverKnownOffline) {
       setConnectionState("closed");
       return;
     }
@@ -141,7 +145,7 @@ export function AppLiveMonitor({
       }
       setConnectionState("closed");
     };
-  }, [enabled, refreshIntervalMs, serverId]);
+  }, [enabled, refreshIntervalMs, serverId, serverKnownOffline]);
 
   const chartData = useMemo(() => {
     if (!history) return [];
@@ -171,15 +175,15 @@ export function AppLiveMonitor({
           </div>
         </div>
         <Badge className={
-          connectionState === "connected"
+          !serverKnownOffline && connectionState === "connected"
             ? "bg-info-muted text-info-text border border-info/30 font-semibold"
             : "bg-warning-muted text-warning-text border border-warning/30 font-semibold"
         }>
           <span className={
             "inline-block h-1.5 w-1.5 rounded-full mr-1.5 " +
-            (connectionState === "connected" ? "bg-info animate-pulse" : "bg-warning")
+            (!serverKnownOffline && connectionState === "connected" ? "bg-info animate-pulse" : "bg-warning")
           } />
-          {connectionState === "reconnecting" ? "RECONNECTING" : connectionState.toUpperCase()}
+          {serverKnownOffline ? "OFFLINE" : connectionState === "reconnecting" ? "RECONNECTING" : connectionState.toUpperCase()}
         </Badge>
       </CardHeader>
       <CardContent className="space-y-5">

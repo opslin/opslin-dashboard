@@ -12,7 +12,7 @@ import { EnhancedLogViewer } from "@/components/logs/enhanced-log-viewer";
 import { PlanGate } from "@/components/PlanGate";
 import type { LogLineRecord } from "@/components/logs/log-viewer";
 import { chartColors } from "@/lib/design-system";
-import { resolveEffectiveHealthLabel } from "@/lib/live-monitor";
+import { resolveEffectiveHealthLabel, resolveMetricsRefetchInterval } from "@/lib/live-monitor";
 import { ChartLoading, useRecharts } from "@/components/charts/use-recharts";
 
 type RuntimeLogLine = LogLineRecord;
@@ -94,14 +94,16 @@ export function AppObservabilityPanel({
         queryKey: ["appMetricsCurrent", appId],
         queryFn: () => api.getAppMetricsCurrent(appId),
         enabled,
-        refetchInterval: enabled ? refreshIntervalMs : false,
+        refetchInterval: (query) =>
+            enabled ? resolveMetricsRefetchInterval(query.state.data?.serverConnected, refreshIntervalMs) : false,
     });
 
     const { data: history } = useQuery({
         queryKey: ["appMetricsHistory", appId, range],
         queryFn: () => api.getAppMetricsHistory(appId, range),
         enabled,
-        refetchInterval: enabled ? refreshIntervalMs : false,
+        refetchInterval: (query) =>
+            enabled ? resolveMetricsRefetchInterval(query.state.data?.serverConnected, refreshIntervalMs) : false,
     });
 
     const healthLabel = resolveEffectiveHealthLabel(current);
