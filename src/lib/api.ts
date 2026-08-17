@@ -2494,6 +2494,7 @@ export interface DeploymentCheckReport {
     healthStatusCode?: number | null;
     healthResponseMs?: number | null;
     smokePassed: boolean;
+    smokeStatus: "passed" | "failed" | "not_applicable" | string;
     smokeStatusCode?: number | null;
     smokeResponseMs?: number | null;
     virtualUsers: number;
@@ -2506,6 +2507,7 @@ export interface DeploymentCheckReport {
     errorRate?: number | null;
     containerRestarted: boolean;
     autoRolledBack: boolean;
+    vuAborted?: boolean;
     report?: Record<string, unknown> | null;
     createdAt: string;
 }

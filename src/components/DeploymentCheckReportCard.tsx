@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, CheckCircle2, RotateCcw, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, MinusCircle, RotateCcw, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { DeploymentCheckReport } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -22,10 +22,29 @@ function toneForReport(report: DeploymentCheckReport) {
     if (report.status === "failed" || report.autoRolledBack || report.containerRestarted || report.errorRate && report.errorRate > 5) {
         return "fail";
     }
-    if (!report.healthPassed || !report.smokePassed || report.errorRate && report.errorRate > 0) {
+    if (!report.healthPassed || report.smokeStatus === "failed" || report.errorRate && report.errorRate > 0) {
         return "warn";
     }
     return "pass";
+}
+
+type RowStatus = "pass" | "fail" | "na";
+
+function smokeRowStatus(report: DeploymentCheckReport): RowStatus {
+    if (report.smokeStatus === "passed") {
+        return "pass";
+    }
+    if (report.smokeStatus === "failed") {
+        return "fail";
+    }
+    return "na";
+}
+
+function virtualUsersRowStatus(report: DeploymentCheckReport): RowStatus {
+    if (report.mode !== "virtual_user") {
+        return "na";
+    }
+    return report.vuAborted ? "fail" : "pass";
 }
 
 function toneClasses(tone: "pass" | "warn" | "fail") {
@@ -38,8 +57,11 @@ function toneClasses(tone: "pass" | "warn" | "fail") {
     return "border-danger/25 bg-danger-muted text-danger-text";
 }
 
-function ResultIcon({ passed }: { passed: boolean }) {
-    return passed
+function ResultIcon({ status }: { status: RowStatus }) {
+    if (status === "na") {
+        return <MinusCircle className="h-4 w-4 text-muted-foreground" />;
+    }
+    return status === "pass"
         ? <CheckCircle2 className="h-4 w-4 text-success-text" />
         : <XCircle className="h-4 w-4 text-danger-text" />;
 }
@@ -57,51 +79,58 @@ export function DeploymentCheckReportCard({
         ? (report.successRequests / report.totalRequests) * 100
         : 0;
 
-    const rows = [
+    const smokeStatus = smokeRowStatus(report);
+    const virtualUsersStatus = virtualUsersRowStatus(report);
+
+    const rows: { label: string; value: string; status: RowStatus }[] = [
         {
             label: "Health Check",
             value: `${report.healthStatusCode ?? "n/a"} ${report.healthStatusCode ? "OK" : ""} (${metricValue(report.healthResponseMs, "ms")})`,
-            passed: report.healthPassed,
+            status: report.healthPassed ? "pass" : "fail",
         },
         {
             label: "Smoke Test",
-            value: `${report.smokeStatusCode ?? "n/a"} ${report.smokeStatusCode ? "OK" : ""} (${metricValue(report.smokeResponseMs, "ms")})`,
-            passed: report.smokePassed,
+            value: smokeStatus === "na"
+                ? "Not run"
+                : `${report.smokeStatusCode ?? "n/a"} ${report.smokeStatusCode ? "OK" : ""} (${metricValue(report.smokeResponseMs, "ms")})`,
+            status: smokeStatus,
         },
         {
             label: "Virtual Users",
-            value: `${report.virtualUsers} users x ${report.durationSeconds} seconds`,
-            passed: true,
+            value: virtualUsersStatus === "na"
+                ? "Not run (health check only)"
+                : `${report.virtualUsers} users x ${report.durationSeconds} seconds`,
+            status: virtualUsersStatus,
         },
         {
             label: "Total Requests",
             value: `${report.totalRequests}`,
-            passed: report.failedRequests === 0,
+            status: report.failedRequests === 0 ? "pass" : "fail",
         },
         {
             label: "Success Rate",
             value: percentage(successRate),
-            passed: successRate >= 99,
+            status: successRate >= 99 ? "pass" : "fail",
         },
         {
             label: "p50 Latency",
             value: metricValue(report.p50Ms, "ms"),
-            passed: true,
+            status: "pass",
         },
         {
             label: "p95 Latency",
             value: metricValue(report.p95Ms, "ms"),
-            passed: !report.p95Ms || report.p95Ms < 750,
+            status: !report.p95Ms || report.p95Ms < 750 ? "pass" : "fail",
         },
         {
             label: "Error Rate",
             value: percentage(report.errorRate ?? 0),
-            passed: !report.errorRate || report.errorRate === 0,
+            status: !report.errorRate || report.errorRate === 0 ? "pass" : "fail",
         },
         {
             label: "Container",
             value: report.containerRestarted ? "Restart detected" : "Stable (no restart)",
-            passed: !report.containerRestarted,
+            status: report.containerRestarted ? "fail" : "pass",
         },
     ];
 
@@ -135,7 +164,7 @@ export function DeploymentCheckReportCard({
                         key={row.label}
                         className="flex min-h-24 items-start gap-3 border-b border-border/70 px-5 py-4 md:border-r md:[&:nth-child(3n)]:border-r-0"
                     >
-                        <ResultIcon passed={row.passed} />
+                        <ResultIcon status={row.status} />
                         <div className="min-w-0">
                             <p className="text-sm font-medium text-foreground">{row.label}</p>
                             <p className="mt-1 text-sm text-muted-foreground">{row.value}</p>
