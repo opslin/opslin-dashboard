@@ -1077,6 +1077,23 @@ class ApiClient {
         return this.get<{ password: string }>(`/servers/${serverId}/databases/${dbId}/password`);
     }
 
+    // Backup storage (customer-owned bucket)
+    async getBackupStorage() {
+        return this.get<BackupStorageStatus>("/backup-storage");
+    }
+
+    async testBackupStorage(data: BackupStorageInput) {
+        return this.post<BackupStorageTestResult>("/backup-storage/test", data);
+    }
+
+    async saveBackupStorage(data: BackupStorageInput) {
+        return this.put<BackupStorageStatus>("/backup-storage", data);
+    }
+
+    async disconnectBackupStorage() {
+        return this.delete<{ success: boolean; disabledScheduleCount: number }>("/backup-storage");
+    }
+
     async testDatabase(serverId: string, dbId: string) {
         return this.post<DatabaseConnectionTestResult>(`/servers/${serverId}/databases/${dbId}/test`, {});
     }
@@ -3086,4 +3103,31 @@ export interface CreateDatabaseInput {
     name: string;
     type: "postgresql" | "mysql" | "mongodb" | "redis";
     exposure?: "internal" | "public";
+}
+
+export type BackupStorageProvider = "aws_s3" | "cloudflare_r2" | "s3_compatible";
+
+export interface BackupStorageInput {
+    provider: BackupStorageProvider;
+    bucket: string;
+    region?: string;
+    endpoint?: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    forcePathStyle?: boolean;
+}
+
+export interface BackupStorageStatus {
+    configured: boolean;
+    provider?: BackupStorageProvider;
+    bucket?: string;
+    region?: string | null;
+    endpoint?: string | null;
+    forcePathStyle?: boolean;
+    lastVerifiedAt?: string | null;
+}
+
+export interface BackupStorageTestResult {
+    success: boolean;
+    message: string;
 }

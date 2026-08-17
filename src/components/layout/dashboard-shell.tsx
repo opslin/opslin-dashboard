@@ -13,6 +13,7 @@ import {
   ChevronsUpDown,
   Command,
   Database,
+  HardDrive,
   LayoutDashboard,
   LogOut,
   MonitorDot,
@@ -62,6 +63,7 @@ const primaryNavigation: NavItem[] = [
 
 const secondaryNavigation: NavItem[] = [
   { label: "Databases", href: "/databases", icon: Database },
+  { label: "Backups", href: "/backups", icon: HardDrive },
   { label: "Teams", href: "/teams", icon: Users },
   { label: "Transparency", href: "/transparency", icon: Activity },
   { label: "Terminal", href: "/terminal", icon: Terminal },
