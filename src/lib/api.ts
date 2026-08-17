@@ -3099,10 +3099,21 @@ export type AlertEventDetail = AlertEventRecord & {
 };
 
 
+export interface DatabaseEngineConfig {
+    maxConnections?: number;
+    sharedBuffersPercent?: number;
+    innodbBufferPoolPercent?: number;
+    wiredTigerCachePercent?: number;
+    maxmemoryPolicy?: string;
+}
+
 export interface CreateDatabaseInput {
     name: string;
     type: "postgresql" | "mysql" | "mongodb" | "redis";
     exposure?: "internal" | "public";
+    cpuLimit?: number;
+    memoryLimit?: number;
+    engineConfig?: DatabaseEngineConfig;
 }
 
 export type BackupStorageProvider = "aws_s3" | "cloudflare_r2" | "s3_compatible";
