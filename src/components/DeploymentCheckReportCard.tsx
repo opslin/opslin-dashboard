@@ -47,6 +47,13 @@ function virtualUsersRowStatus(report: DeploymentCheckReport): RowStatus {
     return report.vuAborted ? "fail" : "pass";
 }
 
+function successRateRowStatus(successRate: number, report: DeploymentCheckReport): RowStatus {
+    if (report.totalRequests === 0) {
+        return "na";
+    }
+    return successRate >= 99 ? "pass" : "fail";
+}
+
 function toneClasses(tone: "pass" | "warn" | "fail") {
     if (tone === "pass") {
         return "border-success/25 bg-success-muted text-success-text";
@@ -109,8 +116,8 @@ export function DeploymentCheckReportCard({
         },
         {
             label: "Success Rate",
-            value: percentage(successRate),
-            status: successRate >= 99 ? "pass" : "fail",
+            value: report.totalRequests === 0 ? "n/a" : percentage(successRate),
+            status: successRateRowStatus(successRate, report),
         },
         {
             label: "p50 Latency",

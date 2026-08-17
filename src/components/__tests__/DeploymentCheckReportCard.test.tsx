@@ -101,6 +101,17 @@ describe("DeploymentCheckReportCard", () => {
         expect(icon?.getAttribute("class")).toContain("text-success-text");
     });
 
+    it("renders Success Rate as neutral n/a when the deploy passed via port-fallback with zero real requests, instead of a misleading red 0%", () => {
+        const { container } = render(
+            <DeploymentCheckReportCard report={report({ totalRequests: 0, successRequests: 0, failedRequests: 0 })} />
+        );
+
+        expect(screen.getByText("n/a")).toBeInTheDocument();
+        const icon = container.querySelector("#deployment-check-report-success-rate svg");
+        expect(icon?.getAttribute("class")).toContain("text-muted-foreground");
+        expect(icon?.getAttribute("class")).not.toContain("text-danger-text");
+    });
+
     it("renders nothing when report is null", () => {
         const { container } = render(<DeploymentCheckReportCard report={null} />);
 
