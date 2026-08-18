@@ -21,6 +21,11 @@ export class ApiRequestError extends Error {
     }
 }
 
+// Public auth endpoints: a 401 here means "bad credentials", not "your
+// session expired" — must not trigger the global redirect-to-login below,
+// or a failed login attempt hard-navigates away mid-toast.
+const PUBLIC_AUTH_ENDPOINTS = new Set(["/auth/me", "/auth/login", "/auth/register"]);
+
 type QueryValue = string | number | boolean | null | undefined;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -129,7 +134,7 @@ class ApiClient {
             if (response.status === 401) {
                 if (typeof window !== "undefined") {
                     localStorage.removeItem("token");
-                    if (endpoint !== "/auth/me") {
+                    if (!PUBLIC_AUTH_ENDPOINTS.has(endpoint)) {
                         window.location.href = "/login";
                     }
                 }
