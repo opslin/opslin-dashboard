@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ChevronsUpDown,
   Command,
+  Cloud,
   Database,
   HardDrive,
   LayoutDashboard,
@@ -64,6 +65,7 @@ const primaryNavigation: NavItem[] = [
 const secondaryNavigation: NavItem[] = [
   { label: "Databases", href: "/databases", icon: Database },
   { label: "Backups", href: "/backups", icon: HardDrive },
+  { label: "Storage", href: "/storage", icon: Cloud },
   { label: "Teams", href: "/teams", icon: Users },
   { label: "Transparency", href: "/transparency", icon: Activity },
   { label: "Terminal", href: "/terminal", icon: Terminal },

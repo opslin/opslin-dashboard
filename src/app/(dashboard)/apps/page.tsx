@@ -11,7 +11,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Box, ExternalLink, MoreVertical, Pause, Play, Rocket, Search, Trash2, Package } from "lucide-react";
+import { AlertTriangle, Box, Eye, ExternalLink, Layers, MoreVertical, Pause, Play, Rocket, Search, Trash2, Package } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,8 @@ import { StatTile } from "@/components/patterns/stat-tile";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
 import { Header } from "@/components/layout/header";
+import { PendingConfigDialog } from "@/components/apps/PendingConfigDialog";
+import { DeployProgressDialog } from "@/components/apps/DeployProgressDialog";
 import { api, type AppWithServer, type Server } from "@/lib/api";
 import { formatRelativeTime, cn } from "@/lib/utils";
 
@@ -75,6 +77,112 @@ function ResourceBar({ percent }: { percent: number }) {
   );
 }
 
+// DIL Phase 22 — apps created by one multi-service AI-assisted deploy
+// (runAutoDeployRepo) share a real deployGroup; shown as one "Project"
+// card grouping its member apps instead of scattering them as unrelated
+// entries. A worker's role is labeled explicitly here for the same reason
+// the app detail page labels it — a background worker's preview link is
+// expected to 404/502 (no HTTP port to serve), and looked exactly like a
+// silent failure before this label existed.
+function ProjectCard({ name, apps }: { name: string; apps: AppWithServer[] }) {
+  // DIL Phase 23 — a service can deploy successfully and still be blocked on
+  // a secret Opslin refused to guess. That's not a failure state any status
+  // badge covers ("running" is literally true), so it needs its own signal or
+  // the user has no way to know the deploy needs them.
+  const [configApp, setConfigApp] = useState<AppWithServer | null>(null);
+  const blockedCount = apps.filter((app) => (app.pendingConfig?.keys?.length ?? 0) > 0).length;
+  // DIL Phase 25 — every unit created by the same runAutoDeployRepo call
+  // shares one jobId; any member app that has one is enough to find it.
+  const aiDeployApp = apps.find((app) => app.lastAutoDeployJobId);
+  const [progressOpen, setProgressOpen] = useState(false);
+
+  return (
+    <div className="relative z-0 flex flex-col gap-3 rounded-lg border-2 border-brand/25 bg-card p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-muted">
+            <Layers size={22} />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">{name}</p>
+            <p className="text-[11px] text-muted-foreground">{apps.length} service{apps.length === 1 ? "" : "s"}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {aiDeployApp && (
+            <button
+              type="button"
+              onClick={() => setProgressOpen(true)}
+              className="flex items-center justify-center rounded-full p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              title="View AI deploy progress"
+              aria-label="View AI deploy progress"
+            >
+              <Eye size={14} />
+            </button>
+          )}
+          {blockedCount > 0 && (
+            <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+              <AlertTriangle size={11} />
+              {blockedCount} need{blockedCount === 1 ? "s" : ""} setup
+            </span>
+          )}
+          <span className="rounded-full bg-brand-muted px-2 py-0.5 text-[10px] font-semibold text-brand">Project</span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        {apps.map((app) => {
+          const pendingKeys = app.pendingConfig?.keys?.length ?? 0;
+          return (
+            <div
+              key={app.id}
+              className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary/60"
+            >
+              <Link href={`/apps/${app.id}`} className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="truncate text-xs font-medium text-foreground">{app.name}</span>
+                {app.role && app.role !== "unknown" && (
+                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{app.role}</span>
+                )}
+              </Link>
+              <span className="flex shrink-0 items-center gap-1.5">
+                {pendingKeys > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setConfigApp(app)}
+                    className="flex items-center gap-1 rounded-full bg-destructive px-2 py-0.5 text-[10px] font-semibold text-destructive-foreground transition-opacity hover:opacity-90"
+                    title={`${pendingKeys} required value${pendingKeys === 1 ? "" : "s"} missing — click to add`}
+                  >
+                    <AlertTriangle size={10} />
+                    {pendingKeys} missing
+                  </button>
+                )}
+                <StatusBadge status={app.effectiveStatus ?? app.status} />
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {configApp && (
+        <PendingConfigDialog
+          app={configApp}
+          serverId={configApp.server.id}
+          open={Boolean(configApp)}
+          onOpenChange={(open) => { if (!open) setConfigApp(null); }}
+        />
+      )}
+      {aiDeployApp?.lastAutoDeployJobId && (
+        <DeployProgressDialog
+          serverId={aiDeployApp.server.id}
+          jobId={aiDeployApp.lastAutoDeployJobId}
+          appLabel={name}
+          open={progressOpen}
+          onOpenChange={setProgressOpen}
+        />
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
@@ -83,6 +191,14 @@ export default function AppsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [serverFilter, setServerFilter] = useState<string>("all");
+  // DIL Phase 23 — a standalone (non-project) app can be blocked on config
+  // just as easily as one inside a project, so the same alert has to reach
+  // these cards too. Held at page level because each card is a <Link> and
+  // can't own a dialog of its own without nesting interactive elements.
+  const [configApp, setConfigApp] = useState<AppWithServer | null>(null);
+  // DIL Phase 25 — same page-level-state reason as configApp above: each
+  // card is a <Link>, so the eye-icon dialog can't be nested inside it.
+  const [progressApp, setProgressApp] = useState<AppWithServer | null>(null);
 
   const { data: servers = [] } = useQuery({
     queryKey: ["servers"],
@@ -129,6 +245,30 @@ export default function AppsPage() {
     }
     return apps;
   }, [allApps, searchQuery, statusFilter, serverFilter]);
+
+  // DIL Phase 22 — split the filtered set into (project group -> its member
+  // apps) and apps with no group at all, so the grid below can render one
+  // ProjectCard per group instead of scattering its member apps as
+  // unrelated entries. Filtering (search/status/server) is applied first
+  // and each group only shows the members that survived it — a group with
+  // every member filtered out simply doesn't render, same as any other app.
+  const { groupedProjects, ungroupedApps } = useMemo(() => {
+    const groups = new Map<string, { name: string; apps: AppWithServer[] }>();
+    const ungrouped: AppWithServer[] = [];
+    for (const app of filteredApps) {
+      if (app.deployGroup) {
+        const existing = groups.get(app.deployGroup.id);
+        if (existing) existing.apps.push(app);
+        else groups.set(app.deployGroup.id, { name: app.deployGroup.name, apps: [app] });
+      } else {
+        ungrouped.push(app);
+      }
+    }
+    return {
+      groupedProjects: Array.from(groups.entries()).map(([id, value]) => ({ id, ...value })),
+      ungroupedApps: ungrouped,
+    };
+  }, [filteredApps]);
 
   // Stats
   const totalApps = allApps.length;
@@ -231,7 +371,10 @@ export default function AppsPage() {
           />
         ) : (
           <StaggerItem className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredApps.map((app) => {
+            {groupedProjects.map((project) => (
+              <ProjectCard key={project.id} name={project.name} apps={project.apps} />
+            ))}
+            {ungroupedApps.map((app) => {
               const metrics = metricsMap.get(app.id);
               const env = envLabel(app);
               const url = app.domain || app.primaryDomain || app.preferredUrl;
@@ -256,19 +399,42 @@ export default function AppsPage() {
                         </p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={(event) => event.preventDefault()}
-                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
-                      aria-label="More actions"
-                    >
-                      <MoreVertical className="size-3.5" />
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {app.lastAutoDeployJobId && (
+                        <button
+                          type="button"
+                          onClick={(event) => { event.preventDefault(); setProgressApp(app); }}
+                          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                          title="View AI deploy progress"
+                          aria-label="View AI deploy progress"
+                        >
+                          <Eye className="size-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(event) => event.preventDefault()}
+                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+                        aria-label="More actions"
+                      >
+                        <MoreVertical className="size-3.5" />
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <StatusBadge status={app.effectiveStatus ?? (app.status === "running" && !serverLive ? "offline" : app.status)} />
-                    {!serverLive ? (
+                    {(app.pendingConfig?.keys?.length ?? 0) > 0 ? (
+                      <button
+                        type="button"
+                        onClick={(event) => { event.preventDefault(); setConfigApp(app); }}
+                        className="flex shrink-0 items-center gap-1 rounded-full bg-destructive px-2 py-0.5 text-[10px] font-semibold text-destructive-foreground transition-opacity hover:opacity-90"
+                        title={`${app.pendingConfig?.keys.length} required value(s) missing — click to add`}
+                      >
+                        <AlertTriangle size={10} />
+                        {app.pendingConfig?.keys.length} missing
+                      </button>
+                    ) : !serverLive ? (
                       <span className="text-[11px] text-danger-text">Server offline</span>
                     ) : null}
                   </div>
@@ -335,6 +501,24 @@ export default function AppsPage() {
           </StaggerItem>
         ) : null}
       </StaggerGroup>
+
+      {configApp && (
+        <PendingConfigDialog
+          app={configApp}
+          serverId={configApp.server.id}
+          open={Boolean(configApp)}
+          onOpenChange={(open) => { if (!open) setConfigApp(null); }}
+        />
+      )}
+      {progressApp?.lastAutoDeployJobId && (
+        <DeployProgressDialog
+          serverId={progressApp.server.id}
+          jobId={progressApp.lastAutoDeployJobId}
+          appLabel={progressApp.name}
+          open={Boolean(progressApp)}
+          onOpenChange={(open) => { if (!open) setProgressApp(null); }}
+        />
+      )}
     </div>
   );
 }

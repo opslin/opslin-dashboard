@@ -6,6 +6,7 @@ import {
     Server,
     LayoutDashboard,
     Box,
+    Cloud,
     Database,
     Terminal,
     Activity,
@@ -28,6 +29,11 @@ const navigation = [
     { name: "Agents", href: "/agents", icon: ServerCog },
     { name: "Apps", href: "/apps", icon: Box },
     { name: "Databases", href: "/databases", icon: Database },
+    // DIL Phase 15 — no "Backups" entry exists in THIS legacy nav to anchor
+    // "after" (confirmed by direct read: it was never backfilled here),
+    // unlike dashboard-shell.tsx's secondaryNavigation. Placed after
+    // Databases instead, the closest existing sensible neighbor.
+    { name: "Storage", href: "/storage", icon: Cloud },
     { name: "Monitoring", href: "/monitoring", icon: Activity },
     { name: "Alerts", href: "/alerts", icon: Bell },
     { name: "Activity", href: "/activity", icon: History },

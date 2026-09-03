@@ -388,6 +388,8 @@ function AppDetailPageContent() {
     const [registryUsername, setRegistryUsername] = useState("");
     const [registryPassword, setRegistryPassword] = useState("");
     const [publicStatus, setPublicStatus] = useState(false);
+    const [scaleTargetReplicaCount, setScaleTargetReplicaCount] = useState(1);
+    const [scaleConfirmMultiInstance, setScaleConfirmMultiInstance] = useState(false);
     const [domainValue, setDomainValue] = useState("");
     const [publicIpValue, setPublicIpValue] = useState("");
     const [domainCheck, setDomainCheck] = useState<DomainCheckResult | null>(null);
@@ -424,6 +426,7 @@ function AppDetailPageContent() {
         setRegistryUsername(appData.app.registryCredentials?.username || "");
         setRegistryPassword("");
         setPublicStatus(Boolean(appData.app.publicStatus));
+        setScaleTargetReplicaCount(appData.app.replicaCount || 1);
         setDomainValue(appData.app.domain || "");
         setPublicIpValue(appData.server.publicIp || "");
         setDomainCheck(null);
@@ -547,6 +550,24 @@ function AppDetailPageContent() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["app", appId] });
             toast.success("Public status setting saved");
+        },
+    });
+
+    const scaleAppMutation = useMutation({
+        mutationFn: async () => {
+            if (!appData) throw new Error("App not found");
+            return api.scaleApp(appData.server.id, appId, scaleTargetReplicaCount, scaleConfirmMultiInstance);
+        },
+        onSuccess: (result) => {
+            queryClient.invalidateQueries({ queryKey: ["app", appId] });
+            toast.success(
+                result.replicaCount === 1
+                    ? "Scaled back to a single instance"
+                    : `Scaled to ${result.replicaCount} instance${result.replicaCount === 1 ? "" : "s"}`
+            );
+        },
+        onError: (error) => {
+            toast.error(error instanceof Error ? error.message : "Failed to scale this app");
         },
     });
 
@@ -1492,6 +1513,14 @@ function AppDetailPageContent() {
                             onRegistryPasswordChange={setRegistryPassword}
                             publicStatus={publicStatus}
                             onPublicStatusChange={setPublicStatus}
+                            scaleTargetReplicaCount={scaleTargetReplicaCount}
+                            onScaleTargetReplicaCountChange={setScaleTargetReplicaCount}
+                            scaleConfirmMultiInstance={scaleConfirmMultiInstance}
+                            onScaleConfirmMultiInstanceChange={setScaleConfirmMultiInstance}
+                            scalePending={scaleAppMutation.isPending}
+                            scaleResult={scaleAppMutation.data ?? null}
+                            scaleError={scaleAppMutation.error}
+                            onScaleApp={() => scaleAppMutation.mutate()}
                             deleteFailureReason={deleteFailureReason}
                             deleteLocked={deleteLocked}
                             deletePending={deleteMutation.isPending}

@@ -815,6 +815,37 @@ class ApiClient {
         );
     }
 
+    // DIL Phase 11 — replica scaling. confirmMultiInstance must be true
+    // whenever targetReplicaCount > 1 — enforced server-side (no automatic
+    // signal exists for whether an app is safe to run as multiple
+    // concurrent instances), not just as a UI nicety.
+    async scaleApp(serverId: string, appId: string, targetReplicaCount: number, confirmMultiInstance: boolean) {
+        return this.post<ScaleAppResult>("/dil/scale", {
+            serverId,
+            appId,
+            targetReplicaCount,
+            confirmMultiInstance,
+        });
+    }
+
+    // DIL Phase 20/22 — analyzes the repo, authors a Dockerfile per real
+    // unit, provisions any infra it needs, creates+deploys every unit, and
+    // self-heals via Verify/retry. Returns a trackable job id immediately
+    // (Phase 22) rather than blocking — see getServerJobStatus/ServerJobStatus
+    // and routes/dil.ts's own comment for why.
+    async triggerAutoDeploy(
+        serverId: string,
+        data: {
+            gitUrl: string;
+            branch?: string;
+            githubInstallationId?: string;
+            appNamePrefix: string;
+            extraEnvVars?: Record<string, string>;
+        }
+    ) {
+        return this.post<AutoDeployTrigger>("/dil/auto-deploy", { serverId, ...data });
+    }
+
     async getAppLogs(serverId: string, appId: string) {
         return this.get<{ id: string; name: string; logs: string; deployedAt?: string; status: string }>(
             `/servers/${serverId}/apps/${appId}/logs`
@@ -1099,6 +1130,45 @@ class ApiClient {
         return this.delete<{ success: boolean; disabledScheduleCount: number }>("/backup-storage");
     }
 
+    // DIL Phase 12-14 (R2 auto-provisioning). Mirrors the BackupStorage*
+    // block immediately above — same connect/verify/disconnect shape,
+    // customer's own Cloudflare account instead of a raw S3 bucket.
+    async verifyR2Connection(token: string) {
+        return this.post<CloudflareR2VerifyResult>("/r2-storage/connect/verify", { token });
+    }
+
+    async saveR2Connection(data: CloudflareR2ConnectInput) {
+        return this.put<CloudflareR2ConnectionStatus>("/r2-storage/connect", data);
+    }
+
+    async getR2Connection() {
+        return this.get<CloudflareR2ConnectionStatus>("/r2-storage/connect");
+    }
+
+    async disconnectR2() {
+        return this.delete<{ success: boolean }>("/r2-storage/connect");
+    }
+
+    async getR2Buckets() {
+        return this.get<{ buckets: CloudflareR2BucketRecord[] }>("/r2-storage/buckets");
+    }
+
+    async createR2Bucket(data: { bucketName: string; jurisdiction?: "eu" }) {
+        return this.post<CloudflareR2BucketRecord>("/r2-storage/buckets", data);
+    }
+
+    async deleteR2Bucket(bucketId: string) {
+        return this.delete<{ success: boolean }>(`/r2-storage/buckets/${bucketId}`);
+    }
+
+    async wireR2Bucket(bucketId: string, data: { appId: string; envPrefix?: string }) {
+        return this.post<CloudflareR2WireResult>(`/r2-storage/buckets/${bucketId}/wire`, data);
+    }
+
+    async setR2BucketCors(bucketId: string, allowedOrigins: string[]) {
+        return this.post<{ success: boolean; allowedOrigins: string[] }>(`/r2-storage/buckets/${bucketId}/cors`, { allowedOrigins });
+    }
+
     async testDatabase(serverId: string, dbId: string) {
         return this.post<DatabaseConnectionTestResult>(`/servers/${serverId}/databases/${dbId}/test`, {});
     }
@@ -1109,6 +1179,39 @@ class ApiClient {
 
     async seedDatabase(serverId: string, dbId: string) {
         return this.post<{ message: string; jobId: string }>(`/servers/${serverId}/databases/${dbId}/seed`, {});
+    }
+
+    async runDatabaseQuery(serverId: string, dbId: string, query: string) {
+        return this.post<DatabaseQueryResult>(`/servers/${serverId}/databases/${dbId}/query`, { query });
+    }
+
+    async getDatabaseTables(serverId: string, dbId: string) {
+        return this.get<{ tables: string[] }>(`/servers/${serverId}/databases/${dbId}/tables`);
+    }
+
+    async getDatabaseTableData(serverId: string, dbId: string, tableName: string, limit: number, offset: number) {
+        return this.get<DatabaseTableDataResult>(
+            `/servers/${serverId}/databases/${dbId}/tables/${encodeURIComponent(tableName)}/data?limit=${limit}&offset=${offset}`
+        );
+    }
+
+    async uploadSeedScript(serverId: string, dbId: string, file: File) {
+        const formData = new FormData();
+        formData.append("file", file);
+        return this.request<SeedScriptRun>(`/servers/${serverId}/databases/${dbId}/seed-script/upload`, {
+            method: "POST",
+            body: formData,
+        });
+    }
+
+    async runSeedScript(serverId: string, dbId: string, runId: string) {
+        return this.post<{ runId: string; jobId: string; status: string }>(
+            `/servers/${serverId}/databases/${dbId}/seed-script/${runId}/run`
+        );
+    }
+
+    async getSeedScriptHistory(serverId: string, dbId: string) {
+        return this.get<{ runs: SeedScriptRun[] }>(`/servers/${serverId}/databases/${dbId}/seed-script/history`);
     }
 
     async getDatabaseBackupSchedule(dbId: string) {
@@ -1940,6 +2043,27 @@ export interface AgentUpdateInfo {
     lastUpdateJob?: ServerJobStatus | null;
 }
 
+// DIL Phase 25 — a durable, per-unit snapshot of an AI-assisted deploy's
+// progress (runAutoDeployRepo). Deliberately a SEPARATE field from
+// ServerJobStatus.progress below: that one is BullMQ's own generic
+// per-job progress (always null for this job type, which never enters
+// that queue), this is DIL's own reduction of the same event stream,
+// persisted so it survives a refresh and doesn't require having been
+// subscribed to the live WS when an event actually fired.
+export type DeployProgressUnit = {
+    unitPath: string;
+    role: "frontend" | "backend" | "worker" | "unknown";
+    status: "pending" | "deploying" | "done" | "blocked";
+};
+
+export type DeployProgressSnapshot = {
+    phase: "analyzing" | "planned" | "deploying" | "wiring" | "completed" | "failed";
+    percent: number;
+    units: DeployProgressUnit[];
+    message: string | null;
+    updatedAt: string;
+};
+
 export interface ServerJobStatus {
     id: string;
     type: string;
@@ -1962,6 +2086,7 @@ export interface ServerJobStatus {
         status?: string | null;
         elapsedMs?: number | null;
     } | null;
+    deployProgress?: DeployProgressSnapshot | null;
 }
 
 export type AgentControlActionName =
@@ -2231,7 +2356,7 @@ export interface FirewallState {
     commits: FirewallCommitRecord[];
 }
 
-export type HealthCheckMode = "auto" | "strict_http" | "port";
+export type HealthCheckMode = "auto" | "strict_http" | "port" | "process";
 
 export interface App {
     id: string;
@@ -2266,8 +2391,82 @@ export interface App {
     previewDomain?: string | null;
     primaryDomain?: string | null;
     preferredUrl?: string | null;
+    // DIL Phase 11 — replica scaling. Null/1 means the ordinary single-
+    // container app; the agent's own returned count after a scale
+    // operation (which may be less than what was requested on a partial
+    // failure) is what's persisted here, never the raw request value.
+    replicaCount?: number | null;
+    // DIL Phase 22 — set only for an App created by runAutoDeployRepo.
+    // deployGroupId/deployGroup are present only when the caller's query
+    // included the relation (the apps-list routes do).
+    deployGroupId?: string | null;
+    role?: "frontend" | "backend" | "worker" | "unknown" | null;
+    deployGroup?: { id: string; name: string } | null;
+    // DIL Phase 25 — the RUN_AUTO_DEPLOY_REPO Job that created this app, if
+    // any. When set, the "view AI deploy progress" (eye icon) action opens
+    // a DeployProgressDialog for this jobId — reachable at any time, not
+    // only while the wizard tab that started it is still open.
+    lastAutoDeployJobId?: string | null;
+    // DIL Phase 23 — config values a deploy concluded this app is blocked on
+    // and could not safely infer (a secret, an API key, an external URL).
+    // Null whenever nothing is pending. Supplying the values through the
+    // env-vars route is what clears it.
+    pendingConfig?: {
+        keys: string[];
+        reason: string | null;
+        detectedAt: string | null;
+    } | null;
     createdAt: string;
 }
+
+export type ScaleAppBackend = { host: string; port: number };
+
+export type ScaleAppResult = {
+    replicaCount: number;
+    backends: ScaleAppBackend[];
+};
+
+// DIL Phase 20 — POST /dil/auto-deploy's response shape, mirroring
+// orchestrator.ts's AutoDeployOutcome/MultiUnitDeployOutcome. retryResult
+// (the full per-attempt diagnose log) is deliberately omitted here — the
+// wizard only needs resolved/reason for messaging, not the full trail.
+export type AutoDeployUnitOutcome =
+    | { stage: "plan_failed"; unitPath: string; reason: string }
+    | { stage: "provision_failed"; unitPath: string; reason: string }
+    | { stage: "app_create_failed"; unitPath: string; reason: string }
+    | { stage: "first_deploy_failed"; unitPath: string; appId: string; reason: string }
+    | {
+        stage: "done";
+        unitPath: string;
+        appId: string;
+        databaseId: string | null;
+        objectStorageBucketId: string | null;
+        resolved: boolean;
+        alreadyHealthy: boolean;
+        previewUrl?: string | null;
+    };
+
+export type AutoDeployResult = {
+    units: Array<{ unitPath: string; role: "frontend" | "backend" | "worker" | "unknown"; outcome: AutoDeployUnitOutcome }>;
+    primaryUrl: string | null;
+    primaryAppId: string | null;
+    // DIL Phase 22 — set when this repo deployed as more than one app (the
+    // "project" a caller-supplied name applies to); null for a single-unit
+    // repo, matching orchestrator.ts's own >1-unit gate for creating one.
+    deployGroupId: string | null;
+};
+
+// DIL Phase 22 — POST /dil/auto-deploy's real response shape as of this
+// phase: a trackable job id, not the finished result (which can take
+// 5-10+ minutes for a real multi-service repo). Track it the same way
+// agent updates and firewall applies already do: poll
+// GET /servers/:id/jobs/:jobId (getServerJobStatus) and/or subscribe to
+// /jobs/:jobId/live; once status is COMPLETED, ServerJobStatus.result is
+// this same AutoDeployResult shape.
+export type AutoDeployTrigger = {
+    jobId: string;
+    serverId: string;
+};
 
 export type DeleteAppResponse = {
     success: boolean;
@@ -2598,7 +2797,7 @@ export interface DeployErrorClassification {
 export interface Database {
     id: string;
     name: string;
-    type: "postgresql" | "mysql" | "mongodb" | "redis";
+    type: "postgresql" | "postgresql_vector" | "mysql" | "mongodb" | "redis";
     status: "creating" | "running" | "stopped" | "error";
     port?: number | null;
     hostPort?: number | null;
@@ -2614,6 +2813,30 @@ export interface DatabaseConnectionTestResult {
     connected: boolean;
     message: string;
     checkedAt: string;
+}
+
+export interface DatabaseQueryResult {
+    success: boolean;
+    rowsAffected: number;
+}
+
+export interface DatabaseTableDataResult {
+    rows: Record<string, unknown>[];
+    totalCount: number;
+}
+
+export interface SeedScriptRun {
+    id: string;
+    filename: string;
+    language: "js" | "ts" | "py";
+    sizeBytes: number;
+    sha256: string;
+    status: "STAGED" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "TIMED_OUT";
+    exitCode?: number | null;
+    output?: string | null;
+    createdAt?: string;
+    startedAt?: string | null;
+    endedAt?: string | null;
 }
 
 export interface DatabaseBackupSchedule {
@@ -3116,7 +3339,7 @@ export interface DatabaseEngineConfig {
 
 export interface CreateDatabaseInput {
     name: string;
-    type: "postgresql" | "mysql" | "mongodb" | "redis";
+    type: "postgresql" | "postgresql_vector" | "mysql" | "mongodb" | "redis";
     exposure?: "internal" | "public";
     cpuLimit?: number;
     memoryLimit?: number;
@@ -3147,5 +3370,44 @@ export interface BackupStorageStatus {
 
 export interface BackupStorageTestResult {
     success: boolean;
+    message: string;
+}
+
+export interface CloudflareR2AccountSummary {
+    id: string;
+    name: string;
+}
+
+export interface CloudflareR2VerifyResult {
+    success: boolean;
+    accounts?: CloudflareR2AccountSummary[];
+    message?: string;
+}
+
+export interface CloudflareR2ConnectInput {
+    token: string;
+    cloudflareAccountId: string;
+    cloudflareAccountName?: string;
+}
+
+export interface CloudflareR2ConnectionStatus {
+    configured: boolean;
+    cloudflareAccountId?: string;
+    cloudflareAccountName?: string | null;
+    lastVerifiedAt?: string | null;
+}
+
+export interface CloudflareR2BucketRecord {
+    id: string;
+    bucketName: string;
+    jurisdiction?: string | null;
+    s3Endpoint: string;
+    wiredAppId?: string | null;
+    wiredEnvPrefix?: string | null;
+    lastVerifiedAt?: string | null;
+}
+
+export interface CloudflareR2WireResult {
+    addedKeys: string[];
     message: string;
 }

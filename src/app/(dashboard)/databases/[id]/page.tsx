@@ -6,18 +6,73 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
     ArrowLeft, CheckCircle2, Copy, Eye, EyeOff, ExternalLink,
     Loader2, Lock, MoreVertical, Pause, Play, RefreshCw, Shield,
-    Trash2, Unlock, Globe, Server, Monitor, Database, Container, CircleHelp
+    Trash2, Unlock, Globe, Server, Monitor, Database, Container, CircleHelp,
+    TerminalSquare, TableProperties, ChevronLeft, ChevronRight, FileCode, ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Table, TableBody, TableCell, TableHeader, TableRow,
+} from "@/components/ui/table";
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem,
     DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { api } from "@/lib/api";
+import { api, ApiRequestError, type SeedScriptRun } from "@/lib/api";
 import { APP_CONTAINER_HOST, SERVER_LOCAL_HOST, buildConnectionString } from "@/lib/db-connection";
 import { DatabaseBrandIcon } from "@/components/database/database-brand-icon";
+
+function toastActionError(error: unknown, fallback: string) {
+    if (error instanceof ApiRequestError && error.details.message) {
+        toast.error(error.details.message);
+        return;
+    }
+    toast.error(error instanceof Error ? error.message : fallback);
+}
+
+const SEED_SCRIPT_STATUS_STYLES: Record<string, string> = {
+    STAGED: "bg-muted text-muted-foreground",
+    QUEUED: "bg-info-muted text-info-text",
+    RUNNING: "bg-info-muted text-info-text",
+    SUCCEEDED: "bg-success-muted text-success-text",
+    FAILED: "bg-danger-muted text-danger-text",
+    TIMED_OUT: "bg-danger-muted text-danger-text",
+};
+
+function SeedScriptHistoryRow({ run }: { run: SeedScriptRun }) {
+    const [expanded, setExpanded] = useState(false);
+    const when = run.createdAt ? new Date(run.createdAt).toLocaleString("en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+    const isRunningOrQueued = run.status === "QUEUED" || run.status === "RUNNING";
+
+    return (
+        <>
+            <TableRow className={run.output ? "cursor-pointer" : undefined} onClick={() => run.output && setExpanded((v) => !v)}>
+                <TableCell className="text-xs font-mono">{run.filename}</TableCell>
+                <TableCell>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${SEED_SCRIPT_STATUS_STYLES[run.status] || "bg-muted text-muted-foreground"}`}>
+                        {isRunningOrQueued && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {run.status}
+                    </span>
+                </TableCell>
+                <TableCell className="text-xs font-mono">{run.exitCode ?? "—"}</TableCell>
+                <TableCell className="text-xs text-muted-foreground flex items-center gap-1">
+                    {when}
+                    {run.output && <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} />}
+                </TableCell>
+            </TableRow>
+            {expanded && run.output && (
+                <TableRow>
+                    <TableCell colSpan={4} className="bg-muted/30">
+                        <pre className="text-[11px] font-mono whitespace-pre-wrap max-h-64 overflow-y-auto p-2">{run.output}</pre>
+                    </TableCell>
+                </TableRow>
+            )}
+        </>
+    );
+}
 
 function DatabaseDetailPageContent() {
     const params = useParams();
@@ -83,6 +138,57 @@ function DatabaseDetailPageContent() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ["database", dbId] }),
     });
 
+    const [queryText, setQueryText] = useState("");
+    const runQueryMutation = useMutation({
+        mutationFn: (query: string) => api.runDatabaseQuery(serverId, dbId, query),
+        onSuccess: (result) => toast.success(`Query ran successfully — ${result.rowsAffected} row${result.rowsAffected === 1 ? "" : "s"} affected.`),
+        onError: (error) => toastActionError(error, "Query failed"),
+    });
+
+    const [selectedTable, setSelectedTable] = useState<string | null>(null);
+    const [tablePage, setTablePage] = useState(0);
+    const tablePageSize = 50;
+    const tablesQuery = useQuery({
+        queryKey: ["database-tables", dbId],
+        queryFn: () => api.getDatabaseTables(serverId, dbId),
+        enabled: !!serverId && !!dbId && database?.status?.toLowerCase() === "running",
+    });
+    const tablesData = tablesQuery.data;
+    const { data: tableRowsData, isFetching: isTableDataLoading, error: tableDataError } = useQuery({
+        queryKey: ["database-table-data", dbId, selectedTable, tablePage],
+        queryFn: () => api.getDatabaseTableData(serverId, dbId, selectedTable as string, tablePageSize, tablePage * tablePageSize),
+        enabled: !!serverId && !!dbId && !!selectedTable,
+    });
+    const tableColumns = tableRowsData?.rows?.[0] ? Object.keys(tableRowsData.rows[0]) : [];
+
+    const [stagedSeedRun, setStagedSeedRun] = useState<SeedScriptRun | null>(null);
+    const uploadSeedScriptMutation = useMutation({
+        mutationFn: (file: File) => api.uploadSeedScript(serverId, dbId, file),
+        onSuccess: (run) => {
+            setStagedSeedRun(run);
+            toast.success(`Uploaded ${run.filename}`);
+        },
+        onError: (error) => toastActionError(error, "Upload failed"),
+    });
+    const runSeedScriptMutation = useMutation({
+        mutationFn: (runId: string) => api.runSeedScript(serverId, dbId, runId),
+        onSuccess: () => {
+            toast.success("Seed script run queued.");
+            setStagedSeedRun(null);
+            queryClient.invalidateQueries({ queryKey: ["seed-script-history", dbId] });
+        },
+        onError: (error) => toastActionError(error, "Failed to run seed script"),
+    });
+    const seedScriptHistoryQuery = useQuery({
+        queryKey: ["seed-script-history", dbId],
+        queryFn: () => api.getSeedScriptHistory(serverId, dbId),
+        enabled: !!serverId && !!dbId,
+        refetchInterval: (query) => {
+            const runs = query.state.data?.runs ?? [];
+            return runs.some((r) => r.status === "QUEUED" || r.status === "RUNNING") ? 3000 : false;
+        },
+    });
+
     if (isLoading || !database) {
         return (
             <div className="dashboard-page">
@@ -98,6 +204,7 @@ function DatabaseDetailPageContent() {
     const host = connectionTab === "internal" ? APP_CONTAINER_HOST : SERVER_LOCAL_HOST;
     const connectionUrl = buildConnectionString(database, host, showPassword ? password : null, { mask: !showPassword });
     const dbTypeLabel = database.type.toLowerCase() === "postgresql" ? "PostgreSQL" :
+        database.type.toLowerCase() === "postgresql_vector" ? "PostgreSQL + pgvector" :
         database.type.toLowerCase() === "mysql" ? "MySQL" :
         database.type.toLowerCase() === "mongodb" ? "MongoDB" : "Redis";
     const uptimeStr = database.createdAt ? (() => {
@@ -397,6 +504,211 @@ function DatabaseDetailPageContent() {
                         <Button variant="outline" size="sm" className="mt-3 h-7 text-[11px]">Enable Access</Button>
                     </div>
                 </div>
+            </div>
+
+            {/* Run Query */}
+            <div className="rounded-xl border border-border/60 bg-card p-6">
+                <div className="flex items-center gap-2 mb-1">
+                    <TerminalSquare className="h-4 w-4 text-muted-foreground" />
+                    <h2 className="text-lg font-semibold text-foreground">Run Query</h2>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">
+                    Run an INSERT, UPDATE, or DELETE directly against this database. This does not return row data — use Browse Tables below to view data.
+                </p>
+                <Textarea
+                    data-testid="run-query-input"
+                    value={queryText}
+                    onChange={(e) => setQueryText(e.target.value)}
+                    rows={4}
+                    placeholder="UPDATE users SET role = 'admin' WHERE email = '...'"
+                    className="border-border bg-background font-mono text-xs resize-none"
+                    disabled={database.readOnly}
+                />
+                <div className="mt-3 flex items-center justify-between">
+                    {database.readOnly ? (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> This database is read-only — enable write access above to run a query.</p>
+                    ) : (
+                        <p className="text-xs text-muted-foreground">You&apos;ll be asked to confirm before this runs.</p>
+                    )}
+                    <Button
+                        data-testid="run-query-button"
+                        size="sm"
+                        disabled={database.readOnly || !queryText.trim() || runQueryMutation.isPending}
+                        onClick={() => {
+                            if (!confirm(`Run this query against "${database.name}"? This cannot be undone.\n\n${queryText}`)) return;
+                            runQueryMutation.mutate(queryText);
+                        }}
+                    >
+                        {runQueryMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Play className="h-4 w-4 mr-1.5" />}
+                        Run query
+                    </Button>
+                </div>
+            </div>
+
+            {/* Browse Tables */}
+            <div className="rounded-xl border border-border/60 bg-card p-6">
+                <div className="flex items-center gap-2 mb-1">
+                    <TableProperties className="h-4 w-4 text-muted-foreground" />
+                    <h2 className="text-lg font-semibold text-foreground">Browse Tables</h2>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">View data from a table in this database.</p>
+
+                {!isRunning ? (
+                    <p className="text-sm text-muted-foreground">Start the database to browse its tables.</p>
+                ) : (
+                    <>
+                        <div className="flex items-center gap-2 mb-4">
+                            <select
+                                data-testid="browse-table-select"
+                                value={selectedTable ?? ""}
+                                onChange={(e) => { setSelectedTable(e.target.value || null); setTablePage(0); }}
+                                className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+                            >
+                                <option value="">Select a table…</option>
+                                {(tablesData?.tables ?? []).map((t) => (
+                                    <option key={t} value={t}>{t}</option>
+                                ))}
+                            </select>
+                            {isTableDataLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                        </div>
+
+                        {selectedTable && tableDataError && (
+                            <p className="text-sm text-danger-text">{tableDataError instanceof Error ? tableDataError.message : "Failed to load table data"}</p>
+                        )}
+
+                        {selectedTable && tableRowsData && (
+                            <>
+                                {tableRowsData.rows.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">No rows in this table.</p>
+                                ) : (
+                                    <div className="overflow-x-auto rounded-lg border border-border/60" data-testid="browse-table-results">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    {tableColumns.map((col) => (
+                                                        <TableCell key={col} className="font-medium text-xs text-muted-foreground">{col}</TableCell>
+                                                    ))}
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {tableRowsData.rows.map((row, i) => (
+                                                    <TableRow key={i}>
+                                                        {tableColumns.map((col) => (
+                                                            <TableCell key={col} className="font-mono text-xs whitespace-pre-wrap">
+                                                                {row[col] === null
+                                                                    ? <span className="text-muted-foreground italic">null</span>
+                                                                    : typeof row[col] === "object"
+                                                                        ? JSON.stringify(row[col])
+                                                                        : String(row[col])}
+                                                            </TableCell>
+                                                        ))}
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                )}
+                                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                                    <span>{tableRowsData.totalCount} row{tableRowsData.totalCount === 1 ? "" : "s"} total</span>
+                                    <div className="flex items-center gap-2">
+                                        <Button variant="outline" size="sm" className="h-7 px-2" disabled={tablePage === 0} onClick={() => setTablePage((p) => p - 1)}>
+                                            <ChevronLeft className="h-3.5 w-3.5" />
+                                        </Button>
+                                        <span>Page {tablePage + 1}</span>
+                                        <Button variant="outline" size="sm" className="h-7 px-2" disabled={(tablePage + 1) * tablePageSize >= tableRowsData.totalCount} onClick={() => setTablePage((p) => p + 1)}>
+                                            <ChevronRight className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </>
+                )}
+            </div>
+
+            {/* Seed Script */}
+            <div className="rounded-xl border border-border/60 bg-card p-6">
+                <div className="flex items-center gap-2 mb-1">
+                    <FileCode className="h-4 w-4 text-muted-foreground" />
+                    <h2 className="text-lg font-semibold text-foreground">Seed Script</h2>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">
+                    Upload a one-time setup script (.js, .ts, or .py) to run against this database. It runs sandboxed — network access is limited to this database only — and you&apos;ll confirm before it executes.
+                </p>
+
+                {database.readOnly ? (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> This database is read-only — enable write access above to upload a seed script.</p>
+                ) : !stagedSeedRun ? (
+                    <div className="flex items-center gap-3">
+                        <input
+                            data-testid="seed-script-file-input"
+                            type="file"
+                            accept=".js,.ts,.py"
+                            disabled={uploadSeedScriptMutation.isPending}
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = "";
+                                if (!file) return;
+                                if (file.size > 2 * 1024 * 1024) {
+                                    toast.error("Seed script exceeds the 2MB size limit");
+                                    return;
+                                }
+                                uploadSeedScriptMutation.mutate(file);
+                            }}
+                            className="text-sm text-muted-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                        />
+                        {uploadSeedScriptMutation.isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    </div>
+                ) : (
+                    <div className="rounded-lg border border-border/60 p-4 flex items-center justify-between">
+                        <div>
+                            <div className="text-sm font-medium text-foreground">{stagedSeedRun.filename}</div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                                {(stagedSeedRun.sizeBytes / 1024).toFixed(1)} KB • {stagedSeedRun.language.toUpperCase()} • sha256 {stagedSeedRun.sha256.slice(0, 12)}…
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => setStagedSeedRun(null)} disabled={runSeedScriptMutation.isPending}>
+                                Cancel
+                            </Button>
+                            <Button
+                                data-testid="seed-script-run-button"
+                                size="sm"
+                                disabled={runSeedScriptMutation.isPending}
+                                onClick={() => {
+                                    if (!confirm(`Run "${stagedSeedRun.filename}" against "${database.name}"? This runs sandboxed but cannot be undone.`)) return;
+                                    runSeedScriptMutation.mutate(stagedSeedRun.id);
+                                }}
+                            >
+                                {runSeedScriptMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Play className="h-4 w-4 mr-1.5" />}
+                                Run
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {(seedScriptHistoryQuery.data?.runs?.length ?? 0) > 0 && (
+                    <div className="mt-5 pt-5 border-t border-border/40">
+                        <h3 className="text-xs font-medium text-muted-foreground mb-2">Run history</h3>
+                        <div className="overflow-x-auto rounded-lg border border-border/60" data-testid="seed-script-history">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableCell className="font-medium text-xs text-muted-foreground">File</TableCell>
+                                        <TableCell className="font-medium text-xs text-muted-foreground">Status</TableCell>
+                                        <TableCell className="font-medium text-xs text-muted-foreground">Exit code</TableCell>
+                                        <TableCell className="font-medium text-xs text-muted-foreground">When</TableCell>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {(seedScriptHistoryQuery.data?.runs ?? []).map((run) => (
+                                        <SeedScriptHistoryRow key={run.id} run={run} />
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Database Credentials (Quick Copy) */}

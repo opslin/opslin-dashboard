@@ -74,6 +74,14 @@ function renderSettings(overrides: Partial<ComponentProps<typeof SettingsSection
         onRegistryPasswordChange: vi.fn(),
         publicStatus: true,
         onPublicStatusChange: vi.fn(),
+        scaleTargetReplicaCount: 1,
+        onScaleTargetReplicaCountChange: vi.fn(),
+        scaleConfirmMultiInstance: false,
+        onScaleConfirmMultiInstanceChange: vi.fn(),
+        scalePending: false,
+        scaleResult: null,
+        scaleError: null,
+        onScaleApp: vi.fn(),
         deleteFailureReason: null,
         deleteLocked: false,
         deletePending: false,
@@ -165,6 +173,7 @@ describe("SettingsSection", () => {
         expect(within(modeSelect).getByRole("option", { name: "Auto (recommended)" })).toHaveAttribute("value", "auto");
         expect(within(modeSelect).getByRole("option", { name: "Strict HTTP" })).toHaveAttribute("value", "strict_http");
         expect(within(modeSelect).getByRole("option", { name: "Port readiness" })).toHaveAttribute("value", "port");
+        expect(within(modeSelect).getByRole("option", { name: "Background worker (no port)" })).toHaveAttribute("value", "process");
         expect(screen.getByPlaceholderText("/health")).toBeVisible();
         expect(screen.getByText(/This is a Opslin deployment setting, not an environment variable./i)).toBeVisible();
         const legacyHealthVarPattern = new RegExp([
@@ -180,6 +189,70 @@ describe("SettingsSection", () => {
         expect(onHealthCheckModeChange).toHaveBeenCalledWith("port");
         expect(onHealthPathChange).toHaveBeenCalledWith("/live");
         expect(onSaveHealthSettings).toHaveBeenCalledTimes(1);
+    });
+
+    it("disables the health check path input and shows a not-used hint under process mode", () => {
+        renderSettings({ healthCheckMode: "process", healthPath: "" });
+
+        const pathInput = screen.getByTestId("settings-health-check-path");
+        expect(pathInput).toBeDisabled();
+        expect(screen.getByText("Not used — background worker mode never checks a path.")).toBeVisible();
+    });
+
+    it("hides the multi-instance confirmation checkbox and enables Apply Scaling at a single instance", () => {
+        const onScaleApp = vi.fn();
+        renderSettings({ scaleTargetReplicaCount: 1, scaleConfirmMultiInstance: false, onScaleApp });
+
+        expect(screen.queryByLabelText(/I confirm this app is safe to run as multiple concurrent instances/i)).not.toBeInTheDocument();
+        const applyButton = screen.getByRole("button", { name: /Apply Scaling/i });
+        expect(applyButton).not.toBeDisabled();
+
+        fireEvent.click(applyButton);
+        expect(onScaleApp).toHaveBeenCalledTimes(1);
+    });
+
+    it("requires the multi-instance confirmation checkbox before Apply Scaling is enabled above 1 instance", () => {
+        const onScaleTargetReplicaCountChange = vi.fn();
+        const onScaleConfirmMultiInstanceChange = vi.fn();
+        renderSettings({
+            scaleTargetReplicaCount: 3,
+            scaleConfirmMultiInstance: false,
+            onScaleTargetReplicaCountChange,
+            onScaleConfirmMultiInstanceChange,
+        });
+
+        const confirmCheckbox = screen.getByLabelText(/I confirm this app is safe to run as multiple concurrent instances/i);
+        expect(confirmCheckbox).not.toBeChecked();
+        expect(screen.getByRole("button", { name: /Apply Scaling/i })).toBeDisabled();
+
+        fireEvent.click(confirmCheckbox);
+        expect(onScaleConfirmMultiInstanceChange).toHaveBeenCalledWith(true);
+
+        fireEvent.change(screen.getByLabelText("Number of instances"), { target: { value: "5" } });
+        expect(onScaleTargetReplicaCountChange).toHaveBeenCalledWith(5);
+    });
+
+    it("enables Apply Scaling above 1 instance once confirmed, and shows the result/error banners", () => {
+        renderSettings({
+            scaleTargetReplicaCount: 3,
+            scaleConfirmMultiInstance: true,
+            scaleResult: {
+                replicaCount: 3,
+                backends: [{ host: "127.0.0.1", port: 4000 }, { host: "127.0.0.1", port: 20001 }, { host: "127.0.0.1", port: 20002 }],
+            },
+            scaleError: new Error("Scaling to more than one instance requires confirmMultiInstance: true"),
+        });
+
+        expect(screen.getByRole("button", { name: /Apply Scaling/i })).not.toBeDisabled();
+        expect(screen.getByText(/Now running 3 instances on ports 4000, 20001, 20002/i)).toBeVisible();
+        expect(screen.getByText(/Scaling to more than one instance requires confirmMultiInstance: true/i)).toBeVisible();
+    });
+
+    it("disables scaling controls while delete cleanup is locked", () => {
+        renderSettings({ deleteLocked: true, scaleTargetReplicaCount: 1 });
+
+        expect(screen.getByLabelText("Number of instances")).toBeDisabled();
+        expect(screen.getByRole("button", { name: /Apply Scaling/i })).toBeDisabled();
     });
 
     it("preserves build config, registry test, and public status actions", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Copy, ExternalLink, FileCode2, Globe, Loader2, RotateCcw, Save, ShieldCheck, Info, Settings, HeartPulse, ShieldAlert } from "lucide-react";
+import { Copy, ExternalLink, FileCode2, Globe, Loader2, RotateCcw, Save, ShieldCheck, Info, Settings, HeartPulse, ShieldAlert, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { DeleteAppAction } from "@/components/apps/DeleteAppAction";
 import { DeleteLifecycleNotice } from "@/components/apps/DeleteLifecycleNotice";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { App, BuildpackName, HealthCheckMode, Server } from "@/lib/api";
+import type { App, BuildpackName, HealthCheckMode, ScaleAppResult, Server } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import { BuildpackVersionSelector } from "@/components/apps/BuildpackVersionSelector";
 
@@ -31,6 +31,14 @@ type SettingsSectionProps = {
     onRegistryPasswordChange: (value: string) => void;
     publicStatus: boolean;
     onPublicStatusChange: (value: boolean) => void;
+    scaleTargetReplicaCount: number;
+    onScaleTargetReplicaCountChange: (value: number) => void;
+    scaleConfirmMultiInstance: boolean;
+    onScaleConfirmMultiInstanceChange: (value: boolean) => void;
+    scalePending: boolean;
+    scaleResult?: ScaleAppResult | null;
+    scaleError?: unknown;
+    onScaleApp: () => void;
     deleteFailureReason?: string | null;
     deleteLocked: boolean;
     deletePending: boolean;
@@ -75,6 +83,9 @@ function healthModeLabel(mode?: HealthCheckMode | null, recommended = false) {
     if (mode === "port") {
         return "Port readiness";
     }
+    if (mode === "process") {
+        return "Background worker (no port)";
+    }
     return recommended ? "Auto (recommended)" : "Auto";
 }
 
@@ -95,6 +106,14 @@ export function SettingsSection({
     onRegistryPasswordChange,
     publicStatus,
     onPublicStatusChange,
+    scaleTargetReplicaCount,
+    onScaleTargetReplicaCountChange,
+    scaleConfirmMultiInstance,
+    onScaleConfirmMultiInstanceChange,
+    scalePending,
+    scaleResult,
+    scaleError,
+    onScaleApp,
     deleteFailureReason,
     deleteLocked,
     deletePending,
@@ -372,11 +391,13 @@ export function SettingsSection({
                                 <option value="auto">Auto (recommended)</option>
                                 <option value="strict_http">Strict HTTP</option>
                                 <option value="port">Port readiness</option>
+                                <option value="process">Background worker (no port)</option>
                             </select>
                             <p className="mt-2 text-xs text-muted-foreground">
                                 Auto works best for backend APIs without a /health route.
                                 Strict HTTP requires HTTP 200 on the configured path.
                                 Port readiness checks only that the app port is reachable.
+                                Background worker checks only that the container is running — for apps with no listening port at all.
                             </p>
                         </div>
 
@@ -388,11 +409,12 @@ export function SettingsSection({
                                 value={healthPath}
                                 onChange={(event) => onHealthPathChange(event.target.value)}
                                 placeholder="/health"
-                                disabled={deleteLocked}
+                                disabled={deleteLocked || healthCheckMode === "process"}
                             />
                             <p className="mt-2 text-xs text-muted-foreground">
-                                Optional. Use /health or /api/health if your app has one.
-                                This is a Opslin deployment setting, not an environment variable.
+                                {healthCheckMode === "process"
+                                    ? "Not used — background worker mode never checks a path."
+                                    : "Optional. Use /health or /api/health if your app has one. This is a Opslin deployment setting, not an environment variable."}
                             </p>
                         </div>
                     </div>
@@ -474,6 +496,90 @@ export function SettingsSection({
                     {publicStatusError ? (
                         <div className="rounded-lg bg-danger-muted px-4 py-3 text-sm text-danger-text">
                             Public status setting could not be saved.
+                        </div>
+                    ) : null}
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-muted border border-border shrink-0">
+                            <Layers size={20} />
+                        </div>
+                        <div>
+                            <CardTitle className="text-lg">Scaling</CardTitle>
+                            <CardDescription>
+                                Run multiple instances of this app on the same server, load-balanced by Nginx.
+                            </CardDescription>
+                        </div>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {deleteLocked ? (
+                        <div className="rounded-lg border border-warning/30 bg-warning-muted px-4 py-3 text-sm text-warning-text">
+                            Scaling changes are paused while cleanup is pending.
+                        </div>
+                    ) : null}
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                            <Label htmlFor="scaleTargetReplicaCount">Number of instances</Label>
+                            <Input
+                                id="scaleTargetReplicaCount"
+                                type="number"
+                                min={1}
+                                max={10}
+                                value={scaleTargetReplicaCount}
+                                onChange={(event) => onScaleTargetReplicaCountChange(Math.min(10, Math.max(1, Number(event.target.value) || 1)))}
+                                disabled={deleteLocked || scalePending}
+                            />
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                Currently running: {app.replicaCount && app.replicaCount > 1 ? `${app.replicaCount} instances` : "1 instance"}.
+                            </p>
+                        </div>
+                        {scaleTargetReplicaCount > 1 ? (
+                            <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-muted p-3">
+                                <input
+                                    id="scaleConfirmMultiInstance"
+                                    type="checkbox"
+                                    className="mt-0.5 h-4 w-4 shrink-0"
+                                    checked={scaleConfirmMultiInstance}
+                                    onChange={(event) => onScaleConfirmMultiInstanceChange(event.target.checked)}
+                                    disabled={deleteLocked || scalePending}
+                                />
+                                <Label htmlFor="scaleConfirmMultiInstance" className="text-xs font-normal text-warning-text">
+                                    I confirm this app is safe to run as multiple concurrent instances — no shared
+                                    in-memory session state and no writes to local disk it expects to persist.
+                                    Opslin cannot verify this automatically.
+                                </Label>
+                            </div>
+                        ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                        <Button
+                            onClick={onScaleApp}
+                            disabled={scalePending || deleteLocked || (scaleTargetReplicaCount > 1 && !scaleConfirmMultiInstance)}
+                        >
+                            {scalePending ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Layers className="mr-2 h-4 w-4" />
+                            )}
+                            {scalePending ? "Scaling" : "Apply Scaling"}
+                        </Button>
+                    </div>
+
+                    {scaleResult ? (
+                        <div className="rounded-lg bg-success-muted px-4 py-3 text-sm text-success-text">
+                            Now running {scaleResult.replicaCount} instance{scaleResult.replicaCount === 1 ? "" : "s"} on ports{" "}
+                            {scaleResult.backends.map((backend) => backend.port).join(", ")}.
+                        </div>
+                    ) : null}
+                    {scaleError ? (
+                        <div className="rounded-lg bg-danger-muted px-4 py-3 text-sm text-danger-text">
+                            {scaleError instanceof Error ? scaleError.message : "Scaling failed."}
                         </div>
                     ) : null}
                 </CardContent>

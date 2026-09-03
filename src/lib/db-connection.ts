@@ -21,7 +21,7 @@ export function buildConnectionString(
     const encodedDbName = strictEncodeURIComponent(database.name);
     if (dbType === "redis") return `redis://${host}:${database.hostPort}`;
 
-    const pw = options.mask ? "••••••••••••" : (password || "••••••••••••");
+    const pw = options.mask ? "••••••••••••" : strictEncodeURIComponent(password || "");
     const user = database.username ? strictEncodeURIComponent(database.username) : "";
     const auth = user ? `${user}:${pw}@` : "";
 

@@ -47,19 +47,43 @@ const nextConfig: NextConfig = {
     ];
   },
   async headers() {
-    return [{
-      source: "/(.*)",
-      headers: [
-        {
-          key: "Content-Security-Policy",
-          value: contentSecurityPolicy,
-        },
-        { key: "X-Frame-Options", value: "DENY" },
-        { key: "X-Content-Type-Options", value: "nosniff" },
-        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-        { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-      ],
-    }];
+    return [
+      // Dev-only: stop a stale JS chunk from being served after a rebuild.
+      // Turbopack's DEV chunk filenames are content-STABLE across rebuilds
+      // (unlike a production build's content-hashed names), and when this
+      // dev server is reached through the Cloudflare tunnel, Cloudflare
+      // overrides its own `Cache-Control: no-cache` with a zone-level
+      // `max-age=14400` for `_next/static/*`. The result, hit three separate
+      // times during development: the browser keeps executing an hours-old
+      // chunk after the source changed — including transiently-broken
+      // intermediate compilations — producing errors that don't exist in the
+      // code on disk ("configOpen is not defined" for a variable that is
+      // plainly declared). `no-store` + `private` is the combination
+      // Cloudflare honors as "never cache this, anywhere".
+      // Production builds are untouched: they use content-hashed filenames,
+      // where long-lived caching is correct and wanted.
+      ...(process.env.NODE_ENV === "development"
+        ? [{
+          source: "/_next/static/:path*",
+          headers: [
+            { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, private" },
+          ],
+        }]
+        : []),
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: contentSecurityPolicy,
+          },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+    ];
   },
 };
 

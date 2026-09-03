@@ -34,6 +34,7 @@ const REDIS_MAXMEMORY_POLICIES = [
 
 const DB_TYPES = [
     { id: "postgresql", name: "PostgreSQL", description: "Powerful, open source SQL database", defaultName: "postgres", features: ["ACID", "JSON", "Full-text search"] },
+    { id: "postgresql_vector", name: "PostgreSQL + pgvector", description: "PostgreSQL with the pgvector extension for embeddings and AI workloads", defaultName: "vectordb", features: ["ACID", "Vector search", "pgvector"] },
     { id: "mysql", name: "MySQL", description: "Fast, reliable relational database", defaultName: "mysql", features: ["InnoDB", "Replication", "Fast reads"] },
     { id: "mongodb", name: "MongoDB", description: "Flexible document database", defaultName: "mongo", features: ["Documents", "Aggregation", "Sharding"] },
     { id: "redis", name: "Redis", description: "In-memory cache and data store", defaultName: "redis", features: ["Caching", "Pub/Sub", "Sessions"] },
@@ -122,7 +123,7 @@ export default function NewDatabasePage() {
                 const tier = RESOURCE_TIERS[db.resourceTierIndex] || RESOURCE_TIERS[DEFAULT_RESOURCE_TIER_INDEX];
                 const result = await api.createDatabase(serverId, {
                     name: db.name.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
-                    type: db.type as "postgresql" | "mysql" | "mongodb" | "redis",
+                    type: db.type as "postgresql" | "postgresql_vector" | "mysql" | "mongodb" | "redis",
                     exposure: db.exposure,
                     cpuLimit: tier.cpuLimit,
                     memoryLimit: tier.memoryLimit,
@@ -378,7 +379,7 @@ export default function NewDatabasePage() {
 
                                     {db.showAdvanced && (
                                         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-border/50 bg-background/50 p-3">
-                                            {(db.type === "postgresql" || db.type === "mysql") && (
+                                            {(db.type === "postgresql" || db.type === "postgresql_vector" || db.type === "mysql") && (
                                                 <div className="space-y-1">
                                                     <Label htmlFor={`${db.type}-maxConnections`} className="text-[11px]">
                                                         Max connections (10–500)
@@ -400,13 +401,13 @@ export default function NewDatabasePage() {
                                                     />
                                                 </div>
                                             )}
-                                            {db.type === "postgresql" && (
+                                            {(db.type === "postgresql" || db.type === "postgresql_vector") && (
                                                 <div className="space-y-1">
-                                                    <Label htmlFor="postgresql-sharedBuffers" className="text-[11px]">
+                                                    <Label htmlFor={`${db.type}-sharedBuffers`} className="text-[11px]">
                                                         Shared buffers (10–40% of memory)
                                                     </Label>
                                                     <Input
-                                                        id="postgresql-sharedBuffers"
+                                                        id={`${db.type}-sharedBuffers`}
                                                         type="number"
                                                         min={10}
                                                         max={40}

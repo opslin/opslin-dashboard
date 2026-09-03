@@ -40,6 +40,7 @@ const PAGE_SIZE = 8;
 
 const DB_ICONS: Record<string, { engine: string; label: string }> = {
     postgresql: { engine: "postgresql", label: "PostgreSQL" },
+    postgresql_vector: { engine: "postgresql_vector", label: "PostgreSQL + pgvector" },
     mysql: { engine: "mysql", label: "MySQL" },
     mongodb: { engine: "mongodb", label: "MongoDB" },
     redis: { engine: "redis", label: "Redis" },
@@ -144,7 +145,7 @@ export default function DatabasesPage() {
     // Stats
     const totalCount = allDatabases.length;
     const runningCount = allDatabases.filter(d => d.db.status.toLowerCase() === "running").length;
-    const pgCount = allDatabases.filter(d => d.db.type.toLowerCase() === "postgresql").length;
+    const pgCount = allDatabases.filter(d => d.db.type.toLowerCase() === "postgresql" || d.db.type.toLowerCase() === "postgresql_vector").length;
     const mysqlCount = allDatabases.filter(d => d.db.type.toLowerCase() === "mysql").length;
     const mongoCount = allDatabases.filter(d => d.db.type.toLowerCase() === "mongodb").length;
     const redisCount = allDatabases.filter(d => d.db.type.toLowerCase() === "redis").length;
@@ -260,6 +261,7 @@ export default function DatabasesPage() {
                         <div className="space-y-2">
                             {[
                                 { id: "postgresql", name: "PostgreSQL", desc: "Open source, powerful, and reliable." },
+                                { id: "postgresql_vector", name: "PostgreSQL + pgvector", desc: "Postgres with vector search for embeddings/AI." },
                                 { id: "mysql", name: "MySQL", desc: "Fast, reliable, and widely used." },
                                 { id: "mongodb", name: "MongoDB", desc: "Flexible document database." },
                                 { id: "redis", name: "Redis", desc: "In-memory data structure store." },
@@ -298,6 +300,7 @@ export default function DatabasesPage() {
                                 <SelectContent>
                                     <SelectItem value="all">All Engines</SelectItem>
                                     <SelectItem value="postgresql">PostgreSQL</SelectItem>
+                                    <SelectItem value="postgresql_vector">PostgreSQL + pgvector</SelectItem>
                                     <SelectItem value="mysql">MySQL</SelectItem>
                                     <SelectItem value="mongodb">MongoDB</SelectItem>
                                     <SelectItem value="redis">Redis</SelectItem>

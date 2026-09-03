@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
     ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, File, Link2, Loader2, Rocket, Search, Settings2, ShieldCheck, X, RefreshCw, Eye, EyeOff,
-    Play, Github, GitBranch, CloudUpload, Shield, Server, Info, Lightbulb, Settings, KeyRound, HeartPulse, Lock,
+    Play, Github, GitBranch, CloudUpload, Shield, Server, Info, Lightbulb, Settings, KeyRound, HeartPulse, Lock, Sparkles,
 } from "lucide-react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,8 @@ import { UpgradePrompt } from "@/components/pricing/upgrade-prompt";
 import { Header } from "@/components/layout/header";
 import { ServerCapacityCard } from "@/components/deploy/server-capacity-card";
 import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
-import { ApiRequestError, api, type BuildpackName, type HealthCheckMode, type ManifestEntryRecord } from "@/lib/api";
+import { GitHubRepoPicker } from "@/components/apps/github-repo-picker";
+import { ApiRequestError, api, type AutoDeployResult, type BuildpackName, type HealthCheckMode, type ManifestEntryRecord, type ServerJobStatus } from "@/lib/api";
 import { generateAppNameFromGitUrl } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 import { usePlan } from "@/hooks/usePlan";
@@ -46,6 +47,15 @@ const frameworkChips = [
     { id: "cra", label: "CRA", icon: "⚛️" },
     { id: "custom", label: "Custom", icon: "🔧" },
 ];
+
+function describeAutoDeployFailure(result: AutoDeployResult): string {
+    const reasons = result.units
+        .filter((unit) => unit.outcome.stage !== "done")
+        .map((unit) => `${unit.unitPath || "app"}: ${(unit.outcome as { reason?: string }).reason ?? "failed"}`);
+    return reasons.length > 0
+        ? `AI-assisted deploy could not complete: ${reasons.join("; ")}`
+        : "AI-assisted deploy could not complete.";
+}
 
 async function sha256Hex(buffer: ArrayBuffer) {
     const digest = await crypto.subtle.digest("SHA-256", buffer);
@@ -122,13 +132,13 @@ const WIZARD_STEPS: Array<{ id: WizardStepId; label: string; desc: string }> = [
     { id: "confirm", label: "Confirm", desc: "Review & launch" },
 ];
 
-function WizardRail({ stepIndex }: { stepIndex: number }) {
+function WizardRail({ stepIndex, steps }: { stepIndex: number; steps: typeof WIZARD_STEPS }) {
     return (
         <aside
             className="hidden lg:flex lg:w-[220px] lg:shrink-0 flex-col rounded-[var(--opslin-radius-lg)] border border-border bg-card p-5 shadow-[var(--opslin-elevation-2)]"
             aria-label="Deployment steps"
         >
-            {WIZARD_STEPS.map((step, i) => {
+            {steps.map((step, i) => {
                 const isDone = i < stepIndex;
                 const isActive = i === stepIndex;
                 return (
@@ -142,7 +152,7 @@ function WizardRail({ stepIndex }: { stepIndex: number }) {
                             >
                                 {isDone ? <Check className="h-4 w-4" /> : i + 1}
                             </div>
-                            {i < WIZARD_STEPS.length - 1 && (
+                            {i < steps.length - 1 && (
                                 <div className={cn("w-px flex-1 min-h-[28px]", isDone ? "bg-primary" : "bg-border")} />
                             )}
                         </div>
@@ -157,10 +167,10 @@ function WizardRail({ stepIndex }: { stepIndex: number }) {
     );
 }
 
-function WizardRailMobile({ stepIndex }: { stepIndex: number }) {
+function WizardRailMobile({ stepIndex, steps }: { stepIndex: number; steps: typeof WIZARD_STEPS }) {
     return (
         <div className="flex lg:hidden items-center gap-1.5 overflow-x-auto pb-1" aria-label="Deployment steps">
-            {WIZARD_STEPS.map((step, i) => {
+            {steps.map((step, i) => {
                 const isDone = i < stepIndex;
                 const isActive = i === stepIndex;
                 return (
@@ -186,7 +196,7 @@ function NewAppPageContent() {
     const initialServerId = searchParams.get("server");
 
     const [step, setStep] = useState<WizardStepId>("source");
-    const [sourceType, setSourceType] = useState<"github" | "upload" | "git">("github");
+    const [sourceType, setSourceType] = useState<"github" | "upload" | "git" | "ai">("github");
     const [name, setName] = useState("");
     const [domain, setDomain] = useState("");
     const [envVars, setEnvVars] = useState<EnvVar[]>([]);
@@ -301,13 +311,116 @@ function NewAppPageContent() {
         onError: (error) => { void maybeShowUpgradePrompt(error); },
     });
 
+    // DIL Phase 20 — deploys every real, deployable unit the repo actually
+    // has (runAutoDeployRepo, single-app repos included — analyzeRepo
+    // itself returns exactly one unit for those) rather than asking the
+    // user to pick a unit path up front, which would need its own
+    // Analyze-first step. router.push targets primaryAppId, the same real
+    // App a plain git/upload deploy would have created — a multi-unit repo
+    // may still report resolved: false for a non-primary unit (e.g. a
+    // worker needing infra DIL can't auto-provision yet); that's surfaced
+    // on the app detail page's own Verify status, not blocked here.
+    // DIL Phase 22 — the AI-assisted deploy is now tracked, not awaited.
+    // triggerAiMutation only dispatches and gets back a jobId; the real
+    // work (5-10+ minutes for a real multi-service repo) is tracked the
+    // same way agent updates and firewall applies already are: poll
+    // getServerJobStatus + subscribe to /jobs/:jobId/live, merge live
+    // deltas over the polled base (mirrors agent-update-modal.tsx exactly).
+    const [aiJobId, setAiJobId] = useState<string | null>(null);
+    // A plain ref, not state: this only guards against double-navigating
+    // (the effect below can re-run for unrelated reasons) — it never needs
+    // to trigger a render itself, which also sidesteps the "don't setState
+    // inside an effect" lint rule for what's genuinely a one-shot latch.
+    const aiNavigatedRef = useRef(false);
+    const [aiLiveProgress, setAiLiveProgress] = useState<NonNullable<ServerJobStatus["progress"]> | null>(null);
+
+    const aiJobQuery = useQuery({
+        queryKey: ["server-job", selectedServerId, aiJobId],
+        queryFn: () => api.getServerJobStatus(selectedServerId, aiJobId!),
+        enabled: Boolean(selectedServerId) && Boolean(aiJobId),
+        refetchInterval: (query) => {
+            const status = query.state.data?.status;
+            return status === "COMPLETED" || status === "FAILED" ? false : 2500;
+        },
+    });
+
+    useEffect(() => {
+        if (!aiJobId || typeof window === "undefined") return;
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+        const socket = new WebSocket(`${apiBaseUrl.replace(/^http/, "ws")}/jobs/${aiJobId}/live`);
+        socket.onmessage = (event) => {
+            try {
+                const payload = JSON.parse(event.data) as Record<string, unknown>;
+                setAiLiveProgress({
+                    phase: typeof payload.phase === "string" ? payload.phase : null,
+                    percent: typeof payload.percent === "number" ? payload.percent : null,
+                    message: typeof payload.line === "string" ? payload.line : null,
+                    status: typeof payload.status === "string" ? payload.status : null,
+                });
+            } catch {
+                // Keep the polling fallback active.
+            }
+        };
+        return () => socket.close();
+    }, [aiJobId]);
+
+    const triggerAiMutation = useMutation({
+        mutationFn: async () => {
+            const extraEnvVarsObj = envVarsObject();
+            return api.triggerAutoDeploy(selectedServerId, {
+                gitUrl,
+                branch,
+                githubInstallationId: githubInstallationId || undefined,
+                appNamePrefix: finalName,
+                extraEnvVars: Object.keys(extraEnvVarsObj).length > 0 ? extraEnvVarsObj : undefined,
+            });
+        },
+        onSuccess: (data) => {
+            setAiJobId(data.jobId);
+            setAiLiveProgress({ phase: "queued", percent: 5, message: "Starting...", status: "running" });
+        },
+        onError: (error) => { void maybeShowUpgradePrompt(error); },
+    });
+
+    const trackedAiJob = useMemo(() => {
+        const job = aiJobQuery.data;
+        if (!job) return null;
+        return aiLiveProgress ? { ...job, progress: { ...(job.progress || {}), ...aiLiveProgress } } : job;
+    }, [aiJobQuery.data, aiLiveProgress]);
+
+    const aiResult = trackedAiJob?.status === "COMPLETED" ? (trackedAiJob.result as AutoDeployResult | undefined) : undefined;
+
+    // Navigate the moment the job completes with a real app to show; a
+    // multi-unit repo may still report resolved: false for a non-primary
+    // unit (e.g. a worker needing infra DIL can't auto-provision yet) —
+    // that's surfaced on the app detail page's own Verify status, not
+    // blocked here, same as before this phase.
+    useEffect(() => {
+        if (aiNavigatedRef.current || trackedAiJob?.status !== "COMPLETED" || !aiResult?.primaryAppId) return;
+        aiNavigatedRef.current = true;
+        router.push(`/apps/${aiResult.primaryAppId}`);
+    }, [trackedAiJob?.status, aiResult, router]);
+
+    const aiFailureMessage = trackedAiJob?.status === "FAILED"
+        ? (trackedAiJob.error || "AI-assisted deploy failed.")
+        : trackedAiJob?.status === "COMPLETED" && aiResult && !aiResult.primaryAppId
+            ? describeAutoDeployFailure(aiResult)
+            : null;
+    const aiIsRunning = triggerAiMutation.isPending
+        || (Boolean(aiJobId) && trackedAiJob?.status !== "COMPLETED" && trackedAiJob?.status !== "FAILED")
+        // Still "running" for the brief moment between the job completing
+        // and the navigate-away effect above actually firing.
+        || (trackedAiJob?.status === "COMPLETED" && Boolean(aiResult?.primaryAppId));
+
     const handleSubmit = () => {
         if (sourceType === "upload") uploadMutation.mutate();
+        else if (sourceType === "ai") triggerAiMutation.mutate();
         else gitMutation.mutate();
     };
 
-    const isLoading = uploadMutation.isPending || gitMutation.isPending;
-    const error = uploadMutation.error || gitMutation.error;
+    const isLoading = uploadMutation.isPending || gitMutation.isPending || aiIsRunning;
+    const error = uploadMutation.error || gitMutation.error || triggerAiMutation.error
+        || (aiFailureMessage ? new Error(aiFailureMessage) : null);
     const showInlineError = error && !isPricingUpgradeError(error);
 
     const sourceReady = sourceType === "upload" ? Boolean(files?.length) : Boolean(gitUrl);
@@ -326,9 +439,19 @@ function NewAppPageContent() {
     const selectedServerData = servers.find(s => s.id === selectedServerId);
     const connectedServers = servers.filter(s => s.status === "connected" || s.isLiveConnected);
 
-    const stepIndex = WIZARD_STEPS.findIndex(s => s.id === step);
-    const goNext = () => { const next = WIZARD_STEPS[stepIndex + 1]; if (next) setStep(next.id); };
-    const goBack = () => { const prev = WIZARD_STEPS[stepIndex - 1]; if (prev) setStep(prev.id); };
+    // DIL Phase 20 — an AI-assisted deploy authors its own Dockerfile and
+    // detects its own health-check mode, so "Detect" (buildpack override)
+    // doesn't apply; skipped rather than shown-but-inert. "Environment" DOES
+    // apply as of Phase 21 (runAutoDeployRepo now accepts extraEnvVars) —
+    // kept in the flow so a caller-known value DIL can't infer (e.g. a
+    // third-party API key) can be pre-set before the first deploy runs.
+    const activeSteps = useMemo(
+        () => sourceType === "ai" ? WIZARD_STEPS.filter(s => s.id !== "detect") : WIZARD_STEPS,
+        [sourceType]
+    );
+    const stepIndex = activeSteps.findIndex(s => s.id === step);
+    const goNext = () => { const next = activeSteps[stepIndex + 1]; if (next) setStep(next.id); };
+    const goBack = () => { const prev = activeSteps[stepIndex - 1]; if (prev) setStep(prev.id); };
     const stepCanContinue = step === "source" ? sourceReady : step === "server" ? Boolean(selectedServerId) : true;
 
     const selectedBuildpackLabel = buildpackOverride
@@ -353,11 +476,11 @@ function NewAppPageContent() {
 
             <StaggerGroup className="flex flex-col gap-5">
                 <StaggerItem>
-                    <WizardRailMobile stepIndex={stepIndex} />
+                    <WizardRailMobile stepIndex={stepIndex} steps={activeSteps} />
                 </StaggerItem>
 
                 <StaggerItem className="flex flex-col lg:flex-row gap-6 items-start">
-                    <WizardRail stepIndex={stepIndex} />
+                    <WizardRail stepIndex={stepIndex} steps={activeSteps} />
 
                     <div className="flex-1 min-w-0 flex flex-col xl:flex-row gap-5 items-start w-full">
                         <div className="flex-1 min-w-0 space-y-5 w-full">
@@ -366,11 +489,12 @@ function NewAppPageContent() {
                                     <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6">
                                         <h2 className="text-lg font-semibold text-foreground mb-1">Choose your source</h2>
                                         <p className="text-sm text-muted-foreground mb-5">Select where your application code is located.</p>
-                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                             {[
                                                 { key: "github" as const, title: "GitHub", desc: "Connect your GitHub repository and we'll handle the rest.", icon: Github, recommended: true },
                                                 { key: "upload" as const, title: "Upload Files", desc: "Upload your project files directly from your computer.", icon: CloudUpload },
                                                 { key: "git" as const, title: "Git URL", desc: "Enter the HTTPS URL of any Git repository.", icon: Link2 },
+                                                { key: "ai" as const, title: "AI-Assisted", desc: "Point us at a repo — Opslin's AI writes the Dockerfile, provisions infra, and deploys automatically.", icon: Sparkles, beta: true },
                                             ].map(option => {
                                                 const selected = sourceType === option.key;
                                                 return (
@@ -394,6 +518,9 @@ function NewAppPageContent() {
                                                             <h3 className="font-semibold text-foreground">{option.title}</h3>
                                                             {option.recommended && (
                                                                 <span className="inline-flex items-center rounded-full bg-warning-muted text-warning-text px-2 py-0.5 text-[10px] font-semibold">Recommended</span>
+                                                            )}
+                                                            {option.beta && (
+                                                                <span className="inline-flex items-center rounded-full bg-brand-muted text-brand px-2 py-0.5 text-[10px] font-semibold">Beta</span>
                                                             )}
                                                         </div>
                                                         <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{option.desc}</p>
@@ -509,6 +636,27 @@ function NewAppPageContent() {
                                         </div>
                                     )}
 
+                                    {sourceType === "ai" && (
+                                        <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6 space-y-5">
+                                            <div>
+                                                <h2 className="text-lg font-semibold text-foreground mb-1">AI-assisted deploy</h2>
+                                                <p className="text-sm text-muted-foreground">Pick a repository — Opslin&apos;s AI analyzes it, writes an optimized Dockerfile, detects and provisions any databases or storage it needs, and deploys.</p>
+                                            </div>
+                                            <GitHubRepoPicker
+                                                gitUrl={gitUrl}
+                                                branch={branch}
+                                                githubInstallationId={githubInstallationId}
+                                                onGitUrlChange={setGitUrl}
+                                                onBranchChange={setBranch}
+                                                onGitHubInstallationChange={setGithubInstallationId}
+                                            />
+                                            <div className="rounded-lg bg-info-muted border border-info/20 px-3 py-2.5 flex items-start gap-2">
+                                                <Sparkles className="h-3.5 w-3.5 text-info-text shrink-0 mt-0.5" />
+                                                <span className="text-[11px] text-foreground/80">Dockerfile, health checks, and infrastructure are configured automatically for this source type — Advanced options are skipped. You can still add environment variables on the next step for anything Opslin&apos;s AI can&apos;t infer.</span>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {sourceType === "upload" && (
                                         <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6">
                                             <h2 className="text-lg font-semibold text-foreground mb-1">Upload your project</h2>
@@ -608,7 +756,11 @@ function NewAppPageContent() {
                                 <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6 space-y-4">
                                     <div>
                                         <h2 className="text-lg font-semibold text-foreground mb-1">Environment variables</h2>
-                                        <p className="text-sm text-muted-foreground">Add secrets and configuration your app needs at runtime. Optional — you can add these later too.</p>
+                                        <p className="text-sm text-muted-foreground">
+                                            {sourceType === "ai"
+                                                ? "Opslin's AI detects and wires database/storage connection details automatically — only add values it can't infer, like a third-party API key. Optional."
+                                                : "Add secrets and configuration your app needs at runtime. Optional — you can add these later too."}
+                                        </p>
                                     </div>
                                     <EnvVarsEditor envVars={envVars} onChange={setEnvVars} />
                                 </div>
@@ -669,9 +821,16 @@ function NewAppPageContent() {
                                                 { label: "Source", value: sourceType === "upload" ? `${files?.length ?? 0} file(s) selected` : (gitUrl || "Not set") },
                                                 { label: "Branch", value: sourceType === "upload" ? "—" : branch },
                                                 { label: "Server", value: selectedServerData ? `${selectedServerData.name} (${selectedServerData.ip})` : "Not selected" },
-                                                { label: "Buildpack", value: selectedBuildpackLabel },
-                                                { label: "Environment variables", value: envVars.length === 0 ? "None" : `${envVars.length} configured` },
-                                                { label: "Domain", value: domain || "Not set (IP access only)" },
+                                                ...(sourceType === "ai"
+                                                    ? [
+                                                        { label: "Deploy mode", value: "AI-assisted — Dockerfile & infra configured automatically" },
+                                                        { label: "Environment variables", value: envVars.length === 0 ? "None (auto-wired infra only)" : `${envVars.length} configured` },
+                                                    ]
+                                                    : [
+                                                        { label: "Buildpack", value: selectedBuildpackLabel },
+                                                        { label: "Environment variables", value: envVars.length === 0 ? "None" : `${envVars.length} configured` },
+                                                        { label: "Domain", value: domain || "Not set (IP access only)" },
+                                                    ]),
                                             ].map(row => (
                                                 <div key={row.label} className="rounded-lg border border-border p-3">
                                                     <dt className="text-[10px] text-muted-foreground mb-1">{row.label}</dt>
@@ -682,11 +841,16 @@ function NewAppPageContent() {
                                     </div>
 
                                     <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6">
-                                        <label htmlFor="app-name" className="text-xs font-medium text-muted-foreground mb-1.5 block">Application name</label>
+                                        <label htmlFor="app-name" className="text-xs font-medium text-muted-foreground mb-1.5 block">{sourceType === "ai" ? "Application name prefix" : "Application name"}</label>
                                         <Input id="app-name" value={name} onChange={e => setName(e.target.value)} placeholder={generatedName} className="h-10 border-border bg-background max-w-sm" />
-                                        <p className="text-[10px] text-muted-foreground mt-1.5">Leave empty to auto-generate from your source.</p>
+                                        <p className="text-[10px] text-muted-foreground mt-1.5">
+                                            {sourceType === "ai"
+                                                ? "If your repo deploys as multiple services, each app is named from this prefix. Leave empty to auto-generate."
+                                                : "Leave empty to auto-generate from your source."}
+                                        </p>
                                     </div>
 
+                                    {sourceType !== "ai" && (
                                     <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card overflow-hidden">
                                         <button onClick={() => setAdvancedOpen(!advancedOpen)} className="w-full flex items-center justify-between p-5 hover:bg-muted/30 transition-colors">
                                             <div className="flex items-center gap-2">
@@ -719,11 +883,16 @@ function NewAppPageContent() {
                                                                 <SelectItem value="auto">Auto (recommended)</SelectItem>
                                                                 <SelectItem value="strict_http">Strict HTTP</SelectItem>
                                                                 <SelectItem value="port">Port readiness</SelectItem>
+                                                                <SelectItem value="process">Background worker (no port)</SelectItem>
                                                             </SelectContent>
                                                         </Select>
-                                                        <Input data-testid="health-check-path" value={healthPath} onChange={e => setHealthPath(e.target.value)} placeholder="/health" className="h-10 border-border bg-background" />
+                                                        <Input data-testid="health-check-path" value={healthPath} onChange={e => setHealthPath(e.target.value)} placeholder="/health" disabled={healthCheckMode === "process"} className="h-10 border-border bg-background disabled:opacity-50" />
                                                     </div>
-                                                    <p className="text-[10px] text-muted-foreground mt-1.5">We&apos;ll ping this path to ensure your app is healthy</p>
+                                                    <p className="text-[10px] text-muted-foreground mt-1.5">
+                                                        {healthCheckMode === "process"
+                                                            ? "No port or HTTP path is checked — Opslin only confirms the container is running."
+                                                            : "We'll ping this path to ensure your app is healthy"}
+                                                    </p>
                                                 </div>
 
                                                 <div>
@@ -758,6 +927,19 @@ function NewAppPageContent() {
                                             </div>
                                         )}
                                     </div>
+                                    )}
+
+                                    {sourceType === "ai" && (
+                                        <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6 space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <Sparkles className="h-4 w-4 text-brand" />
+                                                <h3 className="text-base font-semibold text-foreground">What Opslin&apos;s AI will do</h3>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground leading-relaxed">
+                                                Analyze your repository, author an optimized Dockerfile for every real deployable service it finds, detect and provision any databases or object storage your code needs, wire the connection details in automatically (alongside any environment variables you added), deploy, and verify the result — retrying automatically if something needs fixing. This can take 1-3 minutes.
+                                            </p>
+                                        </div>
+                                    )}
 
                                     {uploadLabel && sourceType === "upload" && (
                                         <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-4">
@@ -768,6 +950,29 @@ function NewAppPageContent() {
                                             <div className="h-2 rounded-full bg-muted overflow-hidden">
                                                 <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {sourceType === "ai" && aiIsRunning && (
+                                        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                                                    <Loader2 className="h-4 w-4 animate-spin text-brand shrink-0" />
+                                                    Deploying with AI
+                                                </div>
+                                                <span className="text-xs text-muted-foreground font-mono tabular-nums">
+                                                    {Math.max(5, Math.min(100, trackedAiJob?.progress?.percent ?? 5))}%
+                                                </span>
+                                            </div>
+                                            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                                                <div
+                                                    className="h-full rounded-full bg-brand transition-all"
+                                                    style={{ width: `${Math.max(5, Math.min(100, trackedAiJob?.progress?.percent ?? 5))}%` }}
+                                                />
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                {trackedAiJob?.progress?.message || "Starting..."}
+                                            </p>
                                         </div>
                                     )}
 
@@ -785,7 +990,9 @@ function NewAppPageContent() {
                                 </Button>
                                 {step === "confirm" ? (
                                     <Button size="lg" data-testid="deploy-button" disabled={!canDeploy || isLoading} onClick={handleSubmit}>
-                                        {isLoading ? (<><Loader2 className="h-4 w-4 animate-spin" /> Deploying</>) : (<><Rocket className="h-4 w-4" /> Deploy Application</>)}
+                                        {isLoading
+                                            ? (<><Loader2 className="h-4 w-4 animate-spin" /> {sourceType === "ai" ? "Analyzing & deploying" : "Deploying"}</>)
+                                            : (<><Rocket className="h-4 w-4" /> {sourceType === "ai" ? "Deploy with AI" : "Deploy Application"}</>)}
                                     </Button>
                                 ) : (
                                     <Button size="lg" data-testid="continue-button" disabled={!stepCanContinue} onClick={goNext}>

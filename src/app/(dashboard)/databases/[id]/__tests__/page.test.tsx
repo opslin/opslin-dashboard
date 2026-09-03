@@ -22,16 +22,6 @@ vi.mock("next/link", () => ({
     ),
 }));
 
-vi.mock("@/components/layout/header", () => ({
-    Header: ({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) => (
-        <header>
-            <h1>{title}</h1>
-            {description ? <p>{description}</p> : null}
-            {actions}
-        </header>
-    ),
-}));
-
 vi.mock("@/lib/api", async () => {
     const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
     return {
@@ -42,9 +32,10 @@ vi.mock("@/lib/api", async () => {
             startDatabase: vi.fn(),
             stopDatabase: vi.fn(),
             deleteDatabase: vi.fn(),
-            testDatabase: vi.fn(),
             setDbReadOnly: vi.fn(),
-            seedDatabase: vi.fn(),
+            runDatabaseQuery: vi.fn(),
+            getDatabaseTables: vi.fn(),
+            getDatabaseTableData: vi.fn(),
         },
     };
 });
@@ -79,74 +70,114 @@ function renderPage() {
     );
 }
 
-describe("DatabaseDetailPage connection UX", () => {
+describe("DatabaseDetailPage", () => {
     let writeText: ReturnType<typeof vi.fn>;
+    let confirmSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
         vi.clearAllMocks();
         navigationMocks.searchParams = new URLSearchParams("server=server-1");
         vi.mocked(api.getDatabase).mockResolvedValue(postgresDatabase);
-        vi.mocked(api.getDbPassword).mockResolvedValue({
-            password: "e9GB24ranow_)kiV_hWv84Sr",
-        });
-        vi.mocked(api.testDatabase).mockResolvedValue({
-            connected: true,
-            message: "Database is running and accepting connections",
-            checkedAt: "2026-01-01T00:00:00.000Z",
-        });
+        vi.mocked(api.getDbPassword).mockResolvedValue({ password: "e9GB24ranow_)kiV_hWv84Sr" });
+        vi.mocked(api.getDatabaseTables).mockResolvedValue({ tables: ["users", "orders"] });
         writeText = vi.fn(async () => undefined);
         Object.defineProperty(navigator, "clipboard", {
             configurable: true,
             value: { writeText },
         });
+        confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     });
 
-    it("separates deployed app and server/local connection strings", async () => {
+    it("renders the database header and connection details", async () => {
         renderPage();
 
-        expect(await screen.findByText("DATABASE_URL for deployed apps")).toBeVisible();
-        const appCard = screen.getByTestId("app-database-url-card");
-        const localCard = screen.getByTestId("local-database-url-card");
-
-        expect(within(appCard).getByText(/host\.docker\.internal/)).toBeVisible();
-        expect(within(appCard).queryByText(/localhost/)).not.toBeInTheDocument();
-        expect(within(localCard).getByText(/localhost:20000/)).toBeVisible();
+        expect(await screen.findByRole("heading", { name: "orders-db" })).toBeVisible();
+        expect(screen.getByText("Running")).toBeVisible();
+        expect(screen.getAllByText("opslin_orders").length).toBeGreaterThan(0);
     });
 
-    it("fetches the password before copying the app URL and never copies placeholders", async () => {
+    it("fetches and copies the connection password", async () => {
         renderPage();
 
-        await screen.findByText("DATABASE_URL for deployed apps");
-        fireEvent.click(screen.getByRole("button", { name: /Copy DATABASE_URL for App/i }));
+        await screen.findByRole("heading", { name: "orders-db" });
+        const showButtons = screen.getAllByText("Show");
+        fireEvent.click(showButtons[0]);
 
         await waitFor(() => {
             expect(api.getDbPassword).toHaveBeenCalledWith("server-1", "db-1");
         });
-        await waitFor(() => {
-            expect(writeText).toHaveBeenCalledWith(
-                "postgresql://opslin_orders:e9GB24ranow_%29kiV_hWv84Sr@host.docker.internal:20000/orders-db"
-            );
+    });
+
+    describe("Run Query", () => {
+        it("is disabled and shows a read-only notice when the database is read-only", async () => {
+            vi.mocked(api.getDatabase).mockResolvedValue({ ...postgresDatabase, readOnly: true });
+            renderPage();
+
+            const input = await screen.findByTestId("run-query-input");
+            expect(input).toBeDisabled();
+            expect(screen.getByTestId("run-query-button")).toBeDisabled();
+            expect(screen.getByText(/enable write access above to run a query/i)).toBeVisible();
         });
-        expect(String(writeText.mock.calls[0][0])).not.toContain("****");
-        expect(String(writeText.mock.calls[0][0])).not.toContain("@localhost");
-        expect(screen.queryByText(/e9GB24ranow/)).not.toBeInTheDocument();
+
+        it("asks for confirmation, then runs the query and shows the affected-row count", async () => {
+            vi.mocked(api.runDatabaseQuery).mockResolvedValue({ success: true, rowsAffected: 1 });
+            renderPage();
+
+            const input = await screen.findByTestId("run-query-input");
+            fireEvent.change(input, { target: { value: "UPDATE users SET role = 'admin' WHERE id = 1" } });
+            fireEvent.click(screen.getByTestId("run-query-button"));
+
+            expect(confirmSpy).toHaveBeenCalled();
+            await waitFor(() => {
+                expect(api.runDatabaseQuery).toHaveBeenCalledWith(
+                    "server-1",
+                    "db-1",
+                    "UPDATE users SET role = 'admin' WHERE id = 1"
+                );
+            });
+        });
+
+        it("never runs the query if the user cancels the confirmation", async () => {
+            confirmSpy.mockReturnValue(false);
+            renderPage();
+
+            const input = await screen.findByTestId("run-query-input");
+            fireEvent.change(input, { target: { value: "DELETE FROM users" } });
+            fireEvent.click(screen.getByTestId("run-query-button"));
+
+            expect(confirmSpy).toHaveBeenCalled();
+            expect(api.runDatabaseQuery).not.toHaveBeenCalled();
+        });
     });
 
-    it("marks unfinished database features as coming soon", async () => {
-        renderPage();
+    describe("Browse Tables", () => {
+        it("lists tables and loads rows for the selected one", async () => {
+            vi.mocked(api.getDatabaseTableData).mockResolvedValue({
+                rows: [{ id: 1, email: "a@example.com" }],
+                totalCount: 1,
+            });
+            renderPage();
 
-        expect(await screen.findByText("Data Browser - Coming soon")).toBeVisible();
-        expect(screen.getByText("Backups - Coming soon")).toBeVisible();
-        expect(screen.getAllByText("Coming soon")).toHaveLength(2);
-    });
+            const select = await screen.findByTestId("browse-table-select");
+            await waitFor(() => expect(screen.getByRole("option", { name: "users" })).toBeInTheDocument());
+            fireEvent.change(select, { target: { value: "users" } });
 
-    it("keeps long connection strings in mobile-safe scroll containers", async () => {
-        renderPage();
+            await waitFor(() => {
+                expect(api.getDatabaseTableData).toHaveBeenCalledWith("server-1", "db-1", "users", 50, 0);
+            });
+            const results = await screen.findByTestId("browse-table-results");
+            expect(within(results).getByText("a@example.com")).toBeVisible();
+        });
 
-        const appCode = await screen.findByTestId("app-database-url-code");
-        const localCode = screen.getByTestId("local-database-url-code");
+        it("shows an empty state when the table has no rows", async () => {
+            vi.mocked(api.getDatabaseTableData).mockResolvedValue({ rows: [], totalCount: 0 });
+            renderPage();
 
-        expect(appCode).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-nowrap");
-        expect(localCode).toHaveClass("max-w-full", "overflow-x-auto", "whitespace-nowrap");
+            const select = await screen.findByTestId("browse-table-select");
+            await waitFor(() => expect(screen.getByRole("option", { name: "orders" })).toBeInTheDocument());
+            fireEvent.change(select, { target: { value: "orders" } });
+
+            expect(await screen.findByText("No rows in this table.")).toBeVisible();
+        });
     });
 });

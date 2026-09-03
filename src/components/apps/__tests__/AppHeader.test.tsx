@@ -21,7 +21,7 @@ function app(overrides: Partial<Pick<App, "name" | "status" | "deployLogs">> = {
 function renderHeader(overrides: Partial<React.ComponentProps<typeof AppHeader>> = {}) {
     const props: React.ComponentProps<typeof AppHeader> = {
         app: app(),
-        server: { name: "Production VPS" },
+        server: { id: "server-1", name: "Production VPS" },
         deleteFailureReason: null,
         deployPending: false,
         stopPending: false,
