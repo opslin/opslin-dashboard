@@ -175,11 +175,11 @@ export function StatTile({
             inverse
               ? "bg-white/10 text-brand-bright"
               : accent === "blue"
-                ? "bg-info-muted text-info"
+                ? "bg-info-muted text-info-text"
                 : accent === "violet"
                   ? "bg-accent-2-muted text-accent-2"
                   : accent === "warning"
-                    ? "bg-warning-muted text-warning"
+                    ? "bg-warning-muted text-warning-text"
                     : "bg-brand-muted text-brand"
           )}
         >

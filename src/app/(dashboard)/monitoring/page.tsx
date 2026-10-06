@@ -394,7 +394,7 @@ export default function MonitoringPage() {
                         <div className="flex items-center gap-3">
                             <h1 className="text-2xl font-semibold tracking-tight text-foreground">System Monitor</h1>
                             <Select value={selectedServer} onValueChange={setSelectedServer}>
-                                <SelectTrigger className="h-8 w-auto gap-2 border-border/60 bg-card px-3 text-sm">
+                                <SelectTrigger aria-label="Select server" className="h-8 w-auto gap-2 border-border/60 bg-card px-3 text-sm">
                                     <span className={`h-2 w-2 rounded-full ${isServerLive(selectedServerData) ? "bg-success" : "bg-danger"}`} />
                                     <SelectValue />
                                 </SelectTrigger>
@@ -420,7 +420,7 @@ export default function MonitoringPage() {
                 </div>
                 <div className="flex items-center gap-2">
                     <Select value={timeRange} onValueChange={setTimeRange}>
-                        <SelectTrigger className="h-8 w-28 border-border/60 bg-card text-sm">
+                        <SelectTrigger aria-label="Time range" className="h-8 w-28 border-border/60 bg-card text-sm">
                             <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                             <SelectValue />
                         </SelectTrigger>
@@ -431,7 +431,7 @@ export default function MonitoringPage() {
                             <SelectItem value="7d">7 days</SelectItem>
                         </SelectContent>
                     </Select>
-                    <Button variant="outline" size="sm" onClick={() => refetchCurrent()} className="h-8 w-8 p-0 border-border/60 bg-card">
+                    <Button variant="outline" size="sm" onClick={() => refetchCurrent()} aria-label="Refresh metrics" className="h-8 w-8 p-0 border-border/60 bg-card">
                         <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
                     </Button>
                 </div>
@@ -518,7 +518,7 @@ export default function MonitoringPage() {
                                 <div className="flex items-baseline gap-1 mt-1">
                                     <span className="text-3xl font-mono font-bold text-foreground">{currentMetrics.memory.percent.toFixed(1)}</span>
                                     <span className="text-lg text-muted-foreground">%</span>
-                                    <span className="ml-2 text-xs text-chart-violet font-medium">↑ {Math.abs(currentMetrics.memory.percent - (historicalData?.peak.memory || currentMetrics.memory.percent) * 0.9).toFixed(1)}%</span>
+                                    <span className="ml-2 text-xs text-chart-violet-text font-medium">↑ {Math.abs(currentMetrics.memory.percent - (historicalData?.peak.memory || currentMetrics.memory.percent) * 0.9).toFixed(1)}%</span>
                                 </div>
                             </div>
                             <div className="mt-3">
@@ -592,7 +592,7 @@ export default function MonitoringPage() {
                                     <span className="text-xs text-muted-foreground">Outbound</span>
                                     <div className="flex items-center gap-1">
                                         <span className="text-lg font-mono font-bold text-foreground">{formatBytesRate(currentMetrics.network.bytesOut)}</span>
-                                        <span className="text-chart-violet">↑</span>
+                                        <span className="text-chart-violet-text">↑</span>
                                     </div>
                                 </div>
                                 <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">

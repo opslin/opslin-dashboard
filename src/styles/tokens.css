@@ -88,6 +88,8 @@
      two roles: chart series vs. general insight/data-highlight accent. */
   --opslin-chart-sky: #0891c9;
   --opslin-chart-violet: #a17bff;
+  /* AA-safe violet for rendering as TEXT (chart-violet is tuned for fills). */
+  --opslin-chart-violet-text: #6d4ed8;
   --opslin-accent-2-default: #a17bff;
   --opslin-accent-2-muted: rgba(161, 123, 255, 0.13);
   --opslin-accent-2-border: rgba(161, 123, 255, 0.3);
@@ -271,6 +273,7 @@
 
   --opslin-chart-sky: #38c8fa;
   --opslin-chart-violet: #a17bff;
+  --opslin-chart-violet-text: #b89bff;
   --opslin-accent-2-default: #a17bff;
   --opslin-accent-2-muted: rgba(161, 123, 255, 0.13);
   --opslin-accent-2-border: rgba(161, 123, 255, 0.3);

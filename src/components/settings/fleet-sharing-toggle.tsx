@@ -76,7 +76,7 @@ export function FleetSharingToggle({ orgRole }: { orgRole?: string | null }) {
                     {isOwner ? (
                         <>
                             Read the full methodology on the{" "}
-                            <Link href="/transparency#fis-methodology" className="text-info-text hover:text-info/80 font-medium">
+                            <Link href="/transparency#fis-methodology" className="text-info-text hover:text-info-text/80 font-medium">
                                 Transparency page
                             </Link>
                             .

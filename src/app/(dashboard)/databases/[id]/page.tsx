@@ -368,7 +368,7 @@ function DatabaseDetailPageContent() {
                     {/* Host */}
                     <div className="flex items-center justify-between py-4">
                         <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-chart-violet/10 flex items-center justify-center"><Server className="h-4 w-4 text-chart-violet" /></div>
+                            <div className="h-8 w-8 rounded-lg bg-chart-violet/10 flex items-center justify-center"><Server className="h-4 w-4 text-chart-violet-text" /></div>
                             <div>
                                 <div className="text-sm font-medium text-foreground">Host</div>
                                 <div className="text-[11px] text-muted-foreground">Database host address</div>
@@ -419,7 +419,7 @@ function DatabaseDetailPageContent() {
                     {/* Username */}
                     <div className="flex items-center justify-between py-4">
                         <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-chart-violet/10 flex items-center justify-center"><span className="text-chart-violet text-xs font-bold">@</span></div>
+                            <div className="h-8 w-8 rounded-lg bg-chart-violet/10 flex items-center justify-center"><span className="text-chart-violet-text text-xs font-bold">@</span></div>
                             <div>
                                 <div className="text-sm font-medium text-foreground">Username</div>
                                 <div className="text-[11px] text-muted-foreground">Database user</div>

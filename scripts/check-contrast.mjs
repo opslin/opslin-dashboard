@@ -135,6 +135,7 @@ const PAIRS = [
   { name: "accent (brand text/links) on bg-canvas", fg: "--opslin-accent-default", bg: "--opslin-bg-canvas", size: "normal" },
   { name: "accent-foreground on accent (primary buttons)", fg: "--opslin-accent-foreground", bg: "--opslin-accent-default", size: "normal" },
   { name: "chart-sky on card (data labels)", fg: "--opslin-chart-sky", bg: "--opslin-bg-primary", size: "large" },
+  { name: "chart-violet-text on card", fg: "--opslin-chart-violet-text", bg: "--opslin-bg-primary", size: "normal" },
   { name: "chart-violet on card (data labels)", fg: "--opslin-chart-violet", bg: "--opslin-bg-primary", size: "large" },
   { name: "accent-2 on card (insight chips)", fg: "--opslin-accent-2-default", bg: "--opslin-bg-primary", size: "large" },
   { name: "text-on-inverse-muted on sidebar (bg-inverse)", fg: "--opslin-text-on-inverse-muted", bg: "--opslin-bg-inverse", flattenOver: "--opslin-bg-inverse", size: "normal" },

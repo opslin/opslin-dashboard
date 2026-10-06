@@ -240,8 +240,8 @@ export default function ServerSecurityPage() {
                         <div className="flex items-center gap-2.5">
                             <h1 className="text-2xl font-semibold tracking-tight text-foreground">{state.server.name} Security</h1>
                             <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
-                                firewallActive ? "bg-success-muted border-success/30 text-success" :
-                                firewallFailed ? "bg-danger-muted border-danger/30 text-danger" :
+                                firewallActive ? "bg-success-muted border-success/30 text-success-text" :
+                                firewallFailed ? "bg-danger-muted border-danger/30 text-danger-text" :
                                 "bg-muted border-border text-muted-foreground"
                             }`}>
                                 <span className={`h-1.5 w-1.5 rounded-full ${firewallActive ? "bg-success" : firewallFailed ? "bg-danger" : "bg-muted-foreground/50"}`} />
@@ -264,7 +264,7 @@ export default function ServerSecurityPage() {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <div className="h-11 w-11 rounded-full bg-success-muted flex items-center justify-center shrink-0">
-                            <ShieldCheck size={22} className="text-success" />
+                            <ShieldCheck size={22} className="text-success-text" />
                         </div>
                         <div>
                             <h2 className="text-base font-semibold text-foreground">Secure this server</h2>
@@ -358,7 +358,7 @@ export default function ServerSecurityPage() {
                                 </div>
                                 <div className="text-center md:text-right">
                                     <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Status</div>
-                                    <div className={`text-sm font-medium flex items-center gap-1 justify-center md:justify-end ${hasScanned ? "text-success" : "text-muted-foreground"}`}>
+                                    <div className={`text-sm font-medium flex items-center gap-1 justify-center md:justify-end ${hasScanned ? "text-success-text" : "text-muted-foreground"}`}>
                                         <span className={`h-1.5 w-1.5 rounded-full ${hasScanned ? "bg-success" : "bg-muted-foreground/50"}`} /> {hasScanned ? "Completed" : "Not scanned yet"}
                                     </div>
                                 </div>
@@ -418,7 +418,7 @@ export default function ServerSecurityPage() {
                             <div className="mt-4">
                                 <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Custom rules</label>
                                 <Textarea value={customRuleText} onChange={e => setCustomRuleText(e.target.value)} rows={3} placeholder="8080,tcp,10.0.0.0/8,Internal API" className="border-border bg-background font-mono text-xs resize-none" />
-                                <p className="text-[10px] text-muted-foreground mt-1.5">Need help? <a href="#" className="text-info-text hover:text-info font-medium">View rule syntax examples →</a></p>
+                                <p className="text-[10px] text-muted-foreground mt-1.5">Need help? <a href="#" className="text-info-text hover:text-info-text font-medium">View rule syntax examples →</a></p>
                             </div>
                         </div>
 
@@ -484,8 +484,8 @@ export default function ServerSecurityPage() {
                                     <div>
                                         <div className="text-[11px] text-muted-foreground">Result</div>
                                         <div className={`text-sm font-semibold flex items-center gap-1.5 mt-1 ${
-                                            state.commits[0]?.status === "active" ? "text-success" :
-                                            state.commits[0]?.status === "failed" ? "text-danger" : "text-warning"
+                                            state.commits[0]?.status === "active" ? "text-success-text" :
+                                            state.commits[0]?.status === "failed" ? "text-danger-text" : "text-warning-text"
                                         }`}>
                                             {state.commits[0]?.status === "active" ? "Active" : state.commits[0]?.status === "failed" ? <>Failed <AlertTriangle className="h-3.5 w-3.5" /></> : "Pending"}
                                         </div>
@@ -656,13 +656,13 @@ export default function ServerSecurityPage() {
                         <div className="space-y-2.5">
                             <div className="flex items-center justify-between text-xs">
                                 <span className="text-muted-foreground">Status</span>
-                                <span className={`font-medium ${firewallActive ? "text-success" : firewallFailed ? "text-danger" : "text-muted-foreground"}`}>
+                                <span className={`font-medium ${firewallActive ? "text-success-text" : firewallFailed ? "text-danger-text" : "text-muted-foreground"}`}>
                                     {firewallActive ? "Active" : firewallFailed ? "Failed" : latestCommit ? "Pending" : "Not configured"}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between text-xs">
                                 <span className="text-muted-foreground">Firewall</span>
-                                <span className={`font-medium ${firewallActive ? "text-success" : "text-muted-foreground"}`}>
+                                <span className={`font-medium ${firewallActive ? "text-success-text" : "text-muted-foreground"}`}>
                                     {firewallActive ? "Enabled" : "Not enabled"}
                                 </span>
                             </div>

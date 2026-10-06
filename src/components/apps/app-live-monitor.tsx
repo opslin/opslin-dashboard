@@ -198,7 +198,7 @@ export function AppLiveMonitor({
           </div>
           <div className="rounded-lg border border-border/70 bg-card p-4">
             <div className="flex items-center justify-between">
-              <MemoryStick className="size-4 text-chart-violet" />
+              <MemoryStick className="size-4 text-chart-violet-text" />
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Memory</span>
             </div>
             <p className="mt-2 text-2xl font-semibold text-foreground">{memory.toFixed(1)}%</p>

@@ -87,7 +87,7 @@ export default function TransparencyPage() {
                         <TrendingUp size={20} />
                     </div>
                     <div className="text-3xl font-mono font-bold text-foreground">{isLoading ? "…" : `${uptimeValue.toFixed(2)}%`}</div>
-                    <div className={`text-[11px] font-medium mt-1 ${meetsTarget ? "text-success" : "text-danger"}`}>{meetsTarget ? "Meeting target" : "Below target"}</div>
+                    <div className={`text-[11px] font-medium mt-1 ${meetsTarget ? "text-success-text" : "text-danger-text"}`}>{meetsTarget ? "Meeting target" : "Below target"}</div>
                     <div className="text-[10px] text-muted-foreground">Rolling 7-day window</div>
                 </div>
                 <div className="rounded-xl border border-border bg-card p-5">
@@ -97,7 +97,7 @@ export default function TransparencyPage() {
                     </div>
                     <div className="text-3xl font-mono font-bold text-foreground">{isLoading ? "…" : `${targetPercent.toFixed(1)}%`}</div>
                     <div className="text-[11px] text-muted-foreground mt-1">7-day rolling target</div>
-                    <div className={`text-[10px] font-medium mt-0.5 ${meetsTarget ? "text-success" : "text-danger"}`}>{meetsTarget ? "You are meeting the target" : "You are below the target"}</div>
+                    <div className={`text-[10px] font-medium mt-0.5 ${meetsTarget ? "text-success-text" : "text-danger-text"}`}>{meetsTarget ? "You are meeting the target" : "You are below the target"}</div>
                 </div>
                 <div className="rounded-xl border border-border bg-card p-5">
                     <div className="flex items-center justify-between mb-2">
@@ -160,7 +160,7 @@ export default function TransparencyPage() {
                                         <div className="text-sm font-mono font-bold text-foreground">{app.uptimePercent7d.toFixed(2)}%</div>
                                         <div className="text-[10px] text-muted-foreground">Uptime</div>
                                     </div>
-                                    <Link href={`/apps/${app.appId}`} className="text-xs text-info-text hover:text-info/80 font-medium flex items-center gap-1 shrink-0">
+                                    <Link href={`/apps/${app.appId}`} className="text-xs text-info-text hover:text-info-text/80 font-medium flex items-center gap-1 shrink-0">
                                         Open app <ArrowUpRight className="h-3 w-3" />
                                     </Link>
                                 </div>
@@ -174,7 +174,7 @@ export default function TransparencyPage() {
                 {data && data.apps.length > 0 && (
                     <div className="border-t border-border px-6 py-3 flex items-center justify-between">
                         <span className="text-xs text-muted-foreground">Showing 1 to {data.apps.length} of {data.apps.length} apps</span>
-                        <Link href="/apps" className="text-xs text-info-text hover:text-info/80 font-medium flex items-center gap-1">View all apps <ArrowUpRight className="h-3 w-3" /></Link>
+                        <Link href="/apps" className="text-xs text-info-text hover:text-info-text/80 font-medium flex items-center gap-1">View all apps <ArrowUpRight className="h-3 w-3" /></Link>
                     </div>
                 )}
             </div>
@@ -188,7 +188,7 @@ export default function TransparencyPage() {
                             <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-danger text-danger-foreground text-[10px] font-bold">{firingEvents.length}</span>
                         )}
                     </div>
-                    <Link href="/alerts" className="text-xs text-info-text hover:text-info/80 font-medium flex items-center gap-1">View all incidents <ArrowUpRight className="h-3 w-3" /></Link>
+                    <Link href="/alerts" className="text-xs text-info-text hover:text-info-text/80 font-medium flex items-center gap-1">View all incidents <ArrowUpRight className="h-3 w-3" /></Link>
                 </div>
                 <p className="text-sm text-muted-foreground mb-4">Active issues that may impact your applications.</p>
 
@@ -212,7 +212,7 @@ export default function TransparencyPage() {
                                     </div>
                                     {event.rule?.severity ? <StatusBadge status={event.rule.severity} /> : null}
                                 </div>
-                                <Link href={`/alerts/${event.id}`} className="text-xs text-info-text hover:text-info/80 font-medium">Incident details</Link>
+                                <Link href={`/alerts/${event.id}`} className="text-xs text-info-text hover:text-info-text/80 font-medium">Incident details</Link>
                             </div>
                         ))}
                     </div>
@@ -239,7 +239,7 @@ export default function TransparencyPage() {
                 </div>
                 <div className="mt-6 pt-4 border-t border-border flex items-center gap-4">
                     <span className="text-sm text-muted-foreground">Learn more about how transparency works in our documentation.</span>
-                    <a href="#" className="text-sm text-info-text hover:text-info/80 font-medium flex items-center gap-1">Read documentation <ExternalLink className="h-3 w-3" /></a>
+                    <a href="#" className="text-sm text-info-text hover:text-info-text/80 font-medium flex items-center gap-1">Read documentation <ExternalLink className="h-3 w-3" /></a>
                 </div>
             </div>
 
@@ -267,7 +267,7 @@ export default function TransparencyPage() {
                 </div>
                 <div className="mt-6 pt-4 border-t border-border flex items-center gap-4">
                     <span className="text-sm text-muted-foreground">Manage whether your organization shares anonymized failure patterns.</span>
-                    <Link href="/settings" className="text-sm text-info-text hover:text-info/80 font-medium flex items-center gap-1">
+                    <Link href="/settings" className="text-sm text-info-text hover:text-info-text/80 font-medium flex items-center gap-1">
                         Open Settings <ArrowUpRight className="h-3 w-3" />
                     </Link>
                 </div>
@@ -336,7 +336,7 @@ export default function TransparencyPage() {
 
                 {recentIncidents.length > 0 && (
                     <div className="border-t border-border px-6 py-3 flex items-center justify-center">
-                        <Link href="/alerts" className="text-xs text-info-text hover:text-info/80 font-medium flex items-center gap-1">View all incidents <ArrowUpRight className="h-3 w-3" /></Link>
+                        <Link href="/alerts" className="text-xs text-info-text hover:text-info-text/80 font-medium flex items-center gap-1">View all incidents <ArrowUpRight className="h-3 w-3" /></Link>
                     </div>
                 )}
             </div>
@@ -350,7 +350,7 @@ export default function TransparencyPage() {
                         <div className="text-xs text-muted-foreground">Our team is here to help you understand any incidents or metrics</div>
                     </div>
                 </div>
-                <a href="#" className="text-sm text-info-text hover:text-info/80 font-medium flex items-center gap-1">
+                <a href="#" className="text-sm text-info-text hover:text-info-text/80 font-medium flex items-center gap-1">
                     Contact support <Headset size={16} />
                 </a>
             </div>

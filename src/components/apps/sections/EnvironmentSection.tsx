@@ -38,7 +38,7 @@ const SCOPE_LABEL: Record<Scope, string> = {
 const SCOPE_BADGE: Record<Scope, string> = {
     all: "bg-info-muted text-info-text border-info/30",
     production: "bg-brand-muted text-brand border-border",
-    preview: "bg-chart-violet/10 text-chart-violet border-chart-violet/30",
+    preview: "bg-chart-violet/10 text-chart-violet-text border-chart-violet/30",
     development: "bg-warning-muted text-warning-text border-warning/30",
 };
 

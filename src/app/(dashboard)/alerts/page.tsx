@@ -254,7 +254,7 @@ export default function AlertsPage() {
                                         <span className="text-xs text-muted-foreground ml-2">{event.rule?.app?.name || event.rule?.server?.name || ""}</span>
                                     </div>
                                 </div>
-                                <Link href={`/alerts/${event.id}`} className="text-xs text-info-text hover:text-info/80 font-medium">Drill in →</Link>
+                                <Link href={`/alerts/${event.id}`} className="text-xs text-info-text hover:text-info-text/80 font-medium">Drill in →</Link>
                             </div>
                         ))}
                     </div>
@@ -487,7 +487,7 @@ export default function AlertsPage() {
                                         <td className="py-3 px-3 font-mono text-xs text-muted-foreground">{operatorLabels[rule.operator] || ""}{rule.threshold}</td>
                                         <td className="py-3 px-3 text-xs text-muted-foreground">{durationLabel}</td>
                                         <td className="py-3 px-3">
-                                            <span className={`inline-flex items-center gap-1 text-xs font-medium ${isActive ? "text-success" : isSilenced ? "text-warning" : "text-muted-foreground"}`}>
+                                            <span className={`inline-flex items-center gap-1 text-xs font-medium ${isActive ? "text-success-text" : isSilenced ? "text-warning-text" : "text-muted-foreground"}`}>
                                                 <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-success" : isSilenced ? "bg-warning" : "bg-muted-foreground"}`} />
                                                 {isActive ? "Active" : isSilenced ? "Silenced" : "Disabled"}
                                             </span>

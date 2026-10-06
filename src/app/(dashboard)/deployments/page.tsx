@@ -183,7 +183,7 @@ export default function DeploymentsPage() {
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2.5 flex-wrap">
                                             <Link href={appLink} className="text-sm font-semibold text-foreground hover:text-brand transition-colors">{d.appName}</Link>
-                                            <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${isSuccess ? "bg-success-muted text-success" : isFailed ? "bg-danger-muted text-danger" : "bg-info-muted text-info"}`}>
+                                            <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${isSuccess ? "bg-success-muted text-success-text" : isFailed ? "bg-danger-muted text-danger-text" : "bg-info-muted text-info-text"}`}>
                                                 {isRunning ? <LivePulse label="Deployment in progress" /> : null}
                                                 {d.status === "succeeded" ? "SUCCESS" : d.status === "failed" ? "FAILED" : d.status.toUpperCase()}
                                             </span>
@@ -212,7 +212,7 @@ export default function DeploymentsPage() {
                                         )}
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreVertical className="h-4 w-4" /></Button>
+                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Deployment actions"><MoreVertical className="h-4 w-4" /></Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
                                                 <DropdownMenuItem asChild><Link href={`/apps/${d.appId}`}>View app details</Link></DropdownMenuItem>

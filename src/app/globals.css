@@ -67,6 +67,7 @@
   --color-cyan: var(--opslin-cyan-default);
   --color-cyan-muted: var(--opslin-cyan-muted);
   --color-chart-violet: var(--opslin-chart-violet);
+  --color-chart-violet-text: var(--opslin-chart-violet-text);
   --color-accent-2: var(--opslin-accent-2-default);
   --color-accent-2-muted: var(--opslin-accent-2-muted);
   --color-accent-2-border: var(--opslin-accent-2-border);
@@ -228,7 +229,7 @@
 
   .usage-bar-upgrade {
     @apply mt-2 text-xs font-medium;
-    color: var(--opslin-danger-default);
+    color: var(--opslin-danger-text);
   }
 
   /* Single-source glass recipe (doc 02 §3.3) — bg + border + inset top

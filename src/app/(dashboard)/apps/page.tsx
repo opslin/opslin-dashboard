@@ -321,7 +321,7 @@ export default function AppsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select value={serverFilter} onValueChange={setServerFilter}>
-              <SelectTrigger size="sm" className="w-[140px]">
+              <SelectTrigger size="sm" aria-label="Filter by server" className="w-[140px]">
                 <SelectValue placeholder="All servers" />
               </SelectTrigger>
               <SelectContent>
@@ -332,7 +332,7 @@ export default function AppsPage() {
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger size="sm" className="w-[140px]">
+              <SelectTrigger size="sm" aria-label="Filter by status" className="w-[140px]">
                 <SelectValue placeholder="All status" />
               </SelectTrigger>
               <SelectContent>
@@ -480,7 +480,7 @@ export default function AppsPage() {
             <div className="flex items-center gap-4">
               <Rocket size={40} />
               <div>
-                <h3 className="text-sm font-semibold text-foreground">Ready to deploy something amazing?</h3>
+                <h2 className="text-sm font-semibold text-foreground">Ready to deploy something amazing?</h2>
                 <p className="text-xs text-muted-foreground">Connect your repository and deploy in minutes.</p>
               </div>
             </div>

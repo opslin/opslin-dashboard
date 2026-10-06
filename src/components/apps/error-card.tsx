@@ -202,18 +202,18 @@ export function ErrorCard({
         >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 gap-3">
-                    <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-danger-muted text-danger">
+                    <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-danger-muted text-danger-text">
                         <AlertTriangle className="h-5 w-5" aria-hidden="true" />
                     </div>
                     <div className="min-w-0 space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-base font-semibold">{details.title}</h3>
-                            <span className="rounded-full bg-danger-muted px-2 py-0.5 font-mono text-[11px] font-medium text-danger">
+                            <span className="rounded-full bg-danger-muted px-2 py-0.5 font-mono text-[11px] font-medium text-danger-text">
                                 {code}
                             </span>
                             {firstFailureLocationLabel ? (
                                 <span
-                                    className="rounded-full border border-danger/30 bg-card px-2 py-0.5 font-mono text-[11px] font-medium text-danger"
+                                    className="rounded-full border border-danger/30 bg-card px-2 py-0.5 font-mono text-[11px] font-medium text-danger-text"
                                     title="First failure location reported in the build log"
                                 >
                                     {firstFailureLocationLabel}
@@ -249,12 +249,12 @@ export function ErrorCard({
                         variant="outline"
                         size="sm"
                         onClick={copyDiagnostics}
-                        className="border-danger/30 bg-card text-danger hover:bg-danger-muted"
+                        className="border-danger/30 bg-card text-danger-text hover:bg-danger-muted"
                     >
                         <ClipboardCopy className="mr-2 h-4 w-4" />
                         Copy diagnostics
                     </Button>
-                    <Button asChild variant="outline" size="sm" className="border-danger/30 bg-card text-danger hover:bg-danger-muted">
+                    <Button asChild variant="outline" size="sm" className="border-danger/30 bg-card text-danger-text hover:bg-danger-muted">
                         <Link href={docsLink}>
                             <BookOpen className="mr-2 h-4 w-4" />
                             See Docs
@@ -276,7 +276,7 @@ export function ErrorCard({
             </div>
 
             <details className="mt-4">
-                <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-danger">
+                <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-danger-text">
                     Diagnostics
                     <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
                 </summary>
@@ -287,7 +287,7 @@ export function ErrorCard({
 
             {logSnippet && (
                 <details className="mt-4">
-                    <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-danger">
+                    <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-danger-text">
                         Error snippet
                         <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
                     </summary>
