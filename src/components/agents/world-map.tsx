@@ -233,8 +233,8 @@ export function AgentWorldMap({
               <path
                 key={f.id}
                 d={f.path}
-                fill="#e2e8f0"
-                stroke="#cbd5e1"
+                fill="var(--muted)"
+                stroke="var(--border)"
                 strokeWidth="0.5"
                 opacity="0.9"
               />
@@ -242,17 +242,17 @@ export function AgentWorldMap({
           </g>
         ) : (
           <g opacity="0.3">
-            <rect x="100" y="80" width="200" height="120" fill="#e2e8f0" rx="8" />
-            <rect x="380" y="60" width="180" height="140" fill="#e2e8f0" rx="8" />
-            <rect x="600" y="100" width="160" height="100" fill="#e2e8f0" rx="8" />
-            <rect x="450" y="220" width="120" height="100" fill="#e2e8f0" rx="8" />
+            <rect x="100" y="80" width="200" height="120" fill="var(--muted)" rx="8" />
+            <rect x="380" y="60" width="180" height="140" fill="var(--muted)" rx="8" />
+            <rect x="600" y="100" width="160" height="100" fill="var(--muted)" rx="8" />
+            <rect x="450" y="220" width="120" height="100" fill="var(--muted)" rx="8" />
           </g>
         )}
 
         {/* Markers */}
         {projectedMarkers.map((m) => {
           const isHighlighted = highlightedId === m.id;
-          const color = m.online ? "#10b981" : "#94a3b8";
+          const color = m.online ? "var(--opslin-success-default)" : "var(--opslin-text-quaternary)";
           return (
             <g key={m.id}>
               {m.online && (
@@ -272,13 +272,13 @@ export function AgentWorldMap({
                   height={28}
                   rx={5}
                   fill="white"
-                  stroke="#e2e8f0"
+                  stroke="var(--muted)"
                   strokeWidth="1"
                 />
-                <text x={6} y={11} fontSize="9" fill="#0f172a" fontWeight="600">
+                <text x={6} y={11} fontSize="9" fill="var(--foreground)" fontWeight="600">
                   {m.city}
                 </text>
-                <text x={6} y={22} fontSize="8" fill="#64748b">
+                <text x={6} y={22} fontSize="8" fill="var(--muted-foreground)">
                   {m.agentCount} agent{m.agentCount === 1 ? "" : "s"}
                 </text>
               </g>

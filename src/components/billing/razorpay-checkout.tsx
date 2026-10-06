@@ -224,7 +224,7 @@ export function RazorpayCheckout({
                     },
                 },
                 theme: {
-                    color: readCssVar("--opslin-accent-default", "#15803d"),
+                    color: readCssVar("--opslin-accent-default", "hsl(142 72% 29%)"),
                 },
             });
 

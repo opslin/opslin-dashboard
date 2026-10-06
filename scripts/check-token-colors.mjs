@@ -25,7 +25,16 @@ function collectFiles(dir) {
   return files;
 }
 
-const files = collectFiles(join(root, "src"));
+// src/lib/media-sdk is vendored (see src/lib/media-sdk/__tests__/vendored.test.ts); its
+// rgb() output is a runtime-computed thumbhash placeholder, not a design color.
+const VENDORED = join("src", "lib", "media-sdk");
+// opengraph-image.tsx renders through satori (next/og), which has no access to
+// CSS custom properties, so it must use literal colors.
+const SATORI = join("src", "app", "opengraph-image.tsx");
+const files = collectFiles(join(root, "src")).filter((file) => {
+  const rel = relative(root, file);
+  return !rel.startsWith(VENDORED) && rel !== SATORI;
+});
 
 const pattern = /#[0-9A-Fa-f]{3,8}\b|rgba?\(/g;
 const violations = [];
