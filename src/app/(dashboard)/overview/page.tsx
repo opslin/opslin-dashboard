@@ -1,18 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BellRing, Box, Rocket, Server as ServerIcon } from "lucide-react";
+import { BellRing, Box, MoreHorizontal, Rocket, Server as ServerIcon } from "lucide-react";
 import { api, type DeploymentRecord } from "@/lib/api";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
-import { StatTile } from "@/components/patterns/stat-tile";
-import { StatTileSkeleton } from "@/components/patterns/stat-tile-skeleton";
+import { StatCard, StatCardSkeleton } from "@/components/dashboard/stat-card";
+import { DeployActivityChart } from "@/components/dashboard/deploy-activity-chart";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
-import { BarMetricChart } from "@/components/patterns/metric-chart";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -51,9 +54,27 @@ function useRecentDeployments() {
     return { apps, appsLoading, deployments, isLoading: appsLoading || (apps.length > 0 && deploymentsLoading) };
 }
 
-const WEEKDAY_FORMAT = new Intl.DateTimeFormat("en-US", { weekday: "short" });
+const DAY_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RANGES = [
+    { value: "7", label: "7 days" },
+    { value: "14", label: "14 days" },
+    { value: "30", label: "30 days" },
+] as const;
+
+function startOfDay(date: Date) {
+    const day = new Date(date);
+    day.setHours(0, 0, 0, 0);
+    return day;
+}
+
+function percentChange(current: number, previous: number) {
+    if (previous === 0) return current === 0 ? 0 : 100;
+    return Math.round(((current - previous) / previous) * 100);
+}
 
 export default function DashboardHomePage() {
+    const [range, setRange] = useState<string>("14");
     const { data: servers = [], isLoading: serversLoading } = useQuery({
         queryKey: ["home", "servers"],
         queryFn: () => api.getServers(),
@@ -72,92 +93,139 @@ export default function DashboardHomePage() {
     const serversOnline = servers.filter((server) => server.status === "connected").length;
     const appsRunning = apps.filter((app) => app.status === "running").length;
 
-    const dailyDeployBuckets = useMemo(() => {
-        const days = Array.from({ length: 7 }, (_, index) => {
-            const day = new Date();
-            day.setHours(0, 0, 0, 0);
-            day.setDate(day.getDate() - (6 - index));
-            return { key: day.toDateString(), label: WEEKDAY_FORMAT.format(day), value: 0 };
+    const chartData = useMemo(() => {
+        const days = Number(range);
+        const today = startOfDay(new Date());
+        const buckets = Array.from({ length: days }, (_, index) => {
+            const day = new Date(today.getTime() - (days - 1 - index) * DAY_MS);
+            return { key: day.toDateString(), label: DAY_LABEL.format(day), succeeded: 0, failed: 0 };
         });
         for (const deployment of deployments) {
-            const key = new Date(deployment.startedAt).toDateString();
-            const bucket = days.find((day) => day.key === key);
-            if (bucket) {
-                bucket.value += 1;
-            }
+            const bucket = buckets.find((b) => b.key === new Date(deployment.startedAt).toDateString());
+            if (!bucket) continue;
+            if (deployment.status === "succeeded") bucket.succeeded += 1;
+            else bucket.failed += 1;
         }
-        return days;
+        return buckets;
+    }, [deployments, range]);
+
+    const { thisWeek, lastWeek } = useMemo(() => {
+        const today = startOfDay(new Date()).getTime();
+        let current = 0;
+        let previous = 0;
+        for (const deployment of deployments) {
+            const age = Math.floor((today - startOfDay(new Date(deployment.startedAt)).getTime()) / DAY_MS);
+            if (age >= 0 && age < 7) current += 1;
+            else if (age >= 7 && age < 14) previous += 1;
+        }
+        return { thisWeek: current, lastWeek: previous };
     }, [deployments]);
 
-    const deploysThisWeek = dailyDeployBuckets.reduce((sum, day) => sum + day.value, 0);
-    const recentDeployments = deployments.slice(0, 6);
+    const weekChange = percentChange(thisWeek, lastWeek);
+    const recentDeployments = deployments.slice(0, 8);
+    const appsRunningShare = apps.length > 0 ? Math.round((appsRunning / apps.length) * 100) : 0;
 
     return (
         <>
-            <Header title="Overview" description="Your fleet at a glance." />
+            <Header
+                title="Overview"
+                description="Your fleet at a glance."
+                actions={
+                    <>
+                        <Button variant="outline" asChild>
+                            <Link href="/servers">
+                                <ServerIcon /> Add server
+                            </Link>
+                        </Button>
+                        <Button asChild>
+                            <Link href="/apps/new">
+                                <Rocket /> Deploy app
+                            </Link>
+                        </Button>
+                    </>
+                }
+            />
 
             <StaggerGroup className="dashboard-page">
-                <StaggerItem className="glow-ambient grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <StaggerItem className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     {serversLoading ? (
-                        <StatTileSkeleton variant="inverse" />
+                        <StatCardSkeleton />
                     ) : (
-                        <StatTile
-                            variant="inverse"
+                        <StatCard
                             label="Servers online"
-                            value={serversOnline}
                             icon={ServerIcon}
-                            live={serversOnline > 0}
-                            delta={{ label: `of ${servers.length} total`, direction: "neutral" }}
+                            value={serversOnline}
+                            badge={{ label: `${serversOnline} / ${servers.length}`, trend: serversOnline === servers.length && servers.length > 0 ? "up" : "neutral" }}
+                            footerTitle={servers.length === 0 ? "No servers connected" : serversOnline === servers.length ? "Every server is reporting" : "Some servers are offline"}
+                            footerDescription={`${servers.length} server${servers.length === 1 ? "" : "s"} registered`}
                         />
                     )}
                     {appsLoading ? (
-                        <StatTileSkeleton />
+                        <StatCardSkeleton />
                     ) : (
-                        <StatTile
+                        <StatCard
                             label="Apps running"
-                            value={appsRunning}
                             icon={Box}
-                            accent="violet"
-                            delta={{ label: `of ${apps.length} total`, direction: "neutral" }}
+                            value={appsRunning}
+                            badge={{ label: `${appsRunningShare}%`, trend: appsRunningShare >= 50 ? "up" : "down" }}
+                            footerTitle={apps.length === 0 ? "No apps deployed yet" : `${apps.length - appsRunning} not running`}
+                            footerDescription={`${apps.length} app${apps.length === 1 ? "" : "s"} in total`}
                         />
                     )}
                     {deploymentsLoading ? (
-                        <StatTileSkeleton />
+                        <StatCardSkeleton />
                     ) : (
-                        <StatTile
+                        <StatCard
                             label="Deploys this week"
-                            value={deploysThisWeek}
                             icon={Rocket}
-                            accent="blue"
-                            sparkline={dailyDeployBuckets.map((day) => day.value)}
+                            value={thisWeek}
+                            badge={{ label: `${weekChange > 0 ? "+" : ""}${weekChange}%`, trend: weekChange > 0 ? "up" : weekChange < 0 ? "down" : "neutral" }}
+                            footerTitle={weekChange >= 0 ? "Release cadence is steady" : "Fewer releases than last week"}
+                            footerDescription={`${lastWeek} the week before`}
                         />
                     )}
-                    <StatTile
+                    <StatCard
                         label="Open alerts"
-                        value={firingAlerts.length}
                         icon={BellRing}
-                        accent={firingAlerts.length > 0 ? "warning" : "brand"}
-                        delta={
-                            firingAlerts.length > 0
-                                ? { label: "needs attention", direction: "down" }
-                                : { label: "all clear", direction: "up" }
-                        }
+                        value={firingAlerts.length}
+                        badge={{ label: firingAlerts.length > 0 ? "Firing" : "All clear", trend: firingAlerts.length > 0 ? "down" : "up" }}
+                        footerTitle={firingAlerts.length > 0 ? "Needs attention" : "Nothing is firing"}
+                        footerDescription="Across all monitored servers and apps"
                     />
                 </StaggerItem>
 
-                <StaggerItem className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                    <div className="rounded-lg border border-border/80 bg-card p-5 lg:col-span-2">
-                        <h2 className="text-sm font-semibold text-foreground">Deploy activity</h2>
-                        <p className="text-xs text-muted-foreground">Deployments per day, last 7 days.</p>
-                        <BarMetricChart data={dailyDeployBuckets} height={220} className="mt-4" />
-                    </div>
+                <StaggerItem className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    <Card className="xl:col-span-2">
+                        <Tabs value={range} onValueChange={setRange} className="gap-6">
+                            <CardHeader>
+                                <CardTitle>Deploy activity</CardTitle>
+                                <CardDescription>Deployments per day over the last {range} days.</CardDescription>
+                                <CardAction>
+                                    <TabsList aria-label="Chart range">
+                                        {RANGES.map((option) => (
+                                            <TabsTrigger key={option.value} value={option.value}>
+                                                {option.label}
+                                            </TabsTrigger>
+                                        ))}
+                                    </TabsList>
+                                </CardAction>
+                            </CardHeader>
+                            <CardContent>
+                                <TabsContent value={range}>
+                                    <DeployActivityChart data={chartData} />
+                                </TabsContent>
+                            </CardContent>
+                        </Tabs>
+                    </Card>
 
-                    <div className="rounded-lg border border-border/80 bg-card p-5">
-                        <h2 className="text-sm font-semibold text-foreground">Server fleet</h2>
-                        <p className="text-xs text-muted-foreground">
-                            {servers.length} server{servers.length === 1 ? "" : "s"} connected to Opslin.
-                        </p>
-                        <div className="mt-4 space-y-1">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Server fleet</CardTitle>
+                            <CardDescription>
+                                {servers.length} server{servers.length === 1 ? "" : "s"} connected to Opslin.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-1">
                             {servers.length === 0 ? (
                                 <EmptyState
                                     icon={ServerIcon}
@@ -174,34 +242,38 @@ export default function DashboardHomePage() {
                                     <Link
                                         key={server.id}
                                         href={`/servers/${server.id}`}
-                                        className="flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-secondary/50"
+                                        className="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-accent"
                                     >
-                                        <span className="truncate font-medium text-foreground">{server.name}</span>
+                                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                                            <ServerIcon className="size-4" aria-hidden="true" />
+                                        </span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-sm font-medium text-foreground">{server.name}</span>
+                                            <span className="block truncate font-mono text-xs text-muted-foreground">{server.ip}</span>
+                                        </span>
                                         <StatusBadge status={server.status} />
                                     </Link>
                                 ))
                             )}
-                        </div>
-                    </div>
+                        </CardContent>
+                    </Card>
                 </StaggerItem>
 
-                <StaggerItem className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                    <div className="rounded-lg border border-border/80 bg-card lg:col-span-2">
-                        <div className="flex items-center justify-between px-5 py-4">
-                            <div>
-                                <h2 className="text-sm font-semibold text-foreground">Recent deployments</h2>
-                                <p className="text-xs text-muted-foreground">Latest releases across every app.</p>
-                            </div>
-                            <Button variant="outline" size="sm" asChild>
-                                <Link href="/deployments">View all</Link>
-                            </Button>
-                        </div>
-                        {deploymentsLoading ? (
-                            <div className="px-5 pb-5">
-                                <TableSkeleton rows={5} cols={3} />
-                            </div>
-                        ) : recentDeployments.length === 0 ? (
-                            <div className="px-5 pb-5">
+                <StaggerItem className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    <Card className="xl:col-span-2">
+                        <CardHeader>
+                            <CardTitle>Recent deployments</CardTitle>
+                            <CardDescription>Latest releases across every app.</CardDescription>
+                            <CardAction>
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href="/deployments">View all</Link>
+                                </Button>
+                            </CardAction>
+                        </CardHeader>
+                        <CardContent>
+                            {deploymentsLoading ? (
+                                <TableSkeleton rows={5} cols={4} />
+                            ) : recentDeployments.length === 0 ? (
                                 <EmptyState
                                     icon={Rocket}
                                     title="No deployments yet"
@@ -212,54 +284,84 @@ export default function DashboardHomePage() {
                                         </Button>
                                     }
                                 />
-                            </div>
-                        ) : (
-                            <div className="divide-y divide-border/70">
-                                {recentDeployments.map((deployment) => (
-                                    <Link
-                                        key={deployment.id}
-                                        href={`/apps/${deployment.appId}`}
-                                        className="hover-lift relative z-0 flex items-center justify-between gap-3 rounded-md px-5 py-3"
-                                    >
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="truncate text-sm font-medium text-foreground">
-                                                    {deployment.appName}
-                                                </span>
-                                                <span className="font-mono text-xs text-muted-foreground">
-                                                    {deployment.sha.slice(0, 7)}
-                                                </span>
-                                            </div>
-                                            <p className="text-xs text-muted-foreground">
-                                                {formatRelativeTime(deployment.startedAt)}
-                                            </p>
-                                        </div>
-                                        <StatusBadge status={deployment.status} />
-                                    </Link>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                            ) : (
+                                <div className="overflow-hidden rounded-lg border">
+                                    <Table>
+                                        <TableHeader className="bg-muted/50">
+                                            <TableRow>
+                                                <TableHead>App</TableHead>
+                                                <TableHead>Commit</TableHead>
+                                                <TableHead>Status</TableHead>
+                                                <TableHead>Started</TableHead>
+                                                <TableHead className="w-10">
+                                                    <span className="sr-only">Actions</span>
+                                                </TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {recentDeployments.map((deployment) => (
+                                                <TableRow key={deployment.id}>
+                                                    <TableCell className="font-medium">
+                                                        <Link href={`/apps/${deployment.appId}`} className="hover:underline">
+                                                            {deployment.appName}
+                                                        </Link>
+                                                    </TableCell>
+                                                    <TableCell className="font-mono text-xs text-muted-foreground">
+                                                        {deployment.sha.slice(0, 7)}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <StatusBadge status={deployment.status} />
+                                                    </TableCell>
+                                                    <TableCell className="text-muted-foreground">
+                                                        {formatRelativeTime(deployment.startedAt)}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${deployment.appName}`}>
+                                                                    <MoreHorizontal />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end">
+                                                                <DropdownMenuItem asChild>
+                                                                    <Link href={`/apps/${deployment.appId}`}>View app</Link>
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem asChild>
+                                                                    <Link href={`/apps/${deployment.appId}?section=deployments`}>Deployment history</Link>
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
 
-                    <div className="rounded-lg border border-border/80 bg-card p-5">
-                        <h2 className="text-sm font-semibold text-foreground">Live activity</h2>
-                        <p className="text-xs text-muted-foreground">What&apos;s happening across your organization.</p>
-                        <div className="mt-4 space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Live activity</CardTitle>
+                            <CardDescription>What&apos;s happening across your organization.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
                             {!activity || activity.events.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">No recent activity.</p>
                             ) : (
-                                activity.events.slice(0, 8).map((event) => (
-                                    <div key={event.id} className="flex gap-3">
-                                        <div className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand" />
-                                        <div className="min-w-0">
+                                <ol className="relative space-y-5 border-s ps-5">
+                                    {activity.events.slice(0, 8).map((event) => (
+                                        <li key={event.id} className="relative">
+                                            <span className="absolute -start-[25px] top-1.5 size-2 rounded-full bg-primary ring-4 ring-card" />
                                             <p className="text-sm text-foreground">{event.description}</p>
                                             <p className="text-xs text-muted-foreground">{formatRelativeTime(event.createdAt)}</p>
-                                        </div>
-                                    </div>
-                                ))
+                                        </li>
+                                    ))}
+                                </ol>
                             )}
-                        </div>
-                    </div>
+                        </CardContent>
+                    </Card>
                 </StaggerItem>
             </StaggerGroup>
         </>

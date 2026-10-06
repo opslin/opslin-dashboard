@@ -1290,8 +1290,8 @@ function AppDetailPageContent() {
                 onRetryDeleteCleanup={retryDeleteCleanup}
             />
 
-            <div className="p-6 space-y-6">
-                <AppSectionNav value={selectedSection} onValueChange={setSelectedSection} />
+            <div className="p-6">
+                <AppSectionNav value={selectedSection} onValueChange={setSelectedSection}>
 
                 {preflightState && (
                     <PreflightChecksPanel
@@ -1546,6 +1546,7 @@ function AppDetailPageContent() {
                         <AppSecurityPage appId={appId} embedded />
                     )}
                 </div>
+                </AppSectionNav>
             </div>
 
             {/* Unified deploy live view, overlay mode (doc 04 §2) — full-screen

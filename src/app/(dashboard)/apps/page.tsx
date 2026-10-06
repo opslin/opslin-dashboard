@@ -278,7 +278,7 @@ export default function AppsPage() {
   const deletingApps = allApps.filter((a) => a.status === "deleting" || a.status === "delete_failed").length;
 
   return (
-    <div className="dashboard-page">
+    <>
       <Header
         title="Apps"
         description="Deploy and manage your applications across all servers."
@@ -292,6 +292,7 @@ export default function AppsPage() {
         }
       />
 
+      <div className="dashboard-page">
       <StaggerGroup className="flex flex-col gap-5">
         <StaggerItem className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatTile label="Total apps" value={totalApps} icon={Box} />
@@ -531,6 +532,7 @@ export default function AppsPage() {
           onOpenChange={(open) => { if (!open) setProgressApp(null); }}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }

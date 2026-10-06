@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const APP_SECTIONS = [
     { id: "overview", label: "Overview" },
@@ -30,9 +30,11 @@ type AppSectionNavProps = {
     value: AppSectionId;
     onValueChange: (value: AppSectionId) => void;
     className?: string;
+    /** Content for the selected section. Rendered inside the tab panel so the tabs have a real `tabpanel` to control. */
+    children?: React.ReactNode;
 };
 
-export function AppSectionNav({ value, onValueChange, className }: AppSectionNavProps) {
+export function AppSectionNav({ value, onValueChange, className, children }: AppSectionNavProps) {
     return (
         <Tabs
             value={value}
@@ -48,6 +50,11 @@ export function AppSectionNav({ value, onValueChange, className }: AppSectionNav
                     ))}
                 </TabsList>
             </div>
+            {children ? (
+                <TabsContent value={value} className="mt-6 space-y-6">
+                    {children}
+                </TabsContent>
+            ) : null}
         </Tabs>
     );
 }
