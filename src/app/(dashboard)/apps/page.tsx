@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusBadge } from "@/components/ui/status-badge";
 import { StatTile } from "@/components/patterns/stat-tile";
 import { EmptyState } from "@/components/patterns/empty-state";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
 import { Header } from "@/components/layout/header";
 import { PendingConfigDialog } from "@/components/apps/PendingConfigDialog";
@@ -205,7 +206,7 @@ export default function AppsPage() {
     queryFn: () => api.getServers(),
   });
 
-  const { data: allApps = [], isLoading } = useQuery({
+  const { data: allApps = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["all-apps"],
     queryFn: () => api.getAllApps(),
   });
@@ -352,6 +353,17 @@ export default function AppsPage() {
               <div key={i} className="h-40 animate-pulse rounded-lg bg-muted" />
             ))}
           </div>
+        ) : isError ? (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>Unable to load apps</AlertTitle>
+            <AlertDescription>
+              <p>{error instanceof Error ? error.message : "Something went wrong while loading your apps."}</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+                Try again
+              </Button>
+            </AlertDescription>
+          </Alert>
         ) : filteredApps.length === 0 ? (
           <EmptyState
             icon={Rocket}

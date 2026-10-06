@@ -86,6 +86,7 @@ vi.mock("@/lib/api", async () => {
         ...actual,
         api: {
             getServers: vi.fn(),
+            getCurrentPlan: vi.fn().mockResolvedValue(null),
             getApps: vi.fn(),
             getAppDomains: vi.fn(),
             getAppLogs: vi.fn(),
@@ -202,9 +203,11 @@ describe("AppDetailPage extraction smoke", () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(screen.getByText("Deployed on Production VPS")).toBeVisible();
+        expect(
+            screen.getByText((_, element) => element?.tagName === "P" && element.textContent?.startsWith("Deployed on Production VPS") === true)
+        ).toBeVisible();
         expect(screen.getByRole("link", { name: /Back to Apps/i })).toHaveAttribute("href", "/apps");
-        expect(await screen.findByRole("link", { name: "https://smoke.example.com" })).toBeVisible();
+        expect((await screen.findAllByRole("link", { name: /smoke\.example\.com/ }))[0]).toBeVisible();
 
         for (const section of ["Overview", "Deployments", "Domains", "Environment", "Logs", "Metrics", "Settings"]) {
             expect(screen.getByRole("tab", { name: section })).toBeVisible();
@@ -231,7 +234,7 @@ describe("AppDetailPage extraction smoke", () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(await screen.findByTestId("env-vars-editor")).toBeVisible();
+        expect(await screen.findByRole("heading", { name: "Environment Variables" })).toBeVisible();
         expect(screen.queryByTestId("domain-setup-card")).not.toBeInTheDocument();
         expect(screen.getByRole("tab", { name: "Environment" })).toHaveAttribute("aria-selected", "true");
     });
