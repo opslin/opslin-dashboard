@@ -99,10 +99,10 @@ export function OnboardingWizard() {
     };
 
     return (
-        <div className="mx-auto max-w-5xl p-6">
+        <div className="mx-auto max-w-5xl p-4 sm:p-6">
             <div className="mb-6">
                 <p className="text-sm font-medium text-primary">First deployment setup</p>
-                <h1 className="mt-2 text-3xl font-semibold tracking-normal text-foreground">
+                <h1 className="mt-2 text-2xl font-semibold tracking-normal sm:text-3xl text-foreground">
                     Connect a server, choose a repository, deploy once
                 </h1>
                 <p className="mt-2 max-w-3xl text-muted-foreground">
@@ -144,10 +144,10 @@ export function OnboardingWizard() {
                     </div>
                 </CardHeader>
 
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                     {currentStep === "server" && (
                         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-                            <div className="space-y-4">
+                            <div className="min-w-0 space-y-4">
                                 <div className="flex items-start gap-3">
                                     <Server className="mt-1 h-5 w-5 text-primary" />
                                     <div>
@@ -160,17 +160,17 @@ export function OnboardingWizard() {
 
                                 <div className="space-y-3">
                                     <Label>Linux VPS</Label>
-                                    <code className="block rounded-md border border-slate-200 bg-slate-950 px-3 py-3 font-mono text-sm text-slate-100" tabIndex={0}>
+                                    <code className="block whitespace-pre-wrap break-all rounded-md border border-slate-200 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 sm:text-sm" tabIndex={0}>
                                         {installCommand("linux")}
                                     </code>
                                     <Label>MacBook local test</Label>
-                                    <code className="block rounded-md border border-slate-200 bg-slate-950 px-3 py-3 font-mono text-sm text-slate-100" tabIndex={0}>
+                                    <code className="block whitespace-pre-wrap break-all rounded-md border border-slate-200 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 sm:text-sm" tabIndex={0}>
                                         {installCommand("macos")}
                                     </code>
                                 </div>
                             </div>
 
-                            <div className="rounded-lg border border-border bg-muted p-4">
+                            <div className="min-w-0 rounded-lg border border-border bg-muted p-4">
                                 <div className="flex items-center gap-2">
                                     {liveServers.length > 0 ? (
                                         <CheckCircle2 className="h-5 w-5 text-success-text" />
@@ -210,7 +210,7 @@ export function OnboardingWizard() {
 
                     {currentStep === "github" && (
                         <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-                            <div className="space-y-3">
+                            <div className="min-w-0 space-y-3">
                                 <div className="flex items-center gap-3">
                                     <Github className="h-5 w-5 text-primary" />
                                     <CardTitle>Connect GitHub</CardTitle>
@@ -228,7 +228,7 @@ export function OnboardingWizard() {
                                     </div>
                                 )}
                             </div>
-                            <div className="space-y-2">
+                            <div className="min-w-0 space-y-2">
                                 <Label htmlFor="onboarding-manual-url">Or paste a Git URL</Label>
                                 <Input
                                     id="onboarding-manual-url"

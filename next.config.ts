@@ -2,18 +2,24 @@ import type { NextConfig } from "next";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
-const contentSecurityPolicy = [
+// The Media page talks straight to each customer's own Cloudflare addresses (their upload service on *.workers.dev and
+// their image domain, whatever it is), so only that page may connect to any https address. Every other page keeps the
+// narrow list.
+const buildContentSecurityPolicy = (mediaPage: boolean) => [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com https://cdn.razorpay.com https://static.cloudflareinsights.com",
   "script-src-elem 'self' 'unsafe-inline' https://checkout.razorpay.com https://cdn.razorpay.com https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline'",
-  `connect-src 'self' ${API_URL} https://api.razorpay.com https://checkout.razorpay.com https://lumberjack.razorpay.com https://cloudflareinsights.com wss: ws:`,
+  `connect-src 'self' ${API_URL} https://api.razorpay.com https://checkout.razorpay.com https://lumberjack.razorpay.com https://cloudflareinsights.com wss: ws:${mediaPage ? " https:" : ""}`,
   "img-src 'self' data: https:",
   "font-src 'self' https://fonts.gstatic.com",
   "frame-src https://api.razorpay.com https://checkout.razorpay.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
 ].join("; ");
+
+const contentSecurityPolicy = buildContentSecurityPolicy(false);
+const mediaContentSecurityPolicy = buildContentSecurityPolicy(true);
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -70,13 +76,13 @@ const nextConfig: NextConfig = {
           ],
         }]
         : []),
+      // One policy per page: Media gets the wider connect list, everything else the narrow one (two policies on one
+      // response would be combined and the stricter would win).
+      { source: "/media", headers: [{ key: "Content-Security-Policy", value: mediaContentSecurityPolicy }] },
+      { source: "/((?!media$).*)", headers: [{ key: "Content-Security-Policy", value: contentSecurityPolicy }] },
       {
         source: "/(.*)",
         headers: [
-          {
-            key: "Content-Security-Policy",
-            value: contentSecurityPolicy,
-          },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

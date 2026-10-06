@@ -1169,6 +1169,78 @@ class ApiClient {
         return this.post<{ success: boolean; allowedOrigins: string[] }>(`/r2-storage/buckets/${bucketId}/cors`, { allowedOrigins });
     }
 
+    // Opslin Media (docs/audit/26-28). The whole /media surface is feature-gated
+    // (media.enabled): a 403 means "not enabled for this organization".
+    async getMedia() {
+        return this.get<MediaState>("/media");
+    }
+
+    async startMediaCloudflareSignIn() {
+        return this.post<{ authorizeUrl: string; expiresAt: string }>("/media/oauth/start", {});
+    }
+
+    async getMediaCloudflareAccounts() {
+        return this.get<{ accounts: MediaCloudflareAccount[] }>("/media/cloudflare/accounts");
+    }
+
+    async getMediaCloudflareZones(accountId: string) {
+        return this.get<{ zones: MediaCloudflareZone[] }>(`/media/cloudflare/zones${toQueryString({ accountId })}`);
+    }
+
+    async setupMedia(data: MediaSetupInput) {
+        return this.post<{ projectId: string; state: MediaProjectState }>("/media/setup", data);
+    }
+
+    async getMediaUsage() {
+        return this.get<MediaUsage>("/media/usage");
+    }
+
+    // Library: assets and folders in the customer's own upload service, reached through Opslin (docs/audit/29).
+    async listMediaAssets(query: MediaAssetQuery = {}) {
+        const base = toQueryString({ ...query, folder: query.folder || undefined, recursive: query.recursive === undefined ? undefined : String(query.recursive) });
+        // An empty folder means "the top level only", which is different from leaving the folder out ("everywhere").
+        const qs = query.folder === "" ? (base ? `${base}&folder=` : "?folder=") : base;
+        return this.get<MediaAssetList>(`/media/library/assets${qs}`);
+    }
+
+    async updateMediaAsset(id: string, patch: { name?: string; folder?: string; tags?: string[] }) {
+        return this.patch<{ asset: MediaAsset }>(`/media/library/assets/${id}`, patch);
+    }
+
+    async deleteMediaAsset(id: string) {
+        return this.delete<{ deleted: true }>(`/media/library/assets/${id}`);
+    }
+
+    async bulkMediaAssets(input: MediaBulkInput) {
+        return this.post<MediaBulkResult>("/media/library/assets/bulk", input);
+    }
+
+    async listMediaFolders(parent = "") {
+        return this.get<{ folders: MediaFolder[]; assets: number }>(`/media/library/folders${toQueryString({ parent })}`);
+    }
+
+    async createMediaFolder(path: string) {
+        return this.post<{ created: true; path: string }>("/media/library/folders", { path });
+    }
+
+    async renameMediaFolder(from: string, to: string) {
+        return this.patch<{ renamed: true; from: string; to: string }>("/media/library/folders", { from, to });
+    }
+
+    async deleteMediaFolder(path: string, withAssets = false) {
+        return this.delete<{ deleted: true; assets: number }>(`/media/library/folders${toQueryString({ path, withAssets: withAssets ? "true" : undefined })}`);
+    }
+
+    /** Owner or admin only; audited. Never cached. */
+    async getMediaApiKey() {
+        return this.get<{ apiKey: string }>("/media/api-key");
+    }
+
+    /** Needs a live Cloudflare sign-in (409 `cloudflare_not_connected` otherwise). 207 means partly removed. */
+    async removeMedia() {
+        return this.delete<MediaRemoveReport>("/media");
+    }
+
     async testDatabase(serverId: string, dbId: string) {
         return this.post<DatabaseConnectionTestResult>(`/servers/${serverId}/databases/${dbId}/test`, {});
     }
@@ -3388,6 +3460,141 @@ export interface CloudflareR2ConnectInput {
     token: string;
     cloudflareAccountId: string;
     cloudflareAccountName?: string;
+}
+
+// ── Opslin Media ────────────────────────────────────────────────────────────
+export type MediaStepStatus = "PENDING" | "RUNNING" | "DONE" | "FAILED" | "NEEDS_INPUT" | "WAITING";
+export type MediaProjectState = "PROVISIONING" | "READY" | "DEGRADED" | "NEEDS_RECONNECT" | "DISCONNECTING";
+
+export interface MediaStepRecord {
+    step: string;
+    status: MediaStepStatus;
+    attempts: number;
+    detail: unknown;
+    finishedAt: string | null;
+}
+
+export type MediaState =
+    | { configured: false; cloudflareSignedIn: boolean }
+    | {
+          configured: true;
+          cloudflareSignedIn: boolean;
+          id: string;
+          state: MediaProjectState;
+          engine: "EDGE" | "DEDICATED";
+          cloudflareAccountId: string;
+          cloudflareAccountName: string | null;
+          publicHostname: string | null;
+          bucketName: string;
+          /** Public workers.dev address of the upload service; null until it is deployed. */
+          uploadUrl: string | null;
+          allowedOrigins: string[];
+          transformsEnabled: boolean;
+          /** The deployed upload service is not the current version. */
+          workerUpdateAvailable: boolean;
+          lastVerifiedAt: string | null;
+          createdAt: string;
+          steps: MediaStepRecord[];
+      };
+
+export type MediaUsage =
+    | { available: false; reason: "no_upload_service" | "unreachable" | "unauthorized" | "unexpected" }
+    | {
+          available: true;
+          limitsActive: boolean;
+          version: string | null;
+          day: string | null;
+          objects: number;
+          bytes: number;
+          uploaders: number;
+          library: { assets: number; folders: number; storedBytes: number } | null;
+          caps: { projectObjects: number; projectBytes: number; ipObjects: number; ipBytes: number; ipPerMinute: number };
+          history: Array<{ day: string; objects: number; bytes: number }>;
+          level: "ok" | "warn" | "full";
+          percent: number;
+      };
+
+export interface MediaAsset {
+    id: string;
+    /** Content hash of the stored image; the address never changes when the asset is renamed or moved. */
+    hash: string;
+    name: string;
+    folder: string;
+    tags: string[];
+    type: string;
+    bytes: number;
+    width: number | null;
+    height: number | null;
+    thumbhash: string | null;
+    widths: number[];
+    variantBytes: number;
+    createdAt: string;
+    updatedAt: string;
+    urls: { master: string; variants: Record<string, string> } | null;
+}
+
+export interface MediaFolder {
+    path: string;
+    name: string;
+    assets: number;
+    folders: number;
+    createdAt: string;
+}
+
+export interface MediaAssetQuery {
+    folder?: string;
+    recursive?: boolean;
+    q?: string;
+    tag?: string;
+    type?: string;
+    sort?: "created" | "updated" | "name" | "bytes";
+    order?: "asc" | "desc";
+    limit?: number;
+    cursor?: string;
+}
+
+export interface MediaAssetList {
+    assets: MediaAsset[];
+    total: number;
+    nextCursor: string | null;
+}
+
+export type MediaBulkInput =
+    | { action: "delete"; ids: string[] }
+    | { action: "move"; ids: string[]; folder: string }
+    | { action: "tag"; ids: string[]; addTags?: string[]; removeTags?: string[] };
+
+export interface MediaBulkResult {
+    done: string[];
+    failed: Array<{ id: string; error: string }>;
+}
+
+export interface MediaRemoveReport {
+    outcome: "removed" | "incomplete";
+    removed: string[];
+    kept: Array<{ what: string; name: string; reason: "not_empty" }>;
+    failed: Array<{ what: string; message: string }>;
+}
+
+export interface MediaCloudflareAccount {
+    id: string;
+    name: string;
+}
+
+export interface MediaCloudflareZone {
+    id: string;
+    name: string;
+    status: string | null;
+}
+
+export interface MediaSetupInput {
+    cloudflareAccountId: string;
+    cloudflareAccountName?: string;
+    zoneId?: string;
+    hostname?: string;
+    allowedOrigins?: string[];
+    /** Redeploy the upload service from the current template. */
+    refresh?: boolean;
 }
 
 export interface CloudflareR2ConnectionStatus {

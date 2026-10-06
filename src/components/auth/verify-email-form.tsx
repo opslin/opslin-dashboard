@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
+import { OTPVerification } from "@/components/ui/otp-verify";
 import { canShowDevOtp } from "@/lib/auth-redirect";
 
 type VerifyEmailFormProps = {
@@ -16,6 +17,8 @@ type VerifyEmailFormProps = {
     onLogout?: () => Promise<unknown> | unknown;
     showLogout?: boolean;
     className?: string;
+    variant?: "default" | "otp";
+    email?: string;
 };
 
 const DEV_OTP_STORAGE_KEY = "opslin.devEmailOtp";
@@ -30,6 +33,8 @@ export function VerifyEmailForm({
     onLogout,
     showLogout = false,
     className,
+    variant = "default",
+    email,
 }: VerifyEmailFormProps) {
     const [code, setCode] = useState("");
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -117,6 +122,27 @@ export function VerifyEmailForm({
         }
         verifyMutation.mutate();
     };
+
+    if (variant === "otp") {
+        return (
+            <OTPVerification
+                email={email}
+                value={code}
+                onChange={(next) => setCode(normalizeOtp(next))}
+                onSubmit={() => {
+                    if (code.length === 6 && !verifyMutation.isPending) verifyMutation.mutate();
+                }}
+                onResend={() => resendMutation.mutate()}
+                onLogout={showLogout && onLogout ? () => void onLogout() : undefined}
+                resendCooldown={resendCooldown}
+                resendPending={resendMutation.isPending}
+                verifyPending={verifyMutation.isPending}
+                errorMessage={errorMessage}
+                successMessage={successMessage}
+                devOtp={canShowDevOtp() ? devOtp : null}
+            />
+        );
+    }
 
     return (
         <form onSubmit={handleSubmit} className={className ?? "space-y-4"}>

@@ -15,8 +15,10 @@ import {
   Cloud,
   Database,
   HardDrive,
+  Images,
   LayoutDashboard,
   LogOut,
+  Menu,
   MonitorDot,
   PanelLeft,
   Search,
@@ -39,9 +41,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { cn, initialsFor } from "@/lib/utils";
+import { useMediaEnabled } from "@/hooks/use-media";
 import { siteLinks } from "@/lib/site-links";
 import type { User } from "@/lib/api";
 
@@ -72,6 +76,10 @@ const secondaryNavigation: NavItem[] = [
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
+// Opslin Media is feature-gated (media.enabled). The entry is only added once the API has
+// confirmed it for this organization, so organizations without access never see it.
+const mediaNavigationItem: NavItem = { label: "Media", href: "/media", icon: Images };
+
 const adminNavigation: NavItem[] = [
   { label: "Super Admin", href: siteLinks.admin, icon: Shield },
 ];
@@ -101,7 +109,17 @@ export function DashboardShell({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [sequence, setSequence] = useState("");
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const showAdminNavigation = user?.isPlatformAdmin === true;
+  const mediaEnabled = useMediaEnabled();
+  const platformNavigation = useMemo(() => {
+    if (!mediaEnabled) {
+      return secondaryNavigation;
+    }
+    const storageIndex = secondaryNavigation.findIndex((item) => item.href === "/storage");
+    const insertAt = storageIndex === -1 ? secondaryNavigation.length : storageIndex + 1;
+    return [...secondaryNavigation.slice(0, insertAt), mediaNavigationItem, ...secondaryNavigation.slice(insertAt)];
+  }, [mediaEnabled]);
 
   const routeMap = useMemo(
     () =>
@@ -114,6 +132,10 @@ export function DashboardShell({
       ]),
     []
   );
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     let sequenceTimeout: number | undefined;
@@ -294,7 +316,7 @@ export function DashboardShell({
 
           {!collapsed ? <p className="dashboard-section-label mt-6 px-3 text-sidebar-foreground">Platform</p> : <div className="mt-4" />}
           <nav aria-label="Platform navigation" className="mt-2 space-y-0.5">
-            {secondaryNavigation.map((item) => {
+            {platformNavigation.map((item) => {
               const active = isActive(pathname, item.href);
               return (
                 <Link
@@ -408,14 +430,24 @@ export function DashboardShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="glass-panel backdrop-blur-md sticky top-0 z-40 rounded-none border-x-0 border-t-0">
           <div className="flex h-14 items-center gap-3 px-4 sm:px-6 lg:px-8">
-            <Link href="/overview" className="flex items-center lg:hidden">
-              <Image src="/logo/opslin-logo-black.png" alt="Opslin" width={161} height={50} className="h-7 w-auto" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="-ml-1 lg:hidden"
+              aria-label="Open menu"
+              onClick={() => setMobileMenuOpen(true)}
+            >
+              <Menu className="size-5" />
+            </Button>
+            <Link href="/overview" className="flex shrink-0 items-center lg:hidden">
+              <Image src="/logo/opslin-logo-black.png" alt="Opslin" width={161} height={50} className="h-7 w-auto max-w-none" />
             </Link>
 
             <Button
               type="button"
               variant="outline"
-              className="hidden min-w-[16rem] justify-start gap-3 text-muted-foreground sm:flex"
+              className="hidden w-64 min-w-0 shrink justify-start gap-3 overflow-hidden text-muted-foreground sm:flex"
               onClick={() => setCommandOpen(true)}
             >
               <Search className="size-4" />
@@ -433,8 +465,10 @@ export function DashboardShell({
               <Button type="button" size="sm" className="hidden sm:inline-flex" onClick={() => router.push("/servers")}>
                 Add server
               </Button>
-              <ThemeToggle />
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Open keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
+              <div className="hidden sm:block">
+                <ThemeToggle />
+              </div>
+              <Button type="button" variant="ghost" size="icon-sm" className="hidden sm:inline-flex" aria-label="Open keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
                 <PanelLeft className="size-4" />
               </Button>
               <DropdownMenu>
@@ -477,30 +511,113 @@ export function DashboardShell({
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
             exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -8 }}
             transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeOut" }}
-            className="flex-1 pb-20 lg:pb-0"
+            className="flex-1"
           >
             {children}
           </motion.main>
         </AnimatePresence>
-
-        <nav aria-label="Mobile navigation" className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 gap-2 rounded-2xl border border-border/80 bg-card/95 p-2 shadow-lg backdrop-blur lg:hidden">
-          {primaryNavigation.slice(0, 5).map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium",
-                isActive(pathname, item.href)
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground"
-              )}
-            >
-              <item.icon className="size-4" />
-              <span className="truncate">{item.label}</span>
-            </Link>
-          ))}
-        </nav>
       </div>
+
+      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <SheetContent side="left" className="w-[85%] max-w-xs gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground">
+          <SheetTitle className="sr-only">Menu</SheetTitle>
+          <SheetDescription className="sr-only">Navigate between Opslin sections</SheetDescription>
+          <div className="flex h-14 shrink-0 items-center px-4">
+            <Image src="/logo/opslin-logo-white.png" alt="Opslin" width={161} height={50} className="h-8 w-auto" />
+          </div>
+
+          <div className="px-3 pb-2">
+            <button
+              type="button"
+              onClick={() => router.push("/teams")}
+              className="flex w-full items-center gap-2.5 rounded-lg border border-sidebar-border bg-sidebar-hover/70 px-3 py-2.5 text-left"
+            >
+              <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-sidebar-hover text-[11px] font-semibold text-sidebar-accent-foreground">
+                {(user?.organizationName || "P").slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-sidebar-accent-foreground">{user?.organizationName || "Personal org"}</p>
+                <p className="truncate text-[11px] uppercase tracking-[0.08em] text-sidebar-foreground">{user?.orgRole || "OWNER"}</p>
+              </div>
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-3 py-2">
+            {[
+              { label: "Primary", items: primaryNavigation },
+              { label: "Platform", items: platformNavigation },
+            ].map((group, index) => (
+              <div key={group.label} className={index > 0 ? "mt-6" : undefined}>
+                <p className="dashboard-section-label px-3 text-sidebar-foreground">{group.label}</p>
+                <nav aria-label={`${group.label} menu`} className="mt-2 space-y-0.5">
+                  {group.items.map((item) => {
+                    const active = isActive(pathname, item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={cn(
+                          "relative flex h-11 items-center gap-3 rounded-lg px-3 text-sm transition-colors",
+                          active
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-accent-foreground"
+                        )}
+                      >
+                        {active ? <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-sidebar-primary" /> : null}
+                        <item.icon className="size-4 shrink-0" />
+                        <span className="flex-1 truncate">{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+              </div>
+            ))}
+
+            {showAdminNavigation ? (
+              <div className="mt-6">
+                <p className="dashboard-section-label px-3 text-sidebar-foreground">Admin</p>
+                <nav aria-label="Admin menu" className="mt-2 space-y-0.5">
+                  {adminNavigation.map((item) => (
+                    <a
+                      key={item.href}
+                      href={item.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex h-11 items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground"
+                    >
+                      <item.icon className="size-4 shrink-0" />
+                      <span className="flex-1 truncate">{item.label}</span>
+                    </a>
+                  ))}
+                </nav>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="border-t border-sidebar-border p-3">
+            <div className="flex items-center gap-3 px-2 py-2">
+              <Avatar className="size-8 shrink-0 border border-sidebar-border">
+                <AvatarFallback className="bg-sidebar-hover text-[11px] text-sidebar-accent-foreground">
+                  {initialsFor(user?.name, user?.email)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-sidebar-accent-foreground">{user?.name || "Operator"}</p>
+                <p className="truncate text-xs text-sidebar-foreground">{user?.email}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void onLogout()}
+              className="mt-1 flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm text-destructive transition-colors hover:bg-sidebar-hover"
+            >
+              <LogOut className="size-4" />
+              Log out
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} user={user} onLogout={onLogout} />
 

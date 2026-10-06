@@ -189,4 +189,10 @@ describe("Phase 02 dashboard logic", () => {
         expect(shouldBypassOnboarding("/apps")).toBe(false);
         expect(shouldBypassOnboarding("/servers")).toBe(false);
     });
+
+    it("never gates Media behind the connect-a-server wizard, but only matches the real route", () => {
+        expect(shouldBypassOnboarding("/media")).toBe(true);
+        expect(shouldBypassOnboarding("/media/anything")).toBe(true);
+        expect(shouldBypassOnboarding("/mediabox")).toBe(false);
+    });
 });

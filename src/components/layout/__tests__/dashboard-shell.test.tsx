@@ -27,6 +27,12 @@ vi.mock("framer-motion", () => ({
   useReducedMotion: () => true,
 }));
 
+const mediaEnabledMock = vi.hoisted(() => vi.fn(() => false));
+
+vi.mock("@/hooks/use-media", () => ({
+  useMediaEnabled: () => mediaEnabledMock(),
+}));
+
 vi.mock("@/components/layout/theme-toggle", () => ({
   ThemeToggle: () => <button type="button">Theme</button>,
 }));
@@ -63,7 +69,8 @@ describe("DashboardShell Super Admin navigation", () => {
 
     const sidebar = container.querySelector("aside");
     expect(sidebar).toHaveClass("sticky", "top-0", "h-screen");
-    expect(screen.getByRole("navigation", { name: "Mobile navigation" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open menu" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Mobile navigation" })).not.toBeInTheDocument();
   });
 
   it("shows Super Admin nav for platform admins, linking to the external admin panel", () => {
@@ -84,5 +91,25 @@ describe("DashboardShell Super Admin navigation", () => {
     renderShell({ ...baseUser, orgRole: "OWNER", isPlatformAdmin: false });
 
     expect(screen.queryByRole("link", { name: /super admin/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("DashboardShell Media navigation (feature-gated)", () => {
+  it("hides Media unless the API has confirmed it for the organization", () => {
+    mediaEnabledMock.mockReturnValue(false);
+    renderShell(baseUser);
+
+    expect(screen.queryByRole("link", { name: "Media" })).not.toBeInTheDocument();
+  });
+
+  it("shows Media right after Storage once enabled", () => {
+    mediaEnabledMock.mockReturnValue(true);
+    renderShell(baseUser);
+
+    const media = screen.getByRole("link", { name: "Media" });
+    expect(media).toHaveAttribute("href", "/media");
+    const platformLinks = screen.getAllByRole("link").map((link) => link.textContent?.trim());
+    expect(platformLinks.indexOf("Media")).toBe(platformLinks.indexOf("Storage") + 1);
+    mediaEnabledMock.mockReturnValue(false);
   });
 });

@@ -51,6 +51,7 @@ export default function ForgotPasswordPage() {
     return (
         <AuthPageGuard nextPath={nextPath}>
         <AuthCard
+            variant="showcase"
             title="Forgot password?"
             description="Enter your email and we'll send a reset link if the account exists."
         >

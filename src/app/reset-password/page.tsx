@@ -66,6 +66,7 @@ export default function ResetPasswordPage() {
 
     const resetContent = (
         <AuthCard
+            variant="showcase"
             title="Set a new password"
             description="Choose a new password for your Opslin account."
             eyebrow={
