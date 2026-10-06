@@ -13,37 +13,40 @@
      the canvas/card gap to be on par with the existing card/secondary gap;
      border opacities bumped to match so card edges stay visible against the
      deeper canvas instead of nearly disappearing. */
-  --opslin-bg-canvas: #e8edf0;
+  --opslin-bg-canvas: #f7f9fc;
   --opslin-bg-primary: #ffffff;
-  --opslin-bg-secondary: #e9eff2;
-  --opslin-bg-tertiary: #dee7eb;
-  --opslin-bg-accent: #d2dde3;
-  --opslin-bg-hover: #d7e3e8;
-  --opslin-bg-inverse: #0b1014;
-  --opslin-bg-inverse-2: #172026;
+  --opslin-bg-secondary: #eff4fb;
+  --opslin-bg-tertiary: #e6ecf5;
+  --opslin-bg-accent: #dbe4f0;
+  --opslin-bg-hover: #eaf0f8;
+  --opslin-bg-inverse: #111928;
+  --opslin-bg-inverse-2: #1c2434;
 
-  --opslin-border-subtle: rgba(39, 50, 58, 0.14);
-  --opslin-border-default: rgba(39, 50, 58, 0.2);
-  --opslin-border-strong: rgba(39, 50, 58, 0.32);
-  --opslin-border-focus: rgba(50, 216, 120, 0.55);
+  --opslin-border-subtle: rgba(17, 25, 40, 0.08);
+  --opslin-border-default: rgba(17, 25, 40, 0.12);
+  --opslin-border-strong: rgba(17, 25, 40, 0.24);
+  --opslin-border-focus: rgba(87, 80, 241, 0.55);
 
-  --opslin-text-primary: #162128;
-  --opslin-text-secondary: #53616b;
+  --opslin-text-primary: #111928;
+  --opslin-text-secondary: #4b5563;
   /* Darkened from #6b756f (2026-07-15, R1): the original value failed AA
      4.5:1 as muted-foreground text on bg-muted (4.18:1) and bg-accent
      (3.83:1) — see docs/ui-refinement/02_OPSLIN_DESIGN_SYSTEM_PLAN.md §9.
      This clears both (4.97:1 / 4.56:1) while only strengthening the
      already-passing bg-canvas/bg-card pairs. */
-  --opslin-text-tertiary: #66737c;
-  --opslin-text-quaternary: #8b98a1;
+  --opslin-text-tertiary: #637381;
+  --opslin-text-quaternary: #9aa5b1;
   --opslin-text-inverse: #f4f7f8;
   --opslin-text-on-inverse-muted: rgba(220, 227, 231, 0.7);
 
-  --opslin-accent-default: #32d878;
-  --opslin-accent-hover: #45e58a;
-  --opslin-accent-active: #22b963;
-  --opslin-accent-bright: #45e58a;
-  --opslin-accent-muted: rgba(50, 216, 120, 0.12);
+  --opslin-accent-default: #5750f1;
+  --opslin-accent-hover: #4a43d6;
+  --opslin-accent-active: #3d37b8;
+  --opslin-accent-bright: #8a85f5;
+  --opslin-accent-muted: rgba(87, 80, 241, 0.12);
+  /* Text on a SOLID accent fill (primary buttons). White clears AA on the
+     light-theme indigo; dark theme overrides it with a near-black. */
+  --opslin-accent-foreground: #ffffff;
 
   --opslin-success-default: #32d878;
   --opslin-success-muted: rgba(50, 216, 120, 0.12);
@@ -83,6 +86,7 @@
      others above, purely a chart accent. Aliases accent-2 below (the
      controlled violet secondary-accent family) — same color, two names for
      two roles: chart series vs. general insight/data-highlight accent. */
+  --opslin-chart-sky: #0891c9;
   --opslin-chart-violet: #a17bff;
   --opslin-accent-2-default: #a17bff;
   --opslin-accent-2-muted: rgba(161, 123, 255, 0.13);
@@ -95,9 +99,9 @@
   --opslin-db-redis: #dc382d;
 
   --opslin-glass-bg: rgba(255, 255, 255, 0.78);
-  --opslin-glass-border: rgba(39, 50, 58, 0.18);
+  --opslin-glass-border: rgba(17, 25, 40, 0.12);
   --opslin-glass-highlight: rgba(255, 255, 255, 0.88);
-  --opslin-glass-shadow: 0 12px 28px rgba(39, 50, 58, 0.1);
+  --opslin-glass-shadow: 0 12px 28px rgba(17, 25, 40, 0.08);
 
   /* Dark-mode-only: a single static, pre-composited radial glow (no
      animation/blur cost) for the whitelisted hero surfaces in doc 02 §3.5.
@@ -151,7 +155,7 @@
 
   /* Keep the existing Tailwind radius scale composed, but one step tighter
      so page cards read as polished panels instead of oversized bubbles. */
-  --radius: 0.625rem;
+  --radius: 0.75rem;
   --background: var(--opslin-bg-canvas);
   --foreground: var(--opslin-text-primary);
   --card: var(--opslin-bg-primary);
@@ -159,7 +163,7 @@
   --popover: var(--opslin-bg-primary);
   --popover-foreground: var(--opslin-text-primary);
   --primary: var(--opslin-accent-default);
-  --primary-foreground: var(--opslin-success-foreground);
+  --primary-foreground: var(--opslin-accent-foreground);
   --secondary: var(--opslin-bg-secondary);
   --secondary-foreground: var(--opslin-text-primary);
   --muted: var(--opslin-bg-secondary);
@@ -170,8 +174,8 @@
   --border: var(--opslin-border-default);
   --input: var(--opslin-border-strong);
   --ring: var(--opslin-border-focus);
-  --chart-1: var(--opslin-info-default);
-  --chart-2: var(--opslin-accent-bright);
+  --chart-1: var(--opslin-accent-default);
+  --chart-2: var(--opslin-chart-sky);
   --chart-3: var(--opslin-danger-default);
   --chart-4: var(--opslin-warning-default);
   --chart-5: var(--opslin-success-default);
@@ -196,20 +200,20 @@
   color-scheme: dark;
 
   /* Charcoal foundation: green is an action/state accent, never the page wash. */
-  --opslin-bg-canvas: #070a0d;
-  --opslin-bg-primary: #11171b;
-  --opslin-bg-secondary: #172026;
-  --opslin-bg-tertiary: #202b33;
-  --opslin-bg-accent: #27323a;
-  --opslin-bg-hover: #1c262c;
-  --opslin-bg-inverse: #0b1014;
-  --opslin-bg-inverse-2: #11171b;
+  --opslin-bg-canvas: #020d1a;
+  --opslin-bg-primary: #122031;
+  --opslin-bg-secondary: #1a2b40;
+  --opslin-bg-tertiary: #223650;
+  --opslin-bg-accent: #2c4560;
+  --opslin-bg-hover: #172a40;
+  --opslin-bg-inverse: #0a1626;
+  --opslin-bg-inverse-2: #122031;
 
-  --opslin-border-subtle: rgba(39, 50, 58, 0.72);
-  --opslin-border-default: #27323a;
-  --opslin-border-strong: #34434e;
-  --opslin-border-focus: rgba(50, 216, 120, 0.62);
-  --opslin-border-inverse: #27323a;
+  --opslin-border-subtle: rgba(51, 78, 110, 0.5);
+  --opslin-border-default: #1f3248;
+  --opslin-border-strong: #2f4a68;
+  --opslin-border-focus: rgba(138, 133, 245, 0.62);
+  --opslin-border-inverse: #1f3248;
 
   /* Same invariant terminal ANSI palette as :root — intentionally identical
      in both blocks, see the comment on this token group in :root above. */
@@ -220,21 +224,22 @@
   --opslin-terminal-magenta: #b89bff;
   --opslin-terminal-cyan: rgba(61, 214, 208, 0.55);
 
-  --opslin-text-primary: #f4f7f8;
-  --opslin-text-secondary: #dce3e7;
-  --opslin-text-tertiary: #9ba8b1;
-  --opslin-text-quaternary: #66737c;
+  --opslin-text-primary: #f1f5f9;
+  --opslin-text-secondary: #cbd5e1;
+  --opslin-text-tertiary: #94a3b8;
+  --opslin-text-quaternary: #64748b;
   /* Stays light in both themes — this is "text for the always-dark
      inverse/sidebar surface," not "text that contrasts with the current
      theme's primary button." See --primary-foreground below for that. */
   --opslin-text-inverse: #f4f7f8;
   --opslin-text-on-inverse-muted: rgba(220, 227, 231, 0.7);
 
-  --opslin-accent-default: #32d878;
-  --opslin-accent-hover: #45e58a;
-  --opslin-accent-active: #22b963;
-  --opslin-accent-bright: #45e58a;
-  --opslin-accent-muted: rgba(50, 216, 120, 0.12);
+  --opslin-accent-default: #8a85f5;
+  --opslin-accent-hover: #9c98f7;
+  --opslin-accent-active: #7b74f5;
+  --opslin-accent-bright: #a5a1f8;
+  --opslin-accent-muted: rgba(138, 133, 245, 0.16);
+  --opslin-accent-foreground: #0a1626;
 
   --opslin-success-default: #32d878;
   --opslin-success-muted: rgba(50, 216, 120, 0.12);
@@ -264,6 +269,7 @@
   --opslin-danger-text: #ff8d9b;
   --opslin-info-text: #69a1ff;
 
+  --opslin-chart-sky: #38c8fa;
   --opslin-chart-violet: #a17bff;
   --opslin-accent-2-default: #a17bff;
   --opslin-accent-2-muted: rgba(161, 123, 255, 0.13);
@@ -274,9 +280,9 @@
   --opslin-db-mongodb: #58c957;
   --opslin-db-redis: #ff665d;
 
-  --opslin-glass-bg: rgba(17, 23, 27, 0.9);
-  --opslin-glass-border: rgba(155, 168, 177, 0.18);
-  --opslin-glass-highlight: rgba(244, 247, 248, 0.07);
+  --opslin-glass-bg: rgba(18, 32, 49, 0.9);
+  --opslin-glass-border: rgba(148, 163, 184, 0.16);
+  --opslin-glass-highlight: rgba(241, 245, 249, 0.06);
   --opslin-glass-shadow: 0 14px 32px rgba(0, 0, 0, 0.38);
 
   /* Static pre-composited radial (no animation, no blur cost) — doc 02 §3.5.
@@ -284,7 +290,7 @@
      origin; default is top-left-ish per the doc's radial spec. */
   --opslin-glow-ambient: radial-gradient(
     600px circle at var(--glow-x, 20%) var(--glow-y, 0%),
-    rgba(77, 141, 255, 0.05),
+    rgba(87, 80, 241, 0.07),
     transparent 60%
   );
 
@@ -303,7 +309,7 @@
   /* The emerald primary fill needs dark text for contrast in both themes.
      It is not routed through --opslin-text-inverse
      (that token means "text for the always-dark sidebar," not this). */
-  --primary-foreground: var(--opslin-bg-inverse);
+  --primary-foreground: var(--opslin-accent-foreground);
   --secondary: var(--opslin-bg-secondary);
   --secondary-foreground: var(--opslin-text-primary);
   --muted: var(--opslin-bg-secondary);
@@ -314,8 +320,8 @@
   --border: var(--opslin-border-default);
   --input: var(--opslin-border-strong);
   --ring: var(--opslin-border-focus);
-  --chart-1: var(--opslin-info-default);
-  --chart-2: var(--opslin-accent-bright);
+  --chart-1: var(--opslin-accent-default);
+  --chart-2: var(--opslin-chart-sky);
   --chart-3: var(--opslin-danger-default);
   --chart-4: var(--opslin-warning-default);
   --chart-5: var(--opslin-success-default);
