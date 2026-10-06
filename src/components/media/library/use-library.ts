@@ -17,13 +17,16 @@ export const SORTS = {
 
 export type SortKey = keyof typeof SORTS;
 
-export type LibraryFilter = { folder: string; search: string; sort: SortKey };
+export type LibraryFilter = { folder: string; search: string; sort: SortKey; tag?: string; recursive?: boolean };
 
 /** What to ask for: searching looks everywhere, browsing looks at one folder. */
 export function toQuery(filter: LibraryFilter): MediaAssetQuery {
     const { sort, order } = SORTS[filter.sort];
     const search = filter.search.trim();
-    return search ? { q: search, sort, order, limit: 50 } : { folder: filter.folder, sort, order, limit: 50 };
+    const tag = filter.tag?.trim() || undefined;
+    return search
+        ? { q: search, sort, order, limit: 50, ...(tag ? { tag } : {}) }
+        : { folder: filter.folder, sort, order, limit: 50, ...(tag ? { tag } : {}), ...(filter.recursive ? { recursive: true } : {}) };
 }
 
 export function useLibraryAssets(filter: LibraryFilter, enabled = true) {

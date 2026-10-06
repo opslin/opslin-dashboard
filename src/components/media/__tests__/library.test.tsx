@@ -186,7 +186,7 @@ describe("browsing", () => {
         apiMock.setupMedia.mockRejectedValue(new ApiRequestError(409, { message: "x", code: "cloudflare_not_connected" }));
         renderPage();
         expect(await screen.findByText("Update the upload service to use the library.")).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Upload Media" })).toBeDisabled();
         fireEvent.click(screen.getByRole("button", { name: "Update upload service" }));
         await waitFor(() => expect(apiMock.setupMedia).toHaveBeenCalledWith({ cloudflareAccountId: "acct12345678", cloudflareAccountName: "Acme", refresh: true }));
         expect(await screen.findByText("Connect Cloudflare to update the upload service.")).toBeInTheDocument();
@@ -277,7 +277,7 @@ describe("folders", () => {
     it("creates a folder inside the folder you are in", async () => {
         renderPage();
         fireEvent.click(await screen.findByRole("button", { name: "products" }));
-        fireEvent.click(await screen.findByRole("button", { name: "New folder" }));
+        fireEvent.click(await screen.findByRole("button", { name: "New Folder" }));
         const dialog = await screen.findByRole("dialog");
         expect(within(dialog).getByText("New folder in products")).toBeInTheDocument();
         fireEvent.change(within(dialog).getByLabelText("Folder name"), { target: { value: "summer" } });
@@ -288,7 +288,7 @@ describe("folders", () => {
     it("explains why a folder could not be made, in the dialog", async () => {
         apiMock.createMediaFolder.mockRejectedValueOnce(new ApiRequestError(409, { message: "A folder with that name already exists.", code: "folder_exists" }));
         renderPage();
-        fireEvent.click(await screen.findByRole("button", { name: "New folder" }));
+        fireEvent.click(await screen.findByRole("button", { name: "New Folder" }));
         const dialog = await screen.findByRole("dialog");
         fireEvent.change(within(dialog).getByLabelText("Folder name"), { target: { value: "products" } });
         fireEvent.click(within(dialog).getByRole("button", { name: "Create folder" }));
@@ -380,7 +380,7 @@ describe("uploading", () => {
         renderPage();
         await rowText("Logo");
         expect(screen.queryByRole("button", { name: "Upload" })).not.toBeInTheDocument();
-        expect(screen.queryByRole("button", { name: "New folder" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "New Folder" })).not.toBeInTheDocument();
         expect(screen.getByText("Only members, admins and owners can change the library.")).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: /Folder options/ })).not.toBeInTheDocument();
     });
@@ -389,7 +389,7 @@ describe("uploading", () => {
 describe("one image", () => {
     it("opens its details, renames it, edits its tags, and deletes it after confirmation", async () => {
         renderPage();
-        fireEvent.click(await screen.findByRole("button", { name: /Logo/ }));
+        fireEvent.click(await screen.findByRole("button", { name: "Open Logo" }));
         const sheet = await screen.findByRole("dialog");
         expect(within(sheet).getByRole("img", { name: "Logo" })).toHaveAttribute("src", "https://img.example.com/v/aa/1/w1080.webp");
         expect(within(sheet).getByText("1200 by 800")).toBeInTheDocument();
@@ -413,7 +413,7 @@ describe("one image", () => {
 
     it("moves it from the details", async () => {
         renderPage();
-        fireEvent.click(await screen.findByRole("button", { name: /Logo/ }));
+        fireEvent.click(await screen.findByRole("button", { name: "Open Logo" }));
         const sheet = await screen.findByRole("dialog");
         fireEvent.click(within(sheet).getByRole("button", { name: "Move" }));
         const dialogs = await screen.findAllByRole("dialog");
@@ -426,7 +426,7 @@ describe("one image", () => {
     it("shows read-only details to someone who may only look", async () => {
         authMock.role = "VIEWER";
         renderPage();
-        fireEvent.click(await screen.findByRole("button", { name: /Logo/ }));
+        fireEvent.click(await screen.findByRole("button", { name: "Open Logo" }));
         const sheet = await screen.findByRole("dialog");
         expect(within(sheet).queryByLabelText("Name")).not.toBeInTheDocument();
         expect(within(sheet).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();

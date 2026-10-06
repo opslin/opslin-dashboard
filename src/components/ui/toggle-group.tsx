@@ -42,7 +42,7 @@ export function ToggleGroupItem({
       type="button"
       className={cn(
         "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-        active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+        active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
         className
       )}
       aria-pressed={active}
