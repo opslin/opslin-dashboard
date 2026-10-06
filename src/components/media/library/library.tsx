@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Download, Folder, FolderPlus, Image as ImageIcon, LayoutGrid, List, Loader2, MoreHorizontal, Search, Tag, Trash2, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Folder, FolderPlus, Image as ImageIcon, LayoutGrid, List, Loader2, MoreVertical, Search, Tag, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes, formatCount } from "@/components/media/media-format";
 import { UpdateRow } from "@/components/media/media-ready";
-import { LockedLine, Panel, Row, Section } from "@/components/media/media-rows";
+import { LockedLine, Row } from "@/components/media/media-rows";
 import { SkeletonText } from "@/components/patterns/skeleton";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ import { cn, formatRelativeTime } from "@/lib/utils";
 import { AssetDetail } from "./asset-detail";
 import { ACCEPTED_TYPES, collectDropped, fromDirectoryInput, isAcceptedImage, targetFolder, type DroppedFile } from "./drop";
 import { EXPORT_MAX_FILES, assetsToCsv, assetsToJson, downloadBlob, exportZip } from "./export";
+import { LibraryStats } from "./library-stats";
 import { ConfirmDialog, MoveDialog, NameDialog, TagDialog } from "./library-dialogs";
 import { createUploadQueue, type UploadItem } from "./upload-queue";
 import { LIBRARY_KEY, SORTS, libraryErrorCode, libraryErrorText, placeholderColor, thumbSrc, useLibraryAssets, useLibraryFolders, type SortKey } from "./use-library";
@@ -33,9 +35,9 @@ const VIEW_KEY = "opslin-media-view";
 
 function readView(): ViewMode {
     try {
-        return window.localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list";
+        return window.localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid";
     } catch {
-        return "list";
+        return "grid";
     }
 }
 
@@ -57,7 +59,7 @@ function describeUploadError(error: unknown) {
 function Thumb({ asset, size }: { asset: MediaAsset; size: "row" | "tile" }) {
     const src = thumbSrc(asset);
     return (
-        <span className={cn("block shrink-0 overflow-hidden rounded-[var(--opslin-radius-lg)] bg-muted", size === "row" ? "size-10" : "aspect-square w-full")} style={{ backgroundColor: placeholderColor(asset.thumbhash) }}>
+        <span className={cn("block shrink-0 overflow-hidden rounded-[var(--opslin-radius-lg)] bg-muted", size === "row" ? "size-10" : "aspect-[4/3] w-full rounded-none")} style={{ backgroundColor: placeholderColor(asset.thumbhash) }}>
             {src ? (
                 // eslint-disable-next-line @next/next/no-img-element -- served straight from the customer's image domain
                 <img src={src} alt="" loading="lazy" className="size-full object-cover" />
@@ -103,7 +105,7 @@ export function Library({ media }: { media: Project }) {
     const [searchText, setSearchText] = useState("");
     const search = useDebounced(searchText);
     const [sort, setSort] = useState<SortKey>("newest");
-    const [view, setView] = useState<ViewMode>("list");
+    const [view, setView] = useState<ViewMode>("grid");
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const lastIndex = useRef<number | null>(null);
     const [detailId, setDetailId] = useState<string | null>(null);
@@ -117,7 +119,7 @@ export function Library({ media }: { media: Project }) {
 
     useEffect(() => setView(readView()), []);
     const changeView = (next: string) => {
-        const mode = next === "grid" ? "grid" : "list";
+        const mode = next === "list" ? "list" : "grid";
         setView(mode);
         try {
             window.localStorage.setItem(VIEW_KEY, mode);
@@ -289,7 +291,8 @@ export function Library({ media }: { media: Project }) {
     }
 
     return (
-        <Panel
+        <div
+            className={cn("space-y-5 rounded-xl", dragging && "ring-2 ring-ring ring-offset-4 ring-offset-background")}
             onDragOver={(event) => {
                 if (!canWrite || !sdk || !event.dataTransfer.types.includes("Files")) return;
                 event.preventDefault();
@@ -299,150 +302,173 @@ export function Library({ media }: { media: Project }) {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
             }}
             onDrop={onDrop}
-            className={cn(dragging && "ring-2 ring-ring")}
         >
             <input ref={filePicker} type="file" multiple hidden accept={ACCEPTED_TYPES.join(",")} aria-label="Choose images" onChange={(event) => { if (event.target.files) addFiles(Array.from(event.target.files).map((file) => ({ file, relativeDir: "" }))); event.target.value = ""; }} />
             <input ref={folderPicker} type="file" hidden multiple aria-label="Choose a folder" {...{ webkitdirectory: "", directory: "" }} onChange={(event) => { if (event.target.files) addFiles(fromDirectoryInput(event.target.files)); event.target.value = ""; }} />
 
+            {/* Header: where you are, and the two things you do here. */}
+            <div className="flex flex-wrap items-center justify-end gap-3">
+                <nav aria-label="Folder path" className={cn("mr-auto flex min-w-0 flex-wrap items-center gap-1 text-lg font-semibold tracking-tight", segments.length === 0 && !searching && "sr-only")}>
+                    {searching ? (
+                        <span>{`Results for “${search.trim()}”`}</span>
+                    ) : (
+                        <>
+                            <button type="button" className={cn("rounded px-1 focus-visible:ring-2 focus-visible:ring-ring", segments.length === 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground")} onClick={() => setFolder("")}>Library</button>
+                            {segments.map((segment, index) => (
+                                <span key={segments.slice(0, index + 1).join("/")} className="flex items-center gap-1">
+                                    <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+                                    <button type="button" className={cn("rounded px-1 focus-visible:ring-2 focus-visible:ring-ring", index === segments.length - 1 ? "text-foreground" : "text-muted-foreground hover:text-foreground")} onClick={() => setFolder(segments.slice(0, index + 1).join("/"))}>{segment}</button>
+                                </span>
+                            ))}
+                        </>
+                    )}
+                </nav>
+                {canWrite ? (
+                    <>
+                        <Button variant="outline" onClick={() => { setDialogError(null); setDialog({ kind: "new-folder" }); }}><FolderPlus className="mr-2 size-4" aria-hidden="true" />New folder</Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button disabled={!sdk || outdated}><Upload className="mr-2 size-4" aria-hidden="true" />Upload<ChevronDown className="ml-2 size-4" aria-hidden="true" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={() => filePicker.current?.click()}>Choose images</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => folderPicker.current?.click()}>Choose a folder</DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </>
+                ) : null}
+            </div>
+
+            {!folder && !searching ? <LibraryStats /> : null}
+
+            {/* Toolbar: search, sort, view. Swaps to bulk actions while images are selected. */}
             {selected.size > 0 ? (
-                <Section>
-                    <div className="flex min-h-14 flex-wrap items-center gap-2 px-5 py-2">
-                        <Checkbox aria-label="Select all" checked={allSelected} onCheckedChange={(checked) => setSelected(checked ? new Set(assets.map((asset) => asset.id)) : new Set())} />
-                        <span className="mr-auto text-sm font-medium">{formatCount(selected.size)} selected</span>
-                        {canWrite ? (
-                            <>
-                                <Button variant="outline" size="sm" onClick={() => { setDialogError(null); setDialog({ kind: "move", ids: selectedIds }); }}><Folder className="mr-2 size-4" aria-hidden="true" />Move</Button>
-                                <Button variant="outline" size="sm" onClick={() => { setDialogError(null); setDialog({ kind: "tags" }); }}><Tag className="mr-2 size-4" aria-hidden="true" />Tags</Button>
-                            </>
-                        ) : null}
-                        <ExportMenu label="Selected images" disabled={Boolean(exporting)} onExport={exportAssets} />
-                        {canWrite ? <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "delete", ids: selectedIds })}><Trash2 className="mr-2 size-4" aria-hidden="true" />Delete</Button> : null}
-                        <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
-                    </div>
-                </Section>
+                <Card className="flex-row flex-wrap items-center gap-2 px-4 py-2 shadow-xs">
+                    <Checkbox aria-label="Select all" checked={allSelected} onCheckedChange={(checked) => setSelected(checked ? new Set(assets.map((asset) => asset.id)) : new Set())} />
+                    <span className="mr-auto text-sm font-medium">{formatCount(selected.size)} selected</span>
+                    {canWrite ? (
+                        <>
+                            <Button variant="outline" size="sm" onClick={() => { setDialogError(null); setDialog({ kind: "move", ids: selectedIds }); }}><Folder className="mr-2 size-4" aria-hidden="true" />Move</Button>
+                            <Button variant="outline" size="sm" onClick={() => { setDialogError(null); setDialog({ kind: "tags" }); }}><Tag className="mr-2 size-4" aria-hidden="true" />Tags</Button>
+                        </>
+                    ) : null}
+                    <ExportMenu label="Selected images" disabled={Boolean(exporting)} onExport={exportAssets} />
+                    {canWrite ? <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "delete", ids: selectedIds })}><Trash2 className="mr-2 size-4" aria-hidden="true" />Delete</Button> : null}
+                    <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+                </Card>
             ) : (
-                <Section>
-                    <div className="flex min-h-14 flex-wrap items-center gap-2 px-5 py-2">
-                        <nav aria-label="Folder path" className="mr-auto flex min-w-0 flex-wrap items-center gap-1 text-sm">
-                            {searching ? (
-                                <span className="font-medium">{`Results for “${search.trim()}”`}</span>
-                            ) : (
-                                <>
-                                    <button type="button" className={cn("rounded px-1 focus-visible:ring-2 focus-visible:ring-ring", segments.length === 0 ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground")} onClick={() => setFolder("")}>Library</button>
-                                    {segments.map((segment, index) => (
-                                        <span key={segments.slice(0, index + 1).join("/")} className="flex items-center gap-1">
-                                            <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                                            <button type="button" className={cn("rounded px-1 focus-visible:ring-2 focus-visible:ring-ring", index === segments.length - 1 ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground")} onClick={() => setFolder(segments.slice(0, index + 1).join("/"))}>{segment}</button>
-                                        </span>
-                                    ))}
-                                </>
-                            )}
-                        </nav>
-                        <div className="relative">
-                            <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" aria-hidden="true" />
-                            <Input aria-label="Search images" placeholder="Search" className="w-40 pl-8 sm:w-52" value={searchText} onChange={(event) => setSearchText(event.target.value)} />
-                        </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-48 flex-1 sm:max-w-sm">
+                        <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" aria-hidden="true" />
+                        <Input aria-label="Search images" placeholder="Search images, folders or tags" className="pl-9" value={searchText} onChange={(event) => setSearchText(event.target.value)} />
+                    </div>
+                    <div className="ml-auto flex items-center gap-2">
+                        <ToggleGroup value={view} onValueChange={changeView}>
+                            <ToggleGroupItem value="grid" aria-label="Grid view" className="px-2.5"><LayoutGrid className="size-4" aria-hidden="true" /></ToggleGroupItem>
+                            <ToggleGroupItem value="list" aria-label="List view" className="px-2.5"><List className="size-4" aria-hidden="true" /></ToggleGroupItem>
+                        </ToggleGroup>
                         <Select value={sort} onValueChange={(value) => setSort(value as SortKey)}>
-                            <SelectTrigger aria-label="Sort" className="w-36"><SelectValue /></SelectTrigger>
+                            <SelectTrigger aria-label="Sort" className="w-40"><SelectValue /></SelectTrigger>
                             <SelectContent>{Object.entries(SORTS).map(([key, value]) => <SelectItem key={key} value={key}>{value.label}</SelectItem>)}</SelectContent>
                         </Select>
-                        <ToggleGroup value={view} onValueChange={changeView}>
-                            <ToggleGroupItem value="list" aria-label="List view" className="px-2"><List className="size-4" aria-hidden="true" /></ToggleGroupItem>
-                            <ToggleGroupItem value="grid" aria-label="Grid view" className="px-2"><LayoutGrid className="size-4" aria-hidden="true" /></ToggleGroupItem>
-                        </ToggleGroup>
                         <ExportMenu label={folder ? "This folder and below" : "Whole library"} disabled={Boolean(exporting)} onExport={exportAssets} />
-                        {canWrite ? (
-                            <>
-                                <Button variant="outline" onClick={() => { setDialogError(null); setDialog({ kind: "new-folder" }); }}><FolderPlus className="mr-2 size-4" aria-hidden="true" />New folder</Button>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button disabled={!sdk || outdated}><Upload className="mr-2 size-4" aria-hidden="true" />Upload</Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onSelect={() => filePicker.current?.click()}>Choose images</DropdownMenuItem>
-                                        <DropdownMenuItem onSelect={() => folderPicker.current?.click()}>Choose a folder</DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            </>
-                        ) : null}
                     </div>
-                    {exporting ? <LockedLine>{`Preparing ZIP: ${exporting.done} of ${exporting.total}`}</LockedLine> : null}
-                </Section>
+                </div>
             )}
+            {exporting ? <LockedLine>{`Preparing ZIP: ${exporting.done} of ${exporting.total}`}</LockedLine> : null}
 
             {!canWrite ? <LockedLine>Only members, admins and owners can change the library.</LockedLine> : null}
             {outdated ? (
-                <Section>
+                <Card className="gap-0 overflow-hidden py-0">
                     <UpdateRow media={media} />
                     <LockedLine>Update the upload service to use the library.</LockedLine>
-                </Section>
+                </Card>
             ) : null}
             {notice ? <LockedLine>{notice}</LockedLine> : null}
             {dragging ? <LockedLine>{`Drop to upload to ${folder || "the top level"}.`}</LockedLine> : null}
 
             {!outdated ? (
-                <Section>
-                    {uploads.map((item) => (
-                        <UploadRow key={item.id} item={item} onRetry={() => queueRef.current?.retry(item.id)} onDismiss={() => queueRef.current?.dismiss(item.id)} />
-                    ))}
-
-                    {assetsQuery.isLoading || (!searching && foldersQuery.isLoading) ? (
-                        Array.from({ length: 5 }, (_, index) => <Row key={index} leading={<SkeletonText className="size-10" />} label={<SkeletonText className="h-4 w-48" />} state={<SkeletonText className="h-4 w-16" />} />)
-                    ) : loadFailure ? (
-                        <Row label={libraryErrorText(loadFailure)} action={<Button variant="outline" onClick={() => { void assetsQuery.refetch(); void foldersQuery.refetch(); }}>Retry</Button>} />
+                <>
+                    {uploads.length > 0 ? (
+                        <Card className="gap-0 divide-y divide-border/70 overflow-hidden py-0 shadow-xs">
+                            {uploads.map((item) => (
+                                <UploadRow key={item.id} item={item} onRetry={() => queueRef.current?.retry(item.id)} onDismiss={() => queueRef.current?.dismiss(item.id)} />
+                            ))}
+                        </Card>
                     ) : null}
 
-                    {folders.map((item) => (
-                        <FolderRow key={item.path} item={item} canWrite={canWrite} onOpen={() => setFolder(item.path)} onRename={() => { setDialogError(null); setDialog({ kind: "rename-folder", folder: item }); }} onDelete={() => { setDialogError(null); setDialog({ kind: "delete-folder", folder: item }); }} />
-                    ))}
-
-                    {view === "list"
-                        ? assets.map((asset, index) => (
-                              <Row
-                                  key={asset.id}
-                                  leading={<span className="flex items-center gap-3"><Checkbox aria-label={`Select ${asset.name}`} checked={selected.has(asset.id)} onClick={(event) => { event.stopPropagation(); toggle(asset.id, index, event.shiftKey); }} onCheckedChange={() => undefined} /></span>}
-                                  label={
-                                      <button type="button" className="flex min-w-0 items-center gap-3 text-left focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setDetailId(asset.id)}>
-                                          <Thumb asset={asset} size="row" />
-                                          <span className="min-w-0">
-                                              <span className="block truncate">{asset.name}</span>
-                                              {searching && asset.folder ? <span className="block truncate text-xs font-normal text-muted-foreground">{asset.folder}</span> : null}
-                                          </span>
-                                      </button>
-                                  }
-                                  state={<span className="hidden gap-4 sm:flex"><span>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : ""}</span><span>{formatBytes(asset.bytes)}</span><span className="w-20 text-right">{formatRelativeTime(asset.createdAt)}</span></span>}
-                              />
-                          ))
-                        : null}
-
-                    {view === "grid" && assets.length > 0 ? (
-                        <div className="grid grid-cols-2 gap-3 px-5 py-4 sm:grid-cols-4 lg:grid-cols-5">
-                            {assets.map((asset, index) => (
-                                <div key={asset.id} className="group relative min-w-0">
-                                    <button type="button" className="block w-full text-left focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setDetailId(asset.id)} aria-label={`Open ${asset.name}`}>
-                                        <Thumb asset={asset} size="tile" />
-                                        <span className="mt-1.5 block truncate text-sm">{asset.name}</span>
-                                        <span className="block truncate text-xs text-muted-foreground">{formatBytes(asset.bytes)}</span>
-                                    </button>
-                                    <span className={cn("absolute left-2 top-2 rounded bg-background/90 p-1", selected.has(asset.id) ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100")}>
-                                        <Checkbox aria-label={`Select ${asset.name}`} checked={selected.has(asset.id)} onClick={(event) => { event.stopPropagation(); toggle(asset.id, index, event.shiftKey); }} onCheckedChange={() => undefined} />
-                                    </span>
-                                </div>
-                            ))}
+                    {assetsQuery.isLoading || (!searching && foldersQuery.isLoading) ? (
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                            {Array.from({ length: 10 }, (_, index) => <SkeletonText key={index} className="aspect-[4/3] w-full rounded-xl" />)}
                         </div>
+                    ) : loadFailure ? (
+                        <Card className="gap-0 overflow-hidden py-0">
+                            <Row label={libraryErrorText(loadFailure)} action={<Button variant="outline" onClick={() => { void assetsQuery.refetch(); void foldersQuery.refetch(); }}>Retry</Button>} />
+                        </Card>
+                    ) : null}
+
+                    {folders.length > 0 ? (
+                        <section className="space-y-3" aria-label="Folders">
+                            <h2 className="text-sm font-semibold">{`Folders (${formatCount(folders.length)})`}</h2>
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                                {folders.map((item) => (
+                                    <FolderCard key={item.path} item={item} canWrite={canWrite} onOpen={() => setFolder(item.path)} onRename={() => { setDialogError(null); setDialog({ kind: "rename-folder", folder: item }); }} onDelete={() => { setDialogError(null); setDialog({ kind: "delete-folder", folder: item }); }} />
+                                ))}
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {assets.length > 0 ? (
+                        <section className="space-y-3" aria-label="Images">
+                            <h2 className="text-sm font-semibold">{searching ? `Matches (${formatCount(total)})` : folder ? `Images (${formatCount(total)})` : `Recent uploads (${formatCount(total)})`}</h2>
+                            {view === "list" ? (
+                                <Card className="gap-0 divide-y divide-border/70 overflow-hidden py-0 shadow-xs">
+                                    {assets.map((asset, index) => (
+                                        <Row
+                                            key={asset.id}
+                                            leading={<span className="flex items-center gap-3"><Checkbox aria-label={`Select ${asset.name}`} checked={selected.has(asset.id)} onClick={(event) => { event.stopPropagation(); toggle(asset.id, index, event.shiftKey); }} onCheckedChange={() => undefined} /></span>}
+                                            label={
+                                                <button type="button" className="flex min-w-0 items-center gap-3 text-left focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setDetailId(asset.id)}>
+                                                    <Thumb asset={asset} size="row" />
+                                                    <span className="min-w-0">
+                                                        <span className="block truncate">{asset.name}</span>
+                                                        {searching && asset.folder ? <span className="block truncate text-xs font-normal text-muted-foreground">{asset.folder}</span> : null}
+                                                    </span>
+                                                </button>
+                                            }
+                                            state={<span className="hidden gap-4 sm:flex"><span>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : ""}</span><span>{formatBytes(asset.bytes)}</span><span className="w-20 text-right">{formatRelativeTime(asset.createdAt)}</span></span>}
+                                        />
+                                    ))}
+                                </Card>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                                    {assets.map((asset, index) => (
+                                        <AssetCard key={asset.id} asset={asset} selected={selected.has(asset.id)} showFolder={searching} onOpen={() => setDetailId(asset.id)} onToggle={(shift) => toggle(asset.id, index, shift)} />
+                                    ))}
+                                </div>
+                            )}
+                        </section>
                     ) : null}
 
                     {empty ? (
-                        <Row
-                            label={searching ? `No images match “${search.trim()}”` : folder ? "No images in this folder yet" : "No images yet"}
-                            action={searching ? <Button variant="outline" onClick={() => setSearchText("")}>Clear search</Button> : canWrite ? <Button onClick={() => filePicker.current?.click()} disabled={!sdk}><Upload className="mr-2 size-4" aria-hidden="true" />Upload images</Button> : undefined}
-                        />
+                        <Card className="items-center gap-3 border-dashed py-14 text-center shadow-none">
+                            <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary"><ImageIcon className="size-6" aria-hidden="true" /></span>
+                            <p className="text-sm font-medium">{searching ? `No images match “${search.trim()}”` : folder ? "No images in this folder yet" : "No images yet"}</p>
+                            {searching ? (
+                                <Button variant="outline" onClick={() => setSearchText("")}>Clear search</Button>
+                            ) : canWrite ? (
+                                <Button onClick={() => filePicker.current?.click()} disabled={!sdk}><Upload className="mr-2 size-4" aria-hidden="true" />Upload images</Button>
+                            ) : null}
+                        </Card>
                     ) : null}
 
                     {assetsQuery.hasNextPage ? (
-                        <Row label={`Showing ${formatCount(assets.length)} of ${formatCount(total)}`} action={<Button variant="outline" onClick={() => assetsQuery.fetchNextPage()} disabled={assetsQuery.isFetchingNextPage}>{assetsQuery.isFetchingNextPage ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" /> : null}Show more</Button>} />
+                        <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground">
+                            <span>{`Showing ${formatCount(assets.length)} of ${formatCount(total)}`}</span>
+                            <Button variant="outline" onClick={() => assetsQuery.fetchNextPage()} disabled={assetsQuery.isFetchingNextPage}>{assetsQuery.isFetchingNextPage ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" /> : null}Show more</Button>
+                        </div>
                     ) : null}
-                </Section>
+                </>
             ) : null}
 
             <AssetDetail
@@ -488,7 +514,7 @@ export function Library({ media }: { media: Project }) {
                 pending={deleteFolder.isPending}
                 onConfirm={() => dialog?.kind === "delete-folder" && deleteFolder.mutate(dialog.folder.path)}
             />
-        </Panel>
+        </div>
     );
 }
 
@@ -511,25 +537,52 @@ function ExportMenu({ label, disabled, onExport }: { label: string; disabled: bo
     );
 }
 
-function FolderRow({ item, canWrite, onOpen, onRename, onDelete }: { item: MediaFolder; canWrite: boolean; onOpen: () => void; onRename: () => void; onDelete: () => void }) {
+const FOLDER_TINTS = ["text-blue-500", "text-violet-500", "text-sky-500", "text-orange-500", "text-emerald-500", "text-slate-400"];
+
+function tintFor(name: string) {
+    let sum = 0;
+    for (const char of name) sum = (sum + char.charCodeAt(0)) % FOLDER_TINTS.length;
+    return FOLDER_TINTS[sum]!;
+}
+
+function FolderCard({ item, canWrite, onOpen, onRename, onDelete }: { item: MediaFolder; canWrite: boolean; onOpen: () => void; onRename: () => void; onDelete: () => void }) {
     return (
-        <Row
-            leading={<Folder className="size-4 text-muted-foreground" aria-hidden="true" />}
-            label={<button type="button" className="block max-w-full truncate text-left focus-visible:ring-2 focus-visible:ring-ring" onClick={onOpen}>{item.name}</button>}
-            state={`${formatCount(item.assets)} ${item.assets === 1 ? "image" : "images"}${item.folders ? `, ${formatCount(item.folders)} ${item.folders === 1 ? "folder" : "folders"}` : ""}`}
-            action={
-                canWrite ? (
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={`Folder options for ${item.name}`}><MoreHorizontal className="size-4" aria-hidden="true" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={onRename}>Rename</DropdownMenuItem>
-                            <DropdownMenuItem onSelect={onDelete}>Delete</DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                ) : undefined
-            }
-        />
+        <Card className="group relative gap-2 p-4 shadow-xs transition-colors hover:bg-accent/40">
+            <Folder className={cn("size-10 fill-current/20", tintFor(item.name))} aria-hidden="true" />
+            <div className="mt-1 min-w-0">
+                <button type="button" className="block max-w-full truncate text-left text-sm font-semibold after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring" onClick={onOpen}>{item.name}</button>
+                <span className="block truncate text-xs text-muted-foreground">{`${formatCount(item.assets)} ${item.assets === 1 ? "image" : "images"}${item.folders ? `, ${formatCount(item.folders)} ${item.folders === 1 ? "folder" : "folders"}` : ""}`}</span>
+            </div>
+            {canWrite ? (
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="absolute right-1.5 top-1.5 z-10 size-7" aria-label={`Folder options for ${item.name}`}><MoreVertical className="size-4" aria-hidden="true" /></Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={onRename}>Rename</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={onDelete}>Delete</DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            ) : null}
+        </Card>
+    );
+}
+
+function AssetCard({ asset, selected, showFolder, onOpen, onToggle }: { asset: MediaAsset; selected: boolean; showFolder: boolean; onOpen: () => void; onToggle: (shift: boolean) => void }) {
+    const kind = asset.type.split("/").pop()?.toUpperCase() ?? "";
+    return (
+        <Card className={cn("group relative gap-0 overflow-hidden py-0 shadow-xs transition-shadow hover:shadow-md", selected && "ring-2 ring-primary")}>
+            <button type="button" className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onOpen} aria-label={`Open ${asset.name}`}>
+                <Thumb asset={asset} size="tile" />
+            </button>
+            <span className={cn("absolute left-2 top-2 rounded-md bg-background/90 p-1 shadow-xs", selected ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100")}>
+                <Checkbox aria-label={`Select ${asset.name}`} checked={selected} onClick={(event) => { event.stopPropagation(); onToggle(event.shiftKey); }} onCheckedChange={() => undefined} />
+            </span>
+            <div className="min-w-0 px-3 py-2.5">
+                <span className="block truncate text-sm font-medium">{asset.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">{`${formatBytes(asset.bytes)}${kind ? ` · ${kind}` : ""}`}</span>
+                <span className="block truncate text-xs text-muted-foreground">{showFolder && asset.folder ? asset.folder : formatRelativeTime(asset.createdAt)}</span>
+            </div>
+        </Card>
     );
 }
