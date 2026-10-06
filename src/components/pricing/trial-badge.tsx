@@ -23,9 +23,9 @@ export function TrialBadge({ trial }: { trial: TrialStatusResponse | null | unde
     return (
         <Badge
             data-testid="trial-badge"
-            className={trial.warningLevel ? "bg-warning-muted text-warning-text" : "bg-accent-2-muted text-accent-2"}
+            className="h-8 border-warning/30 bg-warning-muted px-3 text-[13px] font-medium text-warning-text"
         >
-            Trial: {trial.daysRemaining} days left
+            {trial.daysRemaining} {trial.daysRemaining === 1 ? "day" : "days"} left in trial
         </Badge>
     );
 }
