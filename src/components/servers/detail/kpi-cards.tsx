@@ -6,18 +6,16 @@ import { formatGb, formatUptime, type ServerCurrentMetrics } from "./format";
 
 function Kpi({ icon: Icon, label, value, hint, percent, tone = "primary" }: { icon: LucideIcon; label: string; value: string; hint: string; percent: number | null; tone?: "primary" | "success" }) {
     return (
-        <Card className="gap-0 rounded-2xl py-0 shadow-xs">
-            <div className="flex items-start gap-3 p-4 pb-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground">
-                    <Icon className="size-5" aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                    <p className="text-sm text-muted-foreground">{label}</p>
-                    <p className="text-2xl font-bold leading-tight tracking-tight text-foreground">{value}</p>
-                    <p className="text-sm text-muted-foreground">{hint}</p>
-                </div>
+        <Card className="gap-0 rounded-xl py-0 shadow-xs">
+            <div className="space-y-1 px-4 pt-3.5">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Icon className="size-4" aria-hidden="true" />
+                    {label}
+                </p>
+                <p className="text-3xl font-bold leading-tight tracking-tight text-foreground">{value}</p>
+                <p className="text-sm text-muted-foreground">{hint}</p>
             </div>
-            <div className="px-4 pb-4">
+            <div className="px-4 pb-4 pt-3">
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" role="presentation">
                     <div className={cn("h-full rounded-full", tone === "success" ? "bg-success" : "bg-primary")} style={{ width: `${percent == null ? 0 : Math.min(100, Math.max(2, percent))}%` }} />
                 </div>

@@ -13,7 +13,7 @@ import { Header } from "@/components/layout/header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type App, type Database as DatabaseRecord } from "@/lib/api";
 import { formatRelativeTime, cn } from "@/lib/utils";
@@ -21,8 +21,7 @@ import { ServerDriftPanel } from "@/components/servers/server-drift-panel";
 import { AgentInstallCommands } from "@/components/servers/agent-install-commands";
 import { AgentUpdateModal } from "@/components/servers/agent-update-modal";
 import { ServerCleanupModal } from "@/components/servers/server-cleanup-modal";
-import { AppsDatabasesCard } from "@/components/servers/detail/apps-databases-card";
-import { AgentCard, ServerDetailsCard } from "@/components/servers/detail/details-agent-cards";
+import { AppsCard, DatabasesCard, DetailsCard, RecentActivityCard } from "@/components/servers/detail/overview-lists";
 import { formatUptime, type ServerCurrentMetrics } from "@/components/servers/detail/format";
 import { AppsDatabasesTab } from "@/components/servers/detail/apps-databases-tab";
 import { MetricsTab } from "@/components/servers/detail/metrics-tab";
@@ -228,6 +227,12 @@ export default function ServerDetailPage() {
     refetchInterval: 30_000,
   });
 
+  const restartAgent = useMutation({
+    mutationFn: () => api.runAgentControlAction(serverId, { action: "agent_restart" }),
+    onSuccess: () => toast.success("Agent restart queued"),
+    onError: () => toast.error("Couldn't restart the agent."),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteServer(serverId),
     onSuccess: () => {
@@ -273,7 +278,6 @@ export default function ServerDetailPage() {
   }
 
   const lastSeen = server.lastSeenAt ? formatRelativeTime(server.lastSeenAt) : "Never";
-  const connectedAgo = server.connectedAt ? formatRelativeTime(server.connectedAt) : "Never";
   const isLive = server.isLiveConnected ?? server.status === "connected";
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
   const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || "http://localhost:3000";
@@ -338,17 +342,20 @@ export default function ServerDetailPage() {
                 <MoreHorizontal aria-hidden="true" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Server actions</DropdownMenuLabel>
               <DropdownMenuItem onSelect={() => setAgentUpdateOpen(true)}>
-                <RefreshCw aria-hidden="true" /> {updateAvailable ? "Update agent" : "Check agent updates"}
+                <RefreshCw aria-hidden="true" />
+                <span className="flex flex-col">
+                  <span>{updateAvailable ? "Update agent" : "Check agent updates"}</span>
+                  {updateAvailable && agentUpdateInfo ? <span className="text-xs text-primary">v{agentUpdateInfo.latestVersion} available</span> : null}
+                </span>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setCleanupOpen(true)}>
-                <Sparkles aria-hidden="true" /> Clean &amp; secure
+                <Sparkles aria-hidden="true" /> Clean and secure
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href={`/servers/${serverId}/security`}>
-                  <Shield aria-hidden="true" /> Security settings
-                </Link>
+              <DropdownMenuItem onSelect={() => restartAgent.mutate()}>
+                <RotateCw aria-hidden="true" /> Restart agent
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -390,18 +397,17 @@ export default function ServerDetailPage() {
           <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="space-y-5">
               <NeedsAttention items={attention} />
-              <AppsDatabasesCard serverId={serverId} apps={apps} databases={databases} limit={4} onViewAll={() => setTab("apps")} />
+              <AppsCard serverId={serverId} apps={apps} />
+              <DatabasesCard serverId={serverId} databases={databases} />
             </div>
             <div className="space-y-5">
-              <ServerDetailsCard server={server} onEdit={() => setTab("settings")} />
-              <AgentCard
+              <DetailsCard server={server} updateAvailable={updateAvailable} onUpdate={() => setAgentUpdateOpen(true)} />
+              <RecentActivityCard
                 server={server}
-                isLive={isLive}
-                connectedAgo={connectedAgo}
-                updateAvailable={updateAvailable}
-                latestVersion={agentUpdateInfo?.latestVersion}
-                onManage={() => setTab("settings")}
-                onUpdate={() => setAgentUpdateOpen(true)}
+                apps={apps}
+                firewallCommits={firewallState?.commits ?? []}
+                agentUpdatedAt={agentUpdateInfo?.lastUpdateJob?.status === "COMPLETED" ? agentUpdateInfo.lastUpdateJob.endedAt ?? null : null}
+                onViewAll={() => setTab("activity")}
               />
             </div>
           </div>
