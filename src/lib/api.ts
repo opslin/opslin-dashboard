@@ -904,7 +904,7 @@ class ApiClient {
         return this.post<CreateDeployGateResponse>(`/apps/${appId}/deploy-gates`, data);
     }
 
-    async updateDeployGate(appId: string, gateId: string, data: { mode?: DeployGateMode; testRunner?: DeployGateTestRunner }) {
+    async updateDeployGate(appId: string, gateId: string, data: { mode?: DeployGateMode; testRunner?: DeployGateTestRunner; enabled?: boolean }) {
         return this.patch<{ gate: DeployGateSummary }>(`/apps/${appId}/deploy-gates/${gateId}`, data);
     }
 

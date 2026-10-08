@@ -1431,6 +1431,13 @@ function AppDetailPageContent() {
 
                     {selectedSection === "settings" && (
                         <SettingsSection
+                            currentDeployMode={currentDeployMode}
+                            deployGateId={activeDeployGate?.id}
+                            repoFullName={repoFullName}
+                            onDeployModeChanged={() => {
+                                void refetchDeployGates();
+                                queryClient.invalidateQueries({ queryKey: ["deployGates", appId] });
+                            }}
                             app={app}
                             server={server}
                             buildpackOverride={buildpackOverride}

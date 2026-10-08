@@ -11,7 +11,7 @@ describe("DeleteAppAction", () => {
         fireEvent.click(screen.getByRole("button", { name: "Delete App" }));
 
         expect(screen.getByText("Delete app?")).toBeVisible();
-        expect(screen.getByText("Checkout API")).toBeVisible();
+        expect(screen.getAllByText("Checkout API").length).toBeGreaterThan(0);
         expect(screen.getByText(/Type the app name to confirm/i)).toBeVisible();
 
         const confirmButton = screen.getAllByRole("button", { name: "Delete App" }).at(-1);

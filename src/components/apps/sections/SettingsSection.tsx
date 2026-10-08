@@ -15,6 +15,8 @@ import { Switch } from "@/components/ui/switch";
 import type { App, BuildpackName, HealthCheckMode, ScaleAppResult, Server } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { BuildpackVersionSelector } from "@/components/apps/BuildpackVersionSelector";
+import { DeployModeSideCards, DeployModeView } from "@/components/apps/sections/DeployModeView";
+import type { DeployMode } from "@/components/DeployModeSelector";
 
 type SettingsSectionProps = {
     app: App;
@@ -59,6 +61,10 @@ type SettingsSectionProps = {
     onSavePublicStatus: () => void;
     onDelete: () => void;
     onRetryDeleteCleanup: () => void;
+    currentDeployMode?: DeployMode;
+    deployGateId?: string | null;
+    repoFullName?: string;
+    onDeployModeChanged?: () => void;
 };
 
 const buildpackOptions: Array<{ value: BuildpackName | ""; label: string }> = [
@@ -83,7 +89,7 @@ const NAV = [
     { id: "build", label: "Build and run", icon: FileCode2 },
     { id: "health", label: "Health check", icon: HeartPulse },
     { id: "scaling", label: "Scaling", icon: Layers },
-    { id: "deploy-mode", label: "Deploy mode", icon: Rocket, href: "deployments" },
+    { id: "deploy-mode", label: "Deploy mode", icon: Rocket },
     { id: "status-page", label: "Public status page", icon: Globe },
     { id: "protection", label: "Protection", icon: ShieldCheck, href: "security" },
 ] as const;
@@ -164,6 +170,10 @@ export function SettingsSection({
     onSavePublicStatus,
     onDelete,
     onRetryDeleteCleanup,
+    currentDeployMode = "fast",
+    deployGateId,
+    repoFullName,
+    onDeployModeChanged,
 }: SettingsSectionProps) {
     const isDeleting = app.status === "deleting";
     const isDeleteFailed = app.status === "delete_failed";
@@ -178,6 +188,7 @@ export function SettingsSection({
     const [active, setActive] = useState<string>("general");
     const goTo = (id: string) => {
         setActive(id);
+        if (id === "deploy-mode") return;
         document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     };
     const buildErr = safeErrorMessage(buildConfigError, "x");
@@ -185,7 +196,7 @@ export function SettingsSection({
     const frameworkLabel = buildpackOptions.find((o) => o.value === buildpackOverride)?.label ?? "Auto-detect";
 
     return (
-        <section className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <section className={cn("grid items-start gap-6", active === "deploy-mode" ? "lg:grid-cols-[220px_minmax(0,1fr)_300px]" : "lg:grid-cols-[220px_minmax(0,1fr)]")}>
             <nav aria-label="Settings sections" className="sticky top-4 rounded-2xl border bg-card p-2 shadow-xs">
                 <ul className="space-y-0.5">
                     {NAV.map((item) => {
@@ -206,6 +217,15 @@ export function SettingsSection({
                 <button type="button" onClick={() => goTo("danger")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-danger-text hover:bg-danger-muted focus-visible:ring-2 focus-visible:ring-ring"><Trash2 className="size-4" aria-hidden="true" />Danger zone</button>
             </nav>
 
+            {active === "deploy-mode" ? (
+                <>
+                    <div className="min-w-0 space-y-5">
+                        {deleteLocked ? <Notice tone="warning">Settings changes are paused while the app is being deleted.</Notice> : null}
+                        <DeployModeView app={app} currentMode={currentDeployMode} gateId={deployGateId} repoFullName={repoFullName ?? ""} disabled={deleteLocked} onChanged={onDeployModeChanged} />
+                    </div>
+                    <DeployModeSideCards app={app} healthCheckMode={healthCheckMode} healthPath={healthPath} />
+                </>
+            ) : (
             <div className="min-w-0 space-y-5">
                 {deleteLocked ? <Notice tone="warning">Settings changes are paused while the app is being deleted.</Notice> : null}
 
@@ -361,11 +381,11 @@ export function SettingsSection({
                 </Section>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                    <Link href={`/apps/${app.id}?section=deployments`} className="flex items-center gap-4 rounded-2xl border bg-card p-5 shadow-xs transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
+                    <button type="button" onClick={() => goTo("deploy-mode")} className="flex items-center gap-4 rounded-2xl border bg-card p-5 text-left shadow-xs transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
                         <span className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary"><Rocket className="size-5" aria-hidden="true" /></span>
                         <span className="flex-1"><span className="block font-semibold text-foreground">Deploy mode</span><span className="block text-sm text-muted-foreground">How careful before going live</span></span>
                         <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
-                    </Link>
+                    </button>
                     <Link href={`/apps/${app.id}?section=security`} className="flex items-center gap-4 rounded-2xl border bg-card p-5 shadow-xs transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
                         <span className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary"><ShieldCheck className="size-5" aria-hidden="true" /></span>
                         <span className="flex-1"><span className="block font-semibold text-foreground">Protection</span><span className="block text-sm text-muted-foreground">HTTPS and traffic shields</span></span>
@@ -399,6 +419,7 @@ export function SettingsSection({
                     </div>
                 </Card>
             </div>
+            )}
         </section>
     );
 }
