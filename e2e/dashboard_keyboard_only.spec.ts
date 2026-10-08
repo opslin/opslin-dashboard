@@ -33,6 +33,8 @@ test("dashboard v2 supports keyboard-only navigation and command palette flow", 
     await page.getByRole("option", { name: /Rollback Current App/i }).press("Enter");
     // Rollback asks for confirmation first (an alertdialog) before any progress UI.
     await expect(page.getByRole("heading", { name: /^roll back to version/i })).toBeVisible();
+    // Let the dialog finish mounting and take focus before Escape, or the key is swallowed.
+    await page.waitForTimeout(500);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("alertdialog")).toBeHidden();
 

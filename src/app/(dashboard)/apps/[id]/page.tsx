@@ -632,6 +632,24 @@ function AppDetailPageContent() {
         },
     });
 
+    const savedEnvList = useMemo(
+        () => envRecordToMaskedList((appData?.app?.envVars as Record<string, string> | null | undefined) || {}),
+        [appData?.app?.envVars]
+    );
+    const envChangeCount = useMemo(() => {
+        if (!envVarsChanged) return 0;
+        const saved = new Map(savedEnvList.map((v) => [v.key, v.value]));
+        const current = new Map(envVars.map((v) => [v.key, v.value]));
+        let n = 0;
+        for (const [k, v] of current) if (!saved.has(k) || saved.get(k) !== v) n++;
+        for (const k of saved.keys()) if (!current.has(k)) n++;
+        return n;
+    }, [envVars, envVarsChanged, savedEnvList]);
+    const discardEnvChanges = () => {
+        setEnvVars(savedEnvList);
+        setEnvVarsChanged(false);
+    };
+
     const handleEnvVarsChange = (newVars: EnvVar[]) => {
         setEnvVars(newVars);
         setEnvVarsChanged(true);
@@ -1387,6 +1405,8 @@ function AppDetailPageContent() {
                             onChange={handleEnvVarsChange}
                             onSave={() => updateEnvVarsMutation.mutate()}
                             onSaveAndRedeploy={saveAndRedeploy}
+                            changeCount={envChangeCount}
+                            onDiscard={discardEnvChanges}
                         />
                     )}
 
@@ -1394,6 +1414,7 @@ function AppDetailPageContent() {
                         <LogsSection
                             appId={appId}
                             appName={app.name}
+                            buildLogs={app.deployLogs}
                             server={server}
                             active={selectedSection === "logs"}
                         />

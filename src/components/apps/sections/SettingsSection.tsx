@@ -1,17 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { Copy, ExternalLink, FileCode2, Globe, Loader2, RotateCcw, Save, ShieldCheck, Info, Settings, HeartPulse, ShieldAlert, Layers } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ChevronRight, Copy, ExternalLink, FileCode2, Globe, HeartPulse, Layers, Loader2, RotateCcw, Rocket, Save, Settings, ShieldCheck, Trash2, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { DeleteAppAction } from "@/components/apps/DeleteAppAction";
 import { DeleteLifecycleNotice } from "@/components/apps/DeleteLifecycleNotice";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import type { App, BuildpackName, HealthCheckMode, ScaleAppResult, Server } from "@/lib/api";
-import { formatRelativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { BuildpackVersionSelector } from "@/components/apps/BuildpackVersionSelector";
 
 type SettingsSectionProps = {
@@ -70,23 +72,53 @@ const buildpackOptions: Array<{ value: BuildpackName | ""; label: string }> = [
     { value: "rust", label: "Rust" },
     { value: "static", label: "Static Site" },
 ];
-const frontendFrameworkChips = ["React / Vite", "CRA", "Angular", "Next.js", "Vue / Nuxt", "SvelteKit"];
 
 function safeErrorMessage(error: unknown, fallback: string) {
     return error ? fallback : null;
 }
 
-function healthModeLabel(mode?: HealthCheckMode | null, recommended = false) {
-    if (mode === "strict_http") {
-        return "Strict HTTP";
-    }
-    if (mode === "port") {
-        return "Port readiness";
-    }
-    if (mode === "process") {
-        return "Background worker (no port)";
-    }
-    return recommended ? "Auto (recommended)" : "Auto";
+
+const NAV = [
+    { id: "general", label: "General", icon: Settings },
+    { id: "build", label: "Build and run", icon: FileCode2 },
+    { id: "health", label: "Health check", icon: HeartPulse },
+    { id: "scaling", label: "Scaling", icon: Layers },
+    { id: "deploy-mode", label: "Deploy mode", icon: Rocket, href: "deployments" },
+    { id: "status-page", label: "Public status page", icon: Globe },
+    { id: "protection", label: "Protection", icon: ShieldCheck, href: "security" },
+] as const;
+
+function Section({ id, title, subtitle, action, children }: { id: string; title: string; subtitle: string; action?: React.ReactNode; children: React.ReactNode }) {
+    return (
+        <Card id={`settings-${id}`} className="scroll-mt-6 gap-0 rounded-2xl py-0 shadow-xs">
+            <div className="flex items-start justify-between gap-3 px-6 pt-5">
+                <div>
+                    <h2 className="text-xl font-bold tracking-tight text-foreground">{title}</h2>
+                    <p className="text-sm text-muted-foreground">{subtitle}</p>
+                </div>
+                {action}
+            </div>
+            <div className="space-y-5 p-6">{children}</div>
+        </Card>
+    );
+}
+
+function Notice({ tone, children }: { tone: "danger" | "success" | "warning"; children: React.ReactNode }) {
+    return (
+        <div role={tone === "danger" ? "alert" : "status"} className={cn("rounded-xl px-4 py-3 text-sm", tone === "danger" && "bg-danger-muted text-danger-text", tone === "success" && "bg-success-muted text-success-text", tone === "warning" && "border border-warning/30 bg-warning-muted text-warning-text")}>
+            {children}
+        </div>
+    );
+}
+
+function InfoRow({ label, children, action }: { label: string; children: React.ReactNode; action?: React.ReactNode }) {
+    return (
+        <div className="flex items-center gap-4 border-t py-3.5 text-sm first:border-t-0">
+            <span className="w-28 shrink-0 text-muted-foreground">{label}</span>
+            <span className="min-w-0 flex-1 truncate font-medium text-foreground">{children}</span>
+            {action}
+        </div>
+    );
 }
 
 export function SettingsSection({
@@ -142,508 +174,231 @@ export function SettingsSection({
         toast.success("App ID copied", { duration: 2000 });
     };
 
+    const [advancedOpen, setAdvancedOpen] = useState(false);
+    const [active, setActive] = useState<string>("general");
+    const goTo = (id: string) => {
+        setActive(id);
+        document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    const buildErr = safeErrorMessage(buildConfigError, "x");
+    const repo = app.gitUrl ? app.gitUrl.replace(/^https?:\/\/(www\.)?github\.com\//, "").replace(/\.git$/, "") : null;
+    const frameworkLabel = buildpackOptions.find((o) => o.value === buildpackOverride)?.label ?? "Auto-detect";
+
     return (
-        <section className="space-y-6">
-            <Card>
-                <CardHeader>
-                    <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-muted border border-border shrink-0">
-                            <Info size={20} />
-                        </div>
-                        <div>
-                            <CardTitle className="text-lg">App Info</CardTitle>
-                            <CardDescription>Identifiers and source details for support and audit trails.</CardDescription>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-lg border border-border/70 p-4">
-                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">App ID</p>
-                        <div className="mt-2 flex items-center gap-2">
-                            <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-sm">{app.id}</code>
-                            <Button type="button" variant="outline" size="sm" onClick={copyAppId} aria-label="Copy App ID">
-                                <Copy className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    </div>
-                    <div className="rounded-lg border border-border/70 p-4">
-                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Server</p>
-                        <Button asChild variant="link" className="mt-1 h-auto p-0 text-sm">
-                            <Link href={`/servers/${server.id}`}>{server.name}</Link>
-                        </Button>
-                    </div>
-                    <div className="rounded-lg border border-border/70 p-4">
-                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Repository</p>
-                        {app.gitUrl ? (
-                            <a
-                                href={app.gitUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mt-2 block truncate text-sm font-medium text-info-text hover:underline"
-                            >
-                                {app.gitUrl}
-                            </a>
-                        ) : (
-                            <p className="mt-2 text-sm text-muted-foreground">No repository linked.</p>
-                        )}
-                    </div>
-                    <div className="rounded-lg border border-border/70 p-4">
-                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Branch / Created</p>
-                        <p className="mt-2 text-sm font-medium text-foreground">{app.branch || "main"}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{formatRelativeTime(app.createdAt)}</p>
-                    </div>
-                    <div className="rounded-lg border border-border/70 p-4">
-                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Health mode</p>
-                        <p className="mt-2 text-sm font-medium text-foreground">{healthModeLabel(app.healthCheckMode)}</p>
-                    </div>
-                    <div className="rounded-lg border border-border/70 p-4">
-                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Health path</p>
-                        <p className="mt-2 text-sm font-medium text-foreground">{app.healthPath || "/"}</p>
-                    </div>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-muted border border-border shrink-0">
-                            <Settings size={20} />
-                        </div>
-                        <div>
-                            <CardTitle className="text-lg">Build Configuration</CardTitle>
-                            <CardDescription>
-                                App-level buildpack, registry, Dockerfile, and Nginx override controls.
-                            </CardDescription>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    {deleteLocked ? (
-                        <div className="rounded-lg border border-warning/30 bg-warning-muted px-4 py-3 text-sm text-warning-text">
-                            Settings changes are paused while cleanup is pending.
-                        </div>
-                    ) : null}
-
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <div>
-                            <Label htmlFor="buildpackOverride">Buildpack Override</Label>
-                            <select
-                                id="buildpackOverride"
-                                value={buildpackOverride}
-                                onChange={(event) => onBuildpackOverrideChange(event.target.value as BuildpackName | "")}
-                                disabled={deleteLocked}
-                                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                            >
-                                {buildpackOptions.map((option) => (
-                                    <option key={option.value || "auto"} value={option.value}>
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </select>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                Frontend framework options use the Node.js buildpack with framework-specific output detection.
-                            </p>
-                            <div className="mt-3 flex flex-wrap gap-2" aria-label="Supported frontend frameworks">
-                                {frontendFrameworkChips.map((label) => (
-                                    <span key={label} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                                        <FileCode2 className="h-3.5 w-3.5" />
-                                        {label}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="flex items-end">
-                            <Button asChild variant="outline" className="w-full">
-                                <Link href={`/apps/${app.id}/dockerfile`}>
-                                    <FileCode2 className="mr-2 h-4 w-4" />
-                                    Edit Dockerfile Override
-                                </Link>
-                            </Button>
-                        </div>
-                        <div className="flex items-end">
-                            <Button asChild variant="outline" className="w-full">
-                                <Link href={`/apps/${app.id}/nginx`}>
-                                    <Globe className="mr-2 h-4 w-4" />
-                                    Edit Nginx Engine
-                                </Link>
-                            </Button>
-                        </div>
-                    </div>
-
-                    <BuildpackVersionSelector
-                        serverId={server.id}
-                        appId={app.id}
-                        buildpackVersion={app.buildpackVersion ?? null}
-                        buildpackVersionPin={app.buildpackVersionPin ?? null}
-                        disabled={deleteLocked}
-                    />
-
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <div className="md:col-span-3">
-                            <Label htmlFor="registryHost">Registry Host</Label>
-                            <Input
-                                id="registryHost"
-                                value={registryHost}
-                                onChange={(event) => onRegistryHostChange(event.target.value)}
-                                placeholder="ghcr.io"
-                                disabled={deleteLocked}
-                            />
-                        </div>
-                        <div>
-                            <Label htmlFor="registryUsername">Username</Label>
-                            <Input
-                                id="registryUsername"
-                                value={registryUsername}
-                                onChange={(event) => onRegistryUsernameChange(event.target.value)}
-                                placeholder="octocat"
-                                disabled={deleteLocked}
-                            />
-                        </div>
-                        <div className="md:col-span-2">
-                            <Label htmlFor="registryPassword">Password / Token</Label>
-                            <Input
-                                id="registryPassword"
-                                type="password"
-                                value={registryPassword}
-                                onChange={(event) => onRegistryPasswordChange(event.target.value)}
-                                placeholder={app.registryCredentials?.hasPassword ? "Leave blank to keep current secret" : "Registry token"}
-                                disabled={deleteLocked}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3">
-                        <Button
-                            variant="outline"
-                            onClick={onTestRegistry}
-                            disabled={registryTestPending || deleteLocked}
-                        >
-                            {registryTestPending ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <ShieldCheck className="mr-2 h-4 w-4" />
-                            )}
-                            {registryTestPending ? "Testing" : "Test Connection"}
-                        </Button>
-                        <Button
-                            onClick={onSaveBuildConfig}
-                            disabled={buildConfigPending || deleteLocked}
-                        >
-                            {buildConfigPending ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Save className="mr-2 h-4 w-4" />
-                            )}
-                            {buildConfigPending ? "Saving" : "Save Build Config"}
-                        </Button>
-                    </div>
-
-                    {registryTestResult ? (
-                        <div className="rounded-lg bg-success-muted px-4 py-3 text-sm text-success-text">
-                            Registry authentication succeeded for {registryTestResult.registry}.
-                        </div>
-                    ) : null}
-                    {safeErrorMessage(registryTestError, "Registry authentication failed. Check the host, username, and token.") ? (
-                        <div className="rounded-lg bg-danger-muted px-4 py-3 text-sm text-danger-text">
-                            Registry authentication failed. Check the host, username, and token.
-                        </div>
-                    ) : null}
-                    {safeErrorMessage(buildConfigError, "Build configuration could not be saved.") ? (
-                        <div className="rounded-lg bg-danger-muted px-4 py-3 text-sm text-danger-text">
-                            Build configuration could not be saved.
-                        </div>
-                    ) : null}
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-muted border border-border shrink-0">
-                            <HeartPulse size={20} />
-                        </div>
-                        <div>
-                            <CardTitle className="text-lg">Health Check Settings</CardTitle>
-                            <CardDescription>
-                                Configure readiness checks as Opslin deployment settings.
-                            </CardDescription>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                    {deleteLocked ? (
-                        <div className="rounded-lg border border-warning/30 bg-warning-muted px-4 py-3 text-sm text-warning-text">
-                            Health check changes are paused while cleanup is pending.
-                        </div>
-                    ) : null}
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                            <Label htmlFor="settingsHealthCheckMode">Health check mode</Label>
-                            <select
-                                id="settingsHealthCheckMode"
-                                data-testid="settings-health-check-mode"
-                                value={healthCheckMode}
-                                onChange={(event) => onHealthCheckModeChange(event.target.value as HealthCheckMode)}
-                                disabled={deleteLocked}
-                                className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                            >
-                                <option value="auto">Auto (recommended)</option>
-                                <option value="strict_http">Strict HTTP</option>
-                                <option value="port">Port readiness</option>
-                                <option value="process">Background worker (no port)</option>
-                            </select>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                Auto works best for backend APIs without a /health route.
-                                Strict HTTP requires HTTP 200 on the configured path.
-                                Port readiness checks only that the app port is reachable.
-                                Background worker checks only that the container is running — for apps with no listening port at all.
-                            </p>
-                        </div>
-
-                        <div>
-                            <Label htmlFor="settingsHealthPath">Health check path</Label>
-                            <Input
-                                id="settingsHealthPath"
-                                data-testid="settings-health-check-path"
-                                value={healthPath}
-                                onChange={(event) => onHealthPathChange(event.target.value)}
-                                placeholder="/health"
-                                disabled={deleteLocked || healthCheckMode === "process"}
-                            />
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                {healthCheckMode === "process"
-                                    ? "Not used — background worker mode never checks a path."
-                                    : "Optional. Use /health or /api/health if your app has one. This is a Opslin deployment setting, not an environment variable."}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3">
-                        <Button
-                            onClick={onSaveHealthSettings}
-                            disabled={healthSettingsPending || deleteLocked}
-                        >
-                            {healthSettingsPending ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Save className="mr-2 h-4 w-4" />
-                            )}
-                            {healthSettingsPending ? "Saving" : "Save Health Settings"}
-                        </Button>
-                    </div>
-
-                    {safeErrorMessage(healthSettingsError, "Health check settings could not be saved.") ? (
-                        <div className="rounded-lg bg-danger-muted px-4 py-3 text-sm text-danger-text">
-                            Health check settings could not be saved.
-                        </div>
-                    ) : null}
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-muted border border-border shrink-0">
-                            <Globe size={20} />
-                        </div>
-                        <div>
-                            <CardTitle className="text-lg">Public Status Page</CardTitle>
-                            <CardDescription>
-                                Share read-only app health without exposing logs, secrets, or runtime controls.
-                            </CardDescription>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                        <div className="space-y-2">
-                            <Label htmlFor="publicStatus">Expose public status page</Label>
-                            <select
-                                id="publicStatus"
-                                value={publicStatus ? "enabled" : "disabled"}
-                                onChange={(event) => onPublicStatusChange(event.target.value === "enabled")}
-                                disabled={deleteLocked}
-                                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm md:w-64"
-                            >
-                                <option value="disabled">Disabled</option>
-                                <option value="enabled">Enabled</option>
-                            </select>
-                        </div>
-                        <div className="flex flex-wrap gap-3">
-                            <Button
-                                variant="outline"
-                                onClick={onSavePublicStatus}
-                                disabled={publicStatusPending || deleteLocked}
-                            >
-                                {publicStatusPending ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        <section className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+            <nav aria-label="Settings sections" className="sticky top-4 rounded-2xl border bg-card p-2 shadow-xs">
+                <ul className="space-y-0.5">
+                    {NAV.map((item) => {
+                        const Icon = item.icon;
+                        const cls = cn("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring", active === item.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground");
+                        return (
+                            <li key={item.id}>
+                                {"href" in item ? (
+                                    <Link href={`/apps/${app.id}?section=${item.href}`} className={cls}><Icon className="size-4" aria-hidden="true" />{item.label}<ChevronRight className="ml-auto size-3.5 opacity-60" aria-hidden="true" /></Link>
                                 ) : (
-                                    <Save className="mr-2 h-4 w-4" />
+                                    <button type="button" onClick={() => goTo(item.id)} className={cls} aria-current={active === item.id ? "true" : undefined}><Icon className="size-4" aria-hidden="true" />{item.label}</button>
                                 )}
-                                {publicStatusPending ? "Saving" : "Save Status Setting"}
-                            </Button>
-                            {publicStatus ? (
-                                <Button asChild>
-                                    <a href={statusUrl} target="_blank" rel="noopener noreferrer">
-                                        <ExternalLink className="mr-2 h-4 w-4" />
-                                        Open Public Status
-                                    </a>
-                                </Button>
-                            ) : null}
-                        </div>
-                    </div>
-                    {publicStatusError ? (
-                        <div className="rounded-lg bg-danger-muted px-4 py-3 text-sm text-danger-text">
-                            Public status setting could not be saved.
-                        </div>
-                    ) : null}
-                </CardContent>
-            </Card>
+                            </li>
+                        );
+                    })}
+                </ul>
+                <div className="my-2 border-t" />
+                <button type="button" onClick={() => goTo("danger")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-danger-text hover:bg-danger-muted focus-visible:ring-2 focus-visible:ring-ring"><Trash2 className="size-4" aria-hidden="true" />Danger zone</button>
+            </nav>
 
-            <Card>
-                <CardHeader>
-                    <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-muted border border-border shrink-0">
-                            <Layers size={20} />
-                        </div>
-                        <div>
-                            <CardTitle className="text-lg">Scaling</CardTitle>
-                            <CardDescription>
-                                Run multiple instances of this app on the same server, load-balanced by Nginx.
-                            </CardDescription>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {deleteLocked ? (
-                        <div className="rounded-lg border border-warning/30 bg-warning-muted px-4 py-3 text-sm text-warning-text">
-                            Scaling changes are paused while cleanup is pending.
-                        </div>
-                    ) : null}
+            <div className="min-w-0 space-y-5">
+                {deleteLocked ? <Notice tone="warning">Settings changes are paused while the app is being deleted.</Notice> : null}
 
+                <Section id="general" title="General" subtitle="Basic information about your app.">
+                    <div>
+                        <InfoRow label="App name">{app.name}</InfoRow>
+                        <InfoRow label="App ID" action={<button type="button" onClick={copyAppId} aria-label="Copy App ID" className="rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><Copy className="size-4" aria-hidden="true" /></button>}><code className="font-mono text-[13px]">{app.id}</code></InfoRow>
+                        <InfoRow label="Server" action={<Link href={`/servers/${server.id}`} aria-label={`Open ${server.name}`} className="rounded p-1 text-muted-foreground hover:text-foreground"><ExternalLink className="size-4" aria-hidden="true" /></Link>}><Link href={`/servers/${server.id}`} className="text-primary hover:underline">{server.name}</Link></InfoRow>
+                        <InfoRow label="Repository" action={app.gitUrl ? <a href={app.gitUrl.replace(/\.git$/, "")} target="_blank" rel="noopener noreferrer" aria-label="Open repository" className="rounded p-1 text-muted-foreground hover:text-foreground"><ExternalLink className="size-4" aria-hidden="true" /></a> : undefined}>
+                            {repo ? <span className="flex items-center gap-1.5 text-primary"><GitBranch className="size-4" aria-hidden="true" />{repo}</span> : <span className="text-muted-foreground">No repository linked</span>}
+                        </InfoRow>
+                        <InfoRow label="Branch">{app.branch || "main"}</InfoRow>
+                    </div>
+                </Section>
+
+                <Section id="build" title="Build and run" subtitle="How Opslin builds and starts your app." action={buildpackOverride === "" ? <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">Detected automatically</span> : undefined}>
                     <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                            <Label htmlFor="scaleTargetReplicaCount">Number of instances</Label>
-                            <Input
-                                id="scaleTargetReplicaCount"
-                                type="number"
-                                min={1}
-                                max={10}
-                                value={scaleTargetReplicaCount}
-                                onChange={(event) => onScaleTargetReplicaCountChange(Math.min(10, Math.max(1, Number(event.target.value) || 1)))}
-                                disabled={deleteLocked || scalePending}
-                            />
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                Currently running: {app.replicaCount && app.replicaCount > 1 ? `${app.replicaCount} instances` : "1 instance"}.
-                            </p>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="buildpackOverride">Framework</Label>
+                            <Select value={buildpackOverride === "" ? "auto" : buildpackOverride} onValueChange={(v) => onBuildpackOverrideChange((v === "auto" ? "" : v) as BuildpackName | "")} disabled={deleteLocked}>
+                                <SelectTrigger id="buildpackOverride" aria-label="Framework" className="h-10 w-full"><SelectValue>{frameworkLabel}</SelectValue></SelectTrigger>
+                                <SelectContent>
+                                    {buildpackOptions.map((o) => (
+                                        <SelectItem key={o.value || "auto"} value={o.value === "" ? "auto" : o.value}>{o.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
-                        {scaleTargetReplicaCount > 1 ? (
-                            <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-muted p-3">
-                                <input
-                                    id="scaleConfirmMultiInstance"
-                                    type="checkbox"
-                                    className="mt-0.5 h-4 w-4 shrink-0"
-                                    checked={scaleConfirmMultiInstance}
-                                    onChange={(event) => onScaleConfirmMultiInstanceChange(event.target.checked)}
-                                    disabled={deleteLocked || scalePending}
-                                />
-                                <Label htmlFor="scaleConfirmMultiInstance" className="text-xs font-normal text-warning-text">
-                                    I confirm this app is safe to run as multiple concurrent instances — no shared
-                                    in-memory session state and no writes to local disk it expects to persist.
-                                    Opslin cannot verify this automatically.
-                                </Label>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="appPort">Port</Label>
+                            <Input id="appPort" value={app.port ?? "Detected at deploy"} readOnly className="h-10" />
+                        </div>
+                    </div>
+
+                    <BuildpackVersionSelector serverId={server.id} appId={app.id} buildpackVersion={app.buildpackVersion ?? null} buildpackVersionPin={app.buildpackVersionPin ?? null} disabled={deleteLocked} />
+
+                    <div className="rounded-xl border">
+                        <button type="button" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((v) => !v)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left focus-visible:ring-2 focus-visible:ring-ring">
+                            <Settings className="size-5 text-muted-foreground" aria-hidden="true" />
+                            <span className="flex-1">
+                                <span className="block text-sm font-semibold text-foreground">Advanced</span>
+                                <span className="block text-xs text-muted-foreground">Dockerfile, Nginx, private registry</span>
+                            </span>
+                            <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", advancedOpen && "rotate-180")} aria-hidden="true" />
+                        </button>
+                        {advancedOpen ? (
+                            <div className="space-y-5 border-t p-4">
+                                <div className="flex flex-wrap gap-3">
+                                    <Button asChild variant="outline"><Link href={`/apps/${app.id}/dockerfile`}><FileCode2 aria-hidden="true" /> Edit Dockerfile override</Link></Button>
+                                    <Button asChild variant="outline"><Link href={`/apps/${app.id}/nginx`}><Globe aria-hidden="true" /> Edit Nginx engine</Link></Button>
+                                </div>
+                                <div className="grid gap-4 md:grid-cols-3">
+                                    <div className="space-y-1.5 md:col-span-3">
+                                        <Label htmlFor="registryHost">Registry host</Label>
+                                        <Input id="registryHost" value={registryHost} onChange={(e) => onRegistryHostChange(e.target.value)} placeholder="ghcr.io" disabled={deleteLocked} />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="registryUsername">Username</Label>
+                                        <Input id="registryUsername" value={registryUsername} onChange={(e) => onRegistryUsernameChange(e.target.value)} placeholder="octocat" disabled={deleteLocked} />
+                                    </div>
+                                    <div className="space-y-1.5 md:col-span-2">
+                                        <Label htmlFor="registryPassword">Password / token</Label>
+                                        <Input id="registryPassword" type="password" value={registryPassword} onChange={(e) => onRegistryPasswordChange(e.target.value)} placeholder={app.registryCredentials?.hasPassword ? "Leave blank to keep current secret" : "Registry token"} disabled={deleteLocked} />
+                                    </div>
+                                </div>
+                                <Button variant="outline" onClick={onTestRegistry} disabled={registryTestPending || deleteLocked}>
+                                    {registryTestPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />} {registryTestPending ? "Testing" : "Test connection"}
+                                </Button>
+                                {registryTestResult ? <Notice tone="success">Registry sign-in worked for {registryTestResult.registry}.</Notice> : null}
+                                {safeErrorMessage(registryTestError, "x") ? <Notice tone="danger">Registry sign-in failed. Check the host, username and token.</Notice> : null}
                             </div>
                         ) : null}
                     </div>
 
-                    <div className="flex flex-wrap gap-3">
-                        <Button
-                            onClick={onScaleApp}
-                            disabled={scalePending || deleteLocked || (scaleTargetReplicaCount > 1 && !scaleConfirmMultiInstance)}
-                        >
-                            {scalePending ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Layers className="mr-2 h-4 w-4" />
-                            )}
-                            {scalePending ? "Scaling" : "Apply Scaling"}
+                    {buildErr ? <Notice tone="danger">Build settings could not be saved.</Notice> : null}
+                    <div className="flex justify-end">
+                        <Button onClick={onSaveBuildConfig} disabled={buildConfigPending || deleteLocked}>
+                            {buildConfigPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />} {buildConfigPending ? "Saving" : "Save"}
                         </Button>
                     </div>
+                </Section>
 
-                    {scaleResult ? (
-                        <div className="rounded-lg bg-success-muted px-4 py-3 text-sm text-success-text">
-                            Now running {scaleResult.replicaCount} instance{scaleResult.replicaCount === 1 ? "" : "s"} on ports{" "}
-                            {scaleResult.backends.map((backend) => backend.port).join(", ")}.
+                <Section id="health" title="Health check" subtitle="How Opslin knows your app is OK.">
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="settingsHealthCheckMode">Mode</Label>
+                            <Select value={healthCheckMode} onValueChange={(v) => onHealthCheckModeChange(v as HealthCheckMode)} disabled={deleteLocked}>
+                                <SelectTrigger id="settingsHealthCheckMode" data-testid="settings-health-check-mode" aria-label="Health check mode" className="h-10 w-full"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="auto">Auto (recommended)</SelectItem>
+                                    <SelectItem value="strict_http">Strict HTTP</SelectItem>
+                                    <SelectItem value="port">Port readiness</SelectItem>
+                                    <SelectItem value="process">Background worker (no port)</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
-                    ) : null}
-                    {scaleError ? (
-                        <div className="rounded-lg bg-danger-muted px-4 py-3 text-sm text-danger-text">
-                            {scaleError instanceof Error ? scaleError.message : "Scaling failed."}
+                        <div className="space-y-1.5">
+                            <Label htmlFor="settingsHealthPath">Path</Label>
+                            <Input id="settingsHealthPath" data-testid="settings-health-check-path" value={healthPath} onChange={(e) => onHealthPathChange(e.target.value)} placeholder="/health" disabled={deleteLocked || healthCheckMode === "process"} />
                         </div>
-                    ) : null}
-                </CardContent>
-            </Card>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                        {healthCheckMode === "process" ? "Background workers have no web address, so Opslin only checks that the container is running." : "Opslin visits this address to see if your app is OK. Auto works for most apps."}
+                    </p>
+                    {safeErrorMessage(healthSettingsError, "x") ? <Notice tone="danger">Health check settings could not be saved.</Notice> : null}
+                    <div className="flex justify-end">
+                        <Button onClick={onSaveHealthSettings} disabled={healthSettingsPending || deleteLocked}>
+                            {healthSettingsPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />} {healthSettingsPending ? "Saving" : "Save"}
+                        </Button>
+                    </div>
+                </Section>
 
-            <Card className="border-danger/30">
-                <CardHeader>
-                    <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-danger-muted border border-border shrink-0">
-                            <ShieldAlert size={20} />
+                <Section id="scaling" title="Scaling" subtitle="Run more than one copy of your app on this server.">
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="scaleTargetReplicaCount">Number of instances</Label>
+                            <Input id="scaleTargetReplicaCount" type="number" min={1} max={10} value={scaleTargetReplicaCount} onChange={(e) => onScaleTargetReplicaCountChange(Math.min(10, Math.max(1, Number(e.target.value) || 1)))} disabled={deleteLocked || scalePending} />
+                            <p className="text-xs text-muted-foreground">Currently running: {app.replicaCount && app.replicaCount > 1 ? `${app.replicaCount} instances` : "1 instance"}.</p>
                         </div>
-                        <div className="flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <CardTitle className="text-lg text-danger-text">Danger Zone</CardTitle>
-                                {isDeleting ? <Badge className="bg-warning-muted text-warning-text">DELETING</Badge> : null}
-                                {isDeleteFailed ? <Badge className="bg-danger-muted text-danger-text">DELETE FAILED</Badge> : null}
+                        {scaleTargetReplicaCount > 1 ? (
+                            <div className="flex items-start gap-2.5 rounded-xl border border-warning/30 bg-warning-muted p-3">
+                                <input id="scaleConfirmMultiInstance" type="checkbox" className="mt-0.5 size-4 shrink-0" checked={scaleConfirmMultiInstance} onChange={(e) => onScaleConfirmMultiInstanceChange(e.target.checked)} disabled={deleteLocked || scalePending} />
+                                <Label htmlFor="scaleConfirmMultiInstance" className="text-xs font-normal text-warning-text">I confirm this app is safe to run as several copies at once: no shared in-memory sessions and no files it expects to keep on local disk. Opslin cannot check this for you.</Label>
                             </div>
-                            <CardDescription>
-                                Delete cleanup runs on the server first. The app stays visible until cleanup succeeds.
-                            </CardDescription>
+                        ) : null}
+                    </div>
+                    {scaleResult ? <Notice tone="success">Now running {scaleResult.replicaCount} {scaleResult.replicaCount === 1 ? "instance" : "instances"} on ports {scaleResult.backends.map((b) => b.port).join(", ")}.</Notice> : null}
+                    {scaleError ? <Notice tone="danger">{scaleError instanceof Error ? scaleError.message : "Scaling failed."}</Notice> : null}
+                    <div className="flex justify-end">
+                        <Button onClick={onScaleApp} disabled={scalePending || deleteLocked || (scaleTargetReplicaCount > 1 && !scaleConfirmMultiInstance)}>
+                            {scalePending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Layers aria-hidden="true" />} {scalePending ? "Scaling" : "Apply scaling"}
+                        </Button>
+                    </div>
+                </Section>
+
+                <Section id="status-page" title="Public status page" subtitle="Share if your app is up, without sharing logs or secrets.">
+                    <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                        <div>
+                            <Label htmlFor="publicStatus" className="text-sm font-semibold">Show a public status page</Label>
+                            <p className="text-xs text-muted-foreground">Anyone with the link can see if your app is healthy.</p>
+                        </div>
+                        <Switch id="publicStatus" checked={publicStatus} onCheckedChange={onPublicStatusChange} disabled={deleteLocked} aria-label="Show a public status page" />
+                    </div>
+                    {publicStatusError ? <Notice tone="danger">The status page setting could not be saved.</Notice> : null}
+                    <div className="flex flex-wrap justify-end gap-3">
+                        {publicStatus ? (
+                            <Button asChild variant="outline"><a href={statusUrl} target="_blank" rel="noopener noreferrer"><ExternalLink aria-hidden="true" /> Open status page</a></Button>
+                        ) : null}
+                        <Button onClick={onSavePublicStatus} disabled={publicStatusPending || deleteLocked}>
+                            {publicStatusPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />} {publicStatusPending ? "Saving" : "Save"}
+                        </Button>
+                    </div>
+                </Section>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                    <Link href={`/apps/${app.id}?section=deployments`} className="flex items-center gap-4 rounded-2xl border bg-card p-5 shadow-xs transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
+                        <span className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary"><Rocket className="size-5" aria-hidden="true" /></span>
+                        <span className="flex-1"><span className="block font-semibold text-foreground">Deploy mode</span><span className="block text-sm text-muted-foreground">How careful before going live</span></span>
+                        <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+                    </Link>
+                    <Link href={`/apps/${app.id}?section=security`} className="flex items-center gap-4 rounded-2xl border bg-card p-5 shadow-xs transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
+                        <span className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary"><ShieldCheck className="size-5" aria-hidden="true" /></span>
+                        <span className="flex-1"><span className="block font-semibold text-foreground">Protection</span><span className="block text-sm text-muted-foreground">HTTPS and traffic shields</span></span>
+                        <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+                    </Link>
+                </div>
+
+                <Card id="settings-danger" className="scroll-mt-6 gap-0 rounded-2xl border-danger/30 bg-danger-muted/20 py-0 shadow-none">
+                    <div className="space-y-4 p-6">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-xl font-bold tracking-tight text-danger-text">Danger zone</h2>
+                            {isDeleting ? <span className="rounded-full bg-warning-muted px-2.5 py-0.5 text-xs font-medium text-warning-text">Deleting</span> : null}
+                            {isDeleteFailed ? <span className="rounded-full bg-danger-muted px-2.5 py-0.5 text-xs font-medium text-danger-text">Delete failed</span> : null}
+                        </div>
+                        {(isDeleting || isDeleteFailed) ? (
+                            <DeleteLifecycleNotice status={app.status} errorReason={deleteFailureReason} onRetry={isDeleteFailed ? onRetryDeleteCleanup : undefined} retryPending={deletePending} />
+                        ) : null}
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="text-sm text-muted-foreground">
+                                <p className="font-semibold text-foreground">Delete app</p>
+                                <p>This stops the app, removes its link, and deletes it after clean-up finishes.</p>
+                            </div>
+                            {isDeleteFailed ? (
+                                <Button type="button" variant="destructive" onClick={onRetryDeleteCleanup} disabled={deletePending} className="shrink-0">
+                                    {deletePending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <RotateCcw aria-hidden="true" />} Retry cleanup
+                                </Button>
+                            ) : (
+                                <DeleteAppAction appName={app.name} onConfirm={onDelete} pending={deletePending} disabled={deleteLocked} className="shrink-0" />
+                            )}
                         </div>
                     </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {(isDeleting || isDeleteFailed) ? (
-                        <DeleteLifecycleNotice
-                            status={app.status}
-                            errorReason={deleteFailureReason}
-                            onRetry={isDeleteFailed ? onRetryDeleteCleanup : undefined}
-                            retryPending={deletePending}
-                        />
-                    ) : null}
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="text-sm text-muted-foreground">
-                            <p className="font-medium text-foreground">Delete App</p>
-                            <p>This stops runtime resources, removes Opslin-managed routes, and deletes the app record after cleanup succeeds.</p>
-                        </div>
-                        {isDeleteFailed ? (
-                            <Button
-                                type="button"
-                                variant="destructive"
-                                onClick={onRetryDeleteCleanup}
-                                disabled={deletePending}
-                                className="shrink-0"
-                            >
-                                {deletePending ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                    <RotateCcw className="mr-2 h-4 w-4" />
-                                )}
-                                Retry cleanup
-                            </Button>
-                        ) : (
-                            <DeleteAppAction
-                                appName={app.name}
-                                onConfirm={onDelete}
-                                pending={deletePending}
-                                disabled={deleteLocked}
-                                className="shrink-0"
-                            />
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
+                </Card>
+            </div>
         </section>
     );
 }

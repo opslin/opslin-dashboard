@@ -126,147 +126,112 @@ describe("SettingsSection", () => {
         });
     });
 
-    it("renders app info, build config, public status, and danger zone without exposing registry secrets", () => {
+    it("renders the sections and keeps registry secrets out of the page", () => {
         renderSettings({ registryPassword: "" });
 
-        expect(screen.getByText("App Info")).toBeVisible();
+        expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
         expect(screen.getByText("app-1")).toBeVisible();
-        expect(screen.getByText("Health mode")).toBeVisible();
-        expect(screen.getAllByText("Strict HTTP").length).toBeGreaterThan(0);
-        expect(screen.getAllByText("Health path").length).toBeGreaterThan(0);
-        expect(screen.getByText("/ready")).toBeVisible();
-        expect(screen.getByText("Build Configuration")).toBeVisible();
-        expect(screen.getByLabelText("Registry Host")).toHaveValue("ghcr.io");
-        expect(screen.getByLabelText("Username")).toHaveValue("octocat");
-        expect(screen.getByLabelText("Password / Token")).toHaveValue("");
+        expect(screen.getByRole("heading", { name: "Build and run" })).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Health check" })).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Scaling" })).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Public status page" })).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Danger zone" })).toBeVisible();
         expect(screen.queryByDisplayValue("super-secret-token")).not.toBeInTheDocument();
-        expect(screen.getByText("Public Status Page")).toBeVisible();
-        expect(screen.getByText("Danger Zone")).toBeVisible();
     });
 
-    it("shows frontend framework labels while submitting the node buildpack", () => {
-        const onBuildpackOverrideChange = vi.fn();
-        renderSettings({ onBuildpackOverrideChange });
+    it("keeps Dockerfile, Nginx and registry fields under Advanced until opened", () => {
+        renderSettings({ registryPassword: "" });
 
-        const select = screen.getByLabelText("Buildpack Override");
-        expect(within(select).getByRole("option", { name: "Node.js / React / Vite / Next.js / Angular" })).toHaveAttribute("value", "node");
-        expect(within(select).queryByRole("option", { name: "React / Vite" })).not.toBeInTheDocument();
-        fireEvent.change(select, { target: { value: "node" } });
-        expect(onBuildpackOverrideChange).toHaveBeenCalledWith("node");
-        expect(screen.getByText("Frontend framework options use the Node.js buildpack with framework-specific output detection.")).toBeVisible();
-        expect(screen.getByLabelText("Supported frontend frameworks")).toBeVisible();
+        expect(screen.queryByLabelText("Registry host")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: /Advanced/i }));
+        expect(screen.getByLabelText("Registry host")).toHaveValue("ghcr.io");
+        expect(screen.getByLabelText("Username")).toHaveValue("octocat");
+        expect(screen.getByLabelText("Password / token")).toHaveValue("");
+        expect(screen.getByRole("link", { name: /Edit Dockerfile override/i })).toHaveAttribute("href", "/apps/app-1/dockerfile");
+        expect(screen.getByRole("link", { name: /Edit Nginx engine/i })).toHaveAttribute("href", "/apps/app-1/nginx");
     });
 
-    it("renders and saves health check deployment settings", () => {
-        const onHealthCheckModeChange = vi.fn();
+    it("saves health check settings and shows the plain-language hint", () => {
         const onHealthPathChange = vi.fn();
         const onSaveHealthSettings = vi.fn();
-        renderSettings({
-            healthCheckMode: "auto",
-            healthPath: "",
-            onHealthCheckModeChange,
-            onHealthPathChange,
-            onSaveHealthSettings,
-        });
+        renderSettings({ healthCheckMode: "auto", healthPath: "", onHealthPathChange, onSaveHealthSettings });
 
-        const modeSelect = screen.getByLabelText("Health check mode");
-        expect(within(modeSelect).getByRole("option", { name: "Auto (recommended)" })).toHaveAttribute("value", "auto");
-        expect(within(modeSelect).getByRole("option", { name: "Strict HTTP" })).toHaveAttribute("value", "strict_http");
-        expect(within(modeSelect).getByRole("option", { name: "Port readiness" })).toHaveAttribute("value", "port");
-        expect(within(modeSelect).getByRole("option", { name: "Background worker (no port)" })).toHaveAttribute("value", "process");
-        expect(screen.getByPlaceholderText("/health")).toBeVisible();
-        expect(screen.getByText(/This is a Opslin deployment setting, not an environment variable./i)).toBeVisible();
-        const legacyHealthVarPattern = new RegExp([
-            ["HEALTHCHECK", "PATH"].join("_"),
-            ["OPSLIN", "HEALTHCHECK", "PATH"].join("_"),
-        ].join("|"));
-        expect(screen.queryByText(legacyHealthVarPattern)).not.toBeInTheDocument();
-
-        fireEvent.change(modeSelect, { target: { value: "port" } });
+        expect(screen.getByText(/Opslin visits this address to see if your app is OK/i)).toBeVisible();
         fireEvent.change(screen.getByTestId("settings-health-check-path"), { target: { value: "/live" } });
-        fireEvent.click(screen.getByRole("button", { name: /Save Health Settings/i }));
-
-        expect(onHealthCheckModeChange).toHaveBeenCalledWith("port");
         expect(onHealthPathChange).toHaveBeenCalledWith("/live");
+
+        const section = screen.getByRole("heading", { name: "Health check" }).closest("div[id='settings-health']") as HTMLElement;
+        fireEvent.click(within(section).getByRole("button", { name: /Save/i }));
         expect(onSaveHealthSettings).toHaveBeenCalledTimes(1);
     });
 
-    it("disables the health check path input and shows a not-used hint under process mode", () => {
+    it("disables the health check path input under process mode", () => {
         renderSettings({ healthCheckMode: "process", healthPath: "" });
 
-        const pathInput = screen.getByTestId("settings-health-check-path");
-        expect(pathInput).toBeDisabled();
-        expect(screen.getByText("Not used — background worker mode never checks a path.")).toBeVisible();
+        expect(screen.getByTestId("settings-health-check-path")).toBeDisabled();
+        expect(screen.getByText(/Background workers have no web address/i)).toBeVisible();
     });
 
-    it("hides the multi-instance confirmation checkbox and enables Apply Scaling at a single instance", () => {
+    it("applies scaling at a single instance without the confirmation checkbox", () => {
         const onScaleApp = vi.fn();
         renderSettings({ scaleTargetReplicaCount: 1, scaleConfirmMultiInstance: false, onScaleApp });
 
-        expect(screen.queryByLabelText(/I confirm this app is safe to run as multiple concurrent instances/i)).not.toBeInTheDocument();
-        const applyButton = screen.getByRole("button", { name: /Apply Scaling/i });
+        expect(screen.queryByLabelText(/I confirm this app is safe to run as several copies/i)).not.toBeInTheDocument();
+        const applyButton = screen.getByRole("button", { name: /Apply scaling/i });
         expect(applyButton).not.toBeDisabled();
-
         fireEvent.click(applyButton);
         expect(onScaleApp).toHaveBeenCalledTimes(1);
     });
 
-    it("requires the multi-instance confirmation checkbox before Apply Scaling is enabled above 1 instance", () => {
+    it("requires the confirmation checkbox before scaling above 1 instance", () => {
         const onScaleTargetReplicaCountChange = vi.fn();
         const onScaleConfirmMultiInstanceChange = vi.fn();
-        renderSettings({
-            scaleTargetReplicaCount: 3,
-            scaleConfirmMultiInstance: false,
-            onScaleTargetReplicaCountChange,
-            onScaleConfirmMultiInstanceChange,
-        });
+        renderSettings({ scaleTargetReplicaCount: 3, scaleConfirmMultiInstance: false, onScaleTargetReplicaCountChange, onScaleConfirmMultiInstanceChange });
 
-        const confirmCheckbox = screen.getByLabelText(/I confirm this app is safe to run as multiple concurrent instances/i);
+        const confirmCheckbox = screen.getByLabelText(/I confirm this app is safe to run as several copies/i);
         expect(confirmCheckbox).not.toBeChecked();
-        expect(screen.getByRole("button", { name: /Apply Scaling/i })).toBeDisabled();
-
+        expect(screen.getByRole("button", { name: /Apply scaling/i })).toBeDisabled();
         fireEvent.click(confirmCheckbox);
         expect(onScaleConfirmMultiInstanceChange).toHaveBeenCalledWith(true);
-
         fireEvent.change(screen.getByLabelText("Number of instances"), { target: { value: "5" } });
         expect(onScaleTargetReplicaCountChange).toHaveBeenCalledWith(5);
     });
 
-    it("enables Apply Scaling above 1 instance once confirmed, and shows the result/error banners", () => {
+    it("shows the scaling result and error banners", () => {
         renderSettings({
             scaleTargetReplicaCount: 3,
             scaleConfirmMultiInstance: true,
-            scaleResult: {
-                replicaCount: 3,
-                backends: [{ host: "127.0.0.1", port: 4000 }, { host: "127.0.0.1", port: 20001 }, { host: "127.0.0.1", port: 20002 }],
-            },
+            scaleResult: { replicaCount: 3, backends: [{ host: "127.0.0.1", port: 4000 }, { host: "127.0.0.1", port: 20001 }, { host: "127.0.0.1", port: 20002 }] },
             scaleError: new Error("Scaling to more than one instance requires confirmMultiInstance: true"),
         });
 
-        expect(screen.getByRole("button", { name: /Apply Scaling/i })).not.toBeDisabled();
+        expect(screen.getByRole("button", { name: /Apply scaling/i })).not.toBeDisabled();
         expect(screen.getByText(/Now running 3 instances on ports 4000, 20001, 20002/i)).toBeVisible();
-        expect(screen.getByText(/Scaling to more than one instance requires confirmMultiInstance: true/i)).toBeVisible();
+        expect(screen.getByText(/requires confirmMultiInstance: true/i)).toBeVisible();
     });
 
     it("disables scaling controls while delete cleanup is locked", () => {
         renderSettings({ deleteLocked: true, scaleTargetReplicaCount: 1 });
 
         expect(screen.getByLabelText("Number of instances")).toBeDisabled();
-        expect(screen.getByRole("button", { name: /Apply Scaling/i })).toBeDisabled();
+        expect(screen.getByRole("button", { name: /Apply scaling/i })).toBeDisabled();
     });
 
-    it("preserves build config, registry test, and public status actions", () => {
+    it("preserves build and public status save actions", () => {
         const onSaveBuildConfig = vi.fn();
-        const onTestRegistry = vi.fn();
         const onSavePublicStatus = vi.fn();
-        renderSettings({ onSaveBuildConfig, onTestRegistry, onSavePublicStatus });
+        const onTestRegistry = vi.fn();
+        renderSettings({ onSaveBuildConfig, onSavePublicStatus, onTestRegistry });
 
-        fireEvent.click(screen.getByRole("button", { name: /Test Connection/i }));
-        fireEvent.click(screen.getByRole("button", { name: /Save Build Config/i }));
-        fireEvent.click(screen.getByRole("button", { name: /Save Status Setting/i }));
+        const build = document.getElementById("settings-build") as HTMLElement;
+        fireEvent.click(within(build).getByRole("button", { name: /^Save$/i }));
+        fireEvent.click(within(build).getByRole("button", { name: /Advanced/i }));
+        fireEvent.click(within(build).getByRole("button", { name: /Test connection/i }));
+        const status = document.getElementById("settings-status-page") as HTMLElement;
+        fireEvent.click(within(status).getByRole("button", { name: /^Save$/i }));
 
-        expect(onTestRegistry).toHaveBeenCalledTimes(1);
         expect(onSaveBuildConfig).toHaveBeenCalledTimes(1);
+        expect(onTestRegistry).toHaveBeenCalledTimes(1);
         expect(onSavePublicStatus).toHaveBeenCalledTimes(1);
     });
 
@@ -279,25 +244,19 @@ describe("SettingsSection", () => {
 
         const confirmButton = screen.getAllByRole("button", { name: "Delete App" }).at(-1);
         expect(confirmButton).toBeDisabled();
-
-        fireEvent.change(screen.getByLabelText(/Type the app name to confirm/i), {
-            target: { value: "Checkout API" },
-        });
+        fireEvent.change(screen.getByLabelText(/Type the app name to confirm/i), { target: { value: "Checkout API" } });
         expect(confirmButton).toBeEnabled();
-
         fireEvent.click(confirmButton!);
         expect(onDelete).toHaveBeenCalledTimes(1);
     });
 
     it("disables settings mutations while deleting", () => {
-        renderSettings({
-            app: { ...app, status: "deleting" },
-            deleteLocked: true,
-        });
+        renderSettings({ app: { ...app, status: "deleting" }, deleteLocked: true });
 
-        expect(screen.getByRole("button", { name: /Test Connection/i })).toBeDisabled();
-        expect(screen.getByRole("button", { name: /Save Build Config/i })).toBeDisabled();
-        expect(screen.getByRole("button", { name: /Save Status Setting/i })).toBeDisabled();
+        const build = document.getElementById("settings-build") as HTMLElement;
+        expect(within(build).getByRole("button", { name: /^Save$/i })).toBeDisabled();
+        const status = document.getElementById("settings-status-page") as HTMLElement;
+        expect(within(status).getByRole("button", { name: /^Save$/i })).toBeDisabled();
         expect(screen.getByRole("button", { name: "Delete App" })).toBeDisabled();
         expect(screen.getByText("Deleting app")).toBeVisible();
     });
@@ -313,7 +272,6 @@ describe("SettingsSection", () => {
 
         expect(screen.getByText("Delete cleanup failed")).toBeVisible();
         expect(screen.getByText("cleanup failed")).toBeVisible();
-
         fireEvent.click(screen.getAllByRole("button", { name: /Retry cleanup/i })[0]);
         expect(onRetryDeleteCleanup).toHaveBeenCalledTimes(1);
     });

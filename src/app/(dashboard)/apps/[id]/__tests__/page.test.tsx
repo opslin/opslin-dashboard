@@ -232,7 +232,7 @@ describe("AppDetailPage extraction smoke", () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(await screen.findByRole("heading", { name: "Environment Variables" })).toBeVisible();
+        expect(await screen.findByRole("heading", { name: "Environment variables" })).toBeVisible();
         expect(screen.queryByTestId("domain-setup-card")).not.toBeInTheDocument();
         expect(screen.getByRole("tab", { name: "Environment" })).toHaveAttribute("aria-selected", "true");
     });
@@ -295,15 +295,14 @@ describe("AppDetailPage extraction smoke", () => {
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
         await waitFor(() => expect(api.getAppLogs).toHaveBeenCalledTimes(1));
-        expect(await screen.findByTestId("enhanced-log-viewer")).toBeVisible();
+        expect(await screen.findByText("deploy log")).toBeVisible();
     });
 
     it("does not render metrics components until the Metrics section is active", async () => {
         const overview = renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(screen.queryByTestId("app-live-monitor")).not.toBeInTheDocument();
-        expect(screen.queryByTestId("app-observability-panel")).not.toBeInTheDocument();
+        expect(screen.queryByRole("heading", { name: "Metrics" })).not.toBeInTheDocument();
         overview.unmount();
 
         vi.clearAllMocks();
@@ -327,8 +326,7 @@ describe("AppDetailPage extraction smoke", () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(await screen.findByTestId("app-live-monitor")).toBeVisible();
-        expect(await screen.findByTestId("app-observability-panel")).toBeVisible();
+        expect(await screen.findByRole("heading", { name: "Metrics" })).toBeVisible();
         expect(api.getAppLogs).not.toHaveBeenCalled();
     });
 
@@ -338,11 +336,10 @@ describe("AppDetailPage extraction smoke", () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(screen.getByText("App Info")).toBeVisible();
-        expect(screen.getByText("Build Configuration")).toBeVisible();
-        expect(screen.getByText("Public Status Page")).toBeVisible();
-        expect(screen.getByText("Danger Zone")).toBeVisible();
-        expect(screen.getByRole("button", { name: /Save Build Config/i })).toBeVisible();
+        expect(screen.getByRole("heading", { name: "General" })).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Build and run" })).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Public status page" })).toBeVisible();
+        expect(screen.getByRole("heading", { name: "Danger zone" })).toBeVisible();
         expect(api.getAppLogs).not.toHaveBeenCalled();
     });
 });

@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState, useMemo } from "react";
-import { Check, Copy, Database as DatabaseIcon, Eye, EyeOff, FileUp, Info, Loader2, MoreVertical, Plus, Rocket, Save, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Copy, Database as DatabaseIcon, Download, Eye, EyeOff, HelpCircle, Info, Loader2, MoreHorizontal, Pencil, Plus, Rocket, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { EnvVar } from "@/components/ui/env-vars-editor";
 import { Button } from "@/components/ui/button";
@@ -24,23 +24,21 @@ type EnvironmentSectionProps = {
     onChange: (vars: EnvVar[]) => void;
     onSave: () => void;
     onSaveAndRedeploy: () => void;
+    /** Number of unapplied changes, shown in the bottom bar. */
+    changeCount?: number;
+    onDiscard?: () => void;
 };
 
 type Scope = "all" | "production" | "preview" | "development";
 
 const SCOPE_LABEL: Record<Scope, string> = {
-    all: "All Environments",
+    all: "All environments",
     production: "Production",
     preview: "Preview",
     development: "Development",
 };
 
-const SCOPE_BADGE: Record<Scope, string> = {
-    all: "bg-info-muted text-info-text border-info/30",
-    production: "bg-brand-muted text-brand border-border",
-    preview: "bg-chart-violet/10 text-chart-violet-text border-chart-violet/30",
-    development: "bg-warning-muted text-warning-text border-warning/30",
-};
+
 
 function inferScope(key: string): Scope {
     const k = key.toLowerCase();
@@ -76,14 +74,17 @@ export function EnvironmentSection({
     onChange,
     onSave,
     onSaveAndRedeploy,
+    changeCount,
+    onDiscard,
 }: EnvironmentSectionProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [revealed, setRevealed] = useState<Set<number>>(new Set());
     const [scopes, setScopes] = useState<Map<number, Scope>>(new Map());
+    const [adding, setAdding] = useState(false);
     const [draftKey, setDraftKey] = useState("");
     const [draftValue, setDraftValue] = useState("");
     const [draftScope, setDraftScope] = useState<Scope>("all");
-    const [hidePreview, setHidePreview] = useState(false);
+    const [editing, setEditing] = useState<number | null>(null);
     const [connectDialogOpen, setConnectDialogOpen] = useState(false);
 
     const handleDbConnectInject = (vars: EnvVar[], sourceLabel: string) => {
@@ -96,14 +97,9 @@ export function EnvironmentSection({
 
     const toggleReveal = (i: number) => {
         const next = new Set(revealed);
-        if (next.has(i)) next.delete(i); else next.add(i);
+        if (next.has(i)) next.delete(i);
+        else next.add(i);
         setRevealed(next);
-    };
-
-    const updateScope = (i: number, scope: Scope) => {
-        const next = new Map(scopes);
-        next.set(i, scope);
-        setScopes(next);
     };
 
     const updateValue = (i: number, value: string) => {
@@ -113,18 +109,20 @@ export function EnvironmentSection({
         onChange(updated);
     };
 
-    const updateKey = (i: number, key: string) => {
-        if (deleteLocked) return;
-        const sanitized = key.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
-        const updated = [...envVars];
-        updated[i] = { ...updated[i], key: sanitized };
-        onChange(updated);
-    };
-
     const removeVar = (i: number) => {
         if (deleteLocked) return;
         onChange(envVars.filter((_, idx) => idx !== i));
-        const r = new Set(revealed); r.delete(i); setRevealed(r);
+        const r = new Set(revealed);
+        r.delete(i);
+        setRevealed(r);
+        setEditing(null);
+    };
+
+    const closeAdd = () => {
+        setAdding(false);
+        setDraftKey("");
+        setDraftValue("");
+        setDraftScope("all");
     };
 
     const addDraft = () => {
@@ -134,18 +132,15 @@ export function EnvironmentSection({
             return;
         }
         const sanitized = draftKey.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
-        if (envVars.some(v => v.key === sanitized)) {
+        if (envVars.some((v) => v.key === sanitized)) {
             toast.error(`${sanitized} already exists`);
             return;
         }
         onChange([...envVars, { key: sanitized, value: draftValue, isSecret: isSecretKey(sanitized) }]);
-        const newIndex = envVars.length;
         const next = new Map(scopes);
-        next.set(newIndex, draftScope);
+        next.set(envVars.length, draftScope);
         setScopes(next);
-        setDraftKey("");
-        setDraftValue("");
-        setDraftScope("all");
+        closeAdd();
     };
 
     const handleEnvFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -187,272 +182,156 @@ export function EnvironmentSection({
         onSaveAndRedeploy();
     };
 
-    const totalCount = useMemo(() => envVars.length, [envVars]);
+    const count = changeCount ?? 0;
+    const busy = savePending || saveAndRedeployPending;
 
     return (
-        <div className="rounded-xl border border-border bg-card shadow-sm">
-            {/* Header */}
-            <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
-                    <h2 className="text-base font-semibold text-foreground">Environment Variables</h2>
-                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                    <p className="text-xs text-muted-foreground">Manage environment variables, secrets, and configuration.</p>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                    {envVarsChanged && (
-                        <span className="inline-flex items-center rounded-full border border-warning/30 bg-warning-muted px-2.5 py-0.5 text-[11px] font-medium text-warning-text">
-                            Unsaved changes
+        <section className="space-y-5 pb-24">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h2 className="text-2xl font-bold tracking-tight text-foreground">Environment variables</h2>
+                    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        Secret settings your app needs, like database links.
+                        <span title="Names starting with NEXT_PUBLIC_, VITE_ or REACT_APP_ are visible in the browser. Keep secrets out of them.">
+                            <HelpCircle className="size-4" aria-label="Names starting with NEXT_PUBLIC_, VITE_ or REACT_APP_ are visible in the browser." />
                         </span>
-                    )}
-                    <Button variant="outline" size="sm" className="h-8 gap-1.5 border-border text-xs" onClick={() => setConnectDialogOpen(true)} disabled={deleteLocked || !serverId}>
-                        <DatabaseIcon className="h-3.5 w-3.5" /> Connect Database
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-8 gap-1.5 border-border text-xs" onClick={() => fileInputRef.current?.click()} disabled={deleteLocked}>
-                        <FileUp className="h-3.5 w-3.5" /> Import from .env
-                    </Button>
-                    <input ref={fileInputRef} type="file" accept=".env,.env.local,.env.production,text/plain" onChange={handleEnvFileUpload} className="hidden" />
-                    <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={addDraft} disabled={deleteLocked || !draftKey.trim()}>
-                        <Plus className="h-3.5 w-3.5" /> Add Variable
-                    </Button>
-                </div>
-            </div>
-
-            {/* Info banner */}
-            <div className="px-5 pt-4">
-                <div className="flex items-start gap-2 rounded-lg bg-info-muted border border-info/20 px-3 py-2.5">
-                    <Info className="h-4 w-4 text-info-text mt-0.5 shrink-0" />
-                    <p className="text-xs text-foreground/90 leading-relaxed">
-                        Frontend frameworks expose only public prefixes such as <code className="font-mono text-info-text bg-info-muted px-1 rounded">VITE_</code>, <code className="font-mono text-info-text bg-info-muted px-1 rounded">REACT_APP_</code>, <code className="font-mono text-info-text bg-info-muted px-1 rounded">NEXT_PUBLIC_</code>, <code className="font-mono text-info-text bg-info-muted px-1 rounded">PUBLIC_</code>, <code className="font-mono text-info-text bg-info-muted px-1 rounded">NG_APP_</code>, or <code className="font-mono text-info-text bg-info-muted px-1 rounded">ANGULAR_APP_</code>. Private values like <code className="font-mono text-info-text bg-info-muted px-1 rounded">DATABASE_URL</code> & <code className="font-mono text-info-text bg-info-muted px-1 rounded">JWT_SECRET</code> stay server-side.
                     </p>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="outline" size="lg" onClick={() => fileInputRef.current?.click()} disabled={deleteLocked}>
+                        <Download aria-hidden="true" /> Import .env
+                    </Button>
+                    <input ref={fileInputRef} type="file" accept=".env,.env.local,.env.production,text/plain" onChange={handleEnvFileUpload} className="hidden" aria-label="Import .env file" />
+                    <Button variant="outline" size="lg" onClick={() => setConnectDialogOpen(true)} disabled={deleteLocked || !serverId}>
+                        <DatabaseIcon aria-hidden="true" /> Connect database
+                    </Button>
+                    <Button size="lg" onClick={() => setAdding(true)} disabled={deleteLocked || adding}>
+                        <Plus aria-hidden="true" /> Add variable
+                    </Button>
+                </div>
             </div>
 
-            {deleteLocked && (
-                <div className="px-5 pt-3">
-                    <div className="rounded-lg border border-warning/30 bg-warning-muted px-3 py-2 text-xs text-warning-text">
-                        Environment changes are paused while cleanup is pending.
-                    </div>
-                </div>
-            )}
+            {deleteLocked ? (
+                <div className="rounded-xl border border-warning/30 bg-warning-muted px-4 py-3 text-sm text-warning-text">Changes are paused while the app is being deleted.</div>
+            ) : null}
 
-            {/* Table */}
-            <div className="px-5 py-4">
-                <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b border-border bg-muted/30">
-                                <th className="text-left py-2.5 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide w-[28%]">Variable Name</th>
-                                <th className="text-left py-2.5 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Value</th>
-                                <th className="text-left py-2.5 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide w-[180px]">Scopes</th>
-                                <th className="text-right py-2.5 px-3 w-[120px]"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {/* Draft (new variable) row */}
-                            <tr className="border-b border-border/60 bg-muted/10">
-                                <td className="py-2.5 px-3">
-                                    <Input
-                                        value={draftKey}
-                                        onChange={e => setDraftKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))}
-                                        placeholder="e.g. DATABASE_URL"
-                                        className="h-9 border-border bg-background font-mono text-xs"
-                                        disabled={deleteLocked}
-                                    />
+            <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
+                <table className="w-full min-w-[640px] text-sm">
+                    <thead>
+                        <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            <th className="w-[30%] px-5 py-3">Name</th>
+                            <th className="px-3 py-3">Value</th>
+                            <th className="w-[200px] px-3 py-3">Used in</th>
+                            <th className="w-16 px-3 py-3"><span className="sr-only">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {adding ? (
+                            <tr className="border-b bg-primary/[0.03]">
+                                <td className="px-5 py-3">
+                                    <Input aria-label="New variable name" autoFocus value={draftKey} onChange={(e) => setDraftKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))} placeholder="DATABASE_URL" className="h-9 font-mono text-xs" />
                                 </td>
-                                <td className="py-2.5 px-3">
-                                    <Input
-                                        value={draftValue}
-                                        onChange={e => setDraftValue(e.target.value)}
-                                        placeholder="e.g. postgres://user:pass@host:5432/db"
-                                        className="h-9 border-border bg-background font-mono text-xs"
-                                        disabled={deleteLocked}
-                                    />
+                                <td className="px-3 py-3">
+                                    <Input aria-label="New variable value" value={draftValue} onChange={(e) => setDraftValue(e.target.value)} placeholder="postgres://user:pass@host:5432/db" className="h-9 font-mono text-xs" onKeyDown={(e) => { if (e.key === "Enter") addDraft(); }} />
                                 </td>
-                                <td className="py-2.5 px-3">
+                                <td className="px-3 py-3">
                                     <Select value={draftScope} onValueChange={(v) => setDraftScope(v as Scope)}>
-                                        <SelectTrigger className="h-9 border-border bg-background text-xs"><SelectValue placeholder="Select scope" /></SelectTrigger>
+                                        <SelectTrigger aria-label="Used in" className="h-9 text-xs"><SelectValue /></SelectTrigger>
                                         <SelectContent>
-                                            {(["all", "production", "preview", "development"] as Scope[]).map(s => (
+                                            {(["all", "production", "preview", "development"] as Scope[]).map((s) => (
                                                 <SelectItem key={s} value={s}>{SCOPE_LABEL[s]}</SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
                                 </td>
-                                <td className="py-2.5 px-3">
-                                    <div className="flex items-center justify-end gap-1.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => setHidePreview(!hidePreview)}
-                                            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-                                            title={hidePreview ? "Show drafted value" : "Hide drafted value"}
-                                        >
-                                            {hidePreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                                            <span>{hidePreview ? "Show" : "Hide"}</span>
-                                        </button>
-                                        <Button
-                                            size="sm"
-                                            className="h-8 w-8 p-0"
-                                            onClick={addDraft}
-                                            disabled={deleteLocked || !draftKey.trim()}
-                                            title="Add variable"
-                                        >
-                                            <Check className="h-4 w-4" />
-                                        </Button>
+                                <td className="px-3 py-3">
+                                    <div className="flex justify-end gap-1">
+                                        <Button size="sm" onClick={addDraft} disabled={!draftKey.trim()}>Add</Button>
+                                        <Button size="icon-sm" variant="ghost" aria-label="Cancel" onClick={closeAdd}><X aria-hidden="true" /></Button>
                                     </div>
                                 </td>
                             </tr>
+                        ) : null}
 
-                            {/* Existing rows */}
-                            {envVars.map((envVar, i) => {
-                                const isSecret = envVar.isSecret ?? isSecretKey(envVar.key);
-                                const scope = scopeFor(i, envVar.key);
-                                const isRevealed = revealed.has(i);
-                                const display = isSecret && !isRevealed ? "•".repeat(Math.max(8, Math.min(envVar.value.length, 20))) : envVar.value;
-                                return (
-                                    <tr key={`${envVar.key}-${i}`} className="border-b border-border/40 last:border-b-0 hover:bg-muted/15 transition-colors">
-                                        <td className="py-3 px-3">
-                                            <div className="flex items-center gap-1.5">
-                                                <Input
-                                                    value={envVar.key}
-                                                    onChange={e => updateKey(i, e.target.value)}
-                                                    className="h-8 border-transparent shadow-none px-2 font-mono text-xs hover:border-border focus:border-primary/40"
-                                                    disabled={deleteLocked}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => copyText(envVar.key, "Variable name")}
-                                                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                                                    title="Copy variable name"
-                                                >
-                                                    <Copy className="h-3 w-3" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                        <td className="py-3 px-3">
-                                            <div className="flex items-center gap-2">
-                                                {isSecret && !isRevealed ? (
-                                                    <span className="font-mono text-xs text-foreground tracking-wider flex items-center gap-1.5">
-                                                        {display}
-                                                        <span className="inline-flex items-center justify-center h-4 w-4 rounded bg-muted text-[9px]">🔒</span>
-                                                    </span>
-                                                ) : (
-                                                    <Input
-                                                        type="text"
-                                                        value={envVar.value}
-                                                        onChange={e => updateValue(i, e.target.value)}
-                                                        className="h-8 border-transparent shadow-none px-2 font-mono text-xs hover:border-border focus:border-primary/40"
-                                                        disabled={deleteLocked}
-                                                    />
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="py-3 px-3">
-                                            <Select value={scope} onValueChange={(v) => updateScope(i, v as Scope)}>
-                                                <SelectTrigger className={cn("h-7 text-[11px] border-0 px-2 rounded-full font-medium w-auto inline-flex", SCOPE_BADGE[scope])}>
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {(["all", "production", "preview", "development"] as Scope[]).map(s => (
-                                                        <SelectItem key={s} value={s}>{SCOPE_LABEL[s]}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </td>
-                                        <td className="py-3 px-3">
-                                            <div className="flex items-center justify-end gap-0.5">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => toggleReveal(i)}
-                                                    className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                                                    title={isRevealed ? "Hide value" : "Show value"}
-                                                >
-                                                    {isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => copyText(envVar.value, "Value")}
-                                                    className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                                                    title="Copy value"
-                                                >
-                                                    <Copy className="h-3.5 w-3.5" />
-                                                </button>
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <button className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50">
-                                                            <MoreVertical className="h-3.5 w-3.5" />
-                                                        </button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuItem onClick={() => copyText(`${envVar.key}=${envVar.value}`, "KEY=VALUE")}>
-                                                            <Copy className="h-3.5 w-3.5 mr-2" /> Copy as KEY=VALUE
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => removeVar(i)} className="text-danger-text">
-                                                            <Trash2 className="h-3.5 w-3.5 mr-2" /> Remove
-                                                        </DropdownMenuItem>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-
-                            {envVars.length === 0 && (
-                                <tr>
-                                    <td colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
-                                        No environment variables yet. Add one above to get started.
+                        {envVars.map((envVar, i) => {
+                            const isSecret = envVar.isSecret ?? isSecretKey(envVar.key);
+                            const scope = scopeFor(i, envVar.key);
+                            const isRevealed = revealed.has(i);
+                            const masked = isSecret && !isRevealed;
+                            const dots = "•".repeat(Math.max(10, Math.min(envVar.value.length || 18, 22)));
+                            return (
+                                <tr key={`${envVar.key}-${i}`} className="border-b last:border-b-0 transition-colors hover:bg-muted/30">
+                                    <td className="px-5 py-5 font-mono text-[13px] font-semibold text-foreground">{envVar.key}</td>
+                                    <td className="px-3 py-5">
+                                        <div className="flex items-center gap-3">
+                                            {editing === i ? (
+                                                <Input aria-label={`Value for ${envVar.key}`} autoFocus value={envVar.value} onChange={(e) => updateValue(i, e.target.value)} onBlur={() => setEditing(null)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditing(null); }} className="h-8 font-mono text-xs" />
+                                            ) : (
+                                                <span className={cn("min-w-0 flex-1 truncate font-mono text-[13px]", masked ? "tracking-widest text-muted-foreground" : "text-foreground")}>{masked ? dots : envVar.value}</span>
+                                            )}
+                                            <button type="button" aria-label={isRevealed ? `Hide ${envVar.key}` : `Show ${envVar.key}`} onClick={() => toggleReveal(i)} className="rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                                                {masked ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td className="px-3 py-5">
+                                        <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">{SCOPE_LABEL[scope]}</span>
+                                    </td>
+                                    <td className="px-3 py-5 text-right">
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" size="icon-sm" aria-label={`Options for ${envVar.key}`}><MoreHorizontal aria-hidden="true" /></Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end">
+                                                <DropdownMenuItem disabled={deleteLocked} onSelect={() => setEditing(i)}><Pencil aria-hidden="true" /> Edit value</DropdownMenuItem>
+                                                <DropdownMenuItem onSelect={() => void copyText(envVar.value, "Value")}><Copy aria-hidden="true" /> Copy value</DropdownMenuItem>
+                                                <DropdownMenuItem onSelect={() => void copyText(`${envVar.key}=${envVar.value}`, "KEY=VALUE")}><Copy aria-hidden="true" /> Copy as KEY=VALUE</DropdownMenuItem>
+                                                <DropdownMenuItem disabled={deleteLocked} onSelect={() => removeVar(i)} className="text-danger-text focus:text-danger-text"><Trash2 aria-hidden="true" /> Remove</DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
                                     </td>
                                 </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                            );
+                        })}
 
-                {totalCount > 0 && (
-                    <p className="text-[11px] text-muted-foreground mt-2">
-                        {totalCount} variable{totalCount === 1 ? "" : "s"} configured
-                    </p>
-                )}
+                        {envVars.length === 0 && !adding ? (
+                            <tr>
+                                <td colSpan={4} className="px-5 py-12 text-center">
+                                    <p className="font-semibold text-foreground">No variables yet</p>
+                                    <p className="mt-1 text-sm text-muted-foreground">Add one, import a .env file, or connect a database.</p>
+                                </td>
+                            </tr>
+                        ) : null}
+                    </tbody>
+                </table>
             </div>
 
-            {/* Footer actions */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-border px-5 py-3.5 bg-muted/20">
-                <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-9 gap-2 border-border text-sm"
-                        onClick={onSave}
-                        disabled={!envVarsChanged || savePending || deleteLocked}
-                    >
-                        {savePending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                        Save Only
+            {envVarsChanged ? (
+                <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-4 rounded-2xl border bg-card px-5 py-3.5 shadow-lg">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Info className="size-4" aria-hidden="true" /></span>
+                    <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-foreground">{count > 0 ? `${count} ${count === 1 ? "change" : "changes"} not applied yet` : "Changes not applied yet"}</p>
+                        <p className="text-sm text-muted-foreground">Your changes will go live after you redeploy.</p>
+                    </div>
+                    {onDiscard ? <Button variant="outline" disabled={busy} onClick={onDiscard}>Discard</Button> : null}
+                    <Button variant="outline" onClick={onSave} disabled={busy || deleteLocked}>
+                        {savePending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null} Save
                     </Button>
-                    <Button
-                        size="sm"
-                        className="h-9 gap-2 text-sm font-medium"
-                        onClick={handleSaveAndRedeploy}
-                        disabled={!envVarsChanged || saveAndRedeployPending || savePending || deployPending || deleteLocked}
-                    >
-                        {saveAndRedeployPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-                        Save & Redeploy
+                    <Button onClick={handleSaveAndRedeploy} disabled={saveAndRedeployPending || savePending || deployPending || deleteLocked}>
+                        {saveAndRedeployPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Rocket aria-hidden="true" />} Save and redeploy
                     </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                    <Info className="h-3 w-3" />
-                    Redeploy is required for changes to take effect.
-                </p>
-            </div>
+            ) : null}
 
             {serverId && (
                 <QuickDatabaseConnectDialog
                     serverId={serverId}
                     open={connectDialogOpen}
                     onOpenChange={setConnectDialogOpen}
-                    existingKeys={new Set(envVars.map(v => v.key))}
+                    existingKeys={new Set(envVars.map((v) => v.key))}
                     onInject={handleDbConnectInject}
                 />
             )}
-        </div>
+        </section>
     );
 }
