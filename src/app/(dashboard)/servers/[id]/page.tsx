@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle2, Clock, Container, ExternalLink, FileText, HeartPulse, Info, MoreHorizontal, Rocket, RotateCw,
-  Server, ShieldCheck, Sparkles, Terminal, Trash2, RefreshCw, Shield, WifiOff, type LucideIcon,
+  CheckCircle2, Clock, Container, FileText, HeartPulse, Info, MoreHorizontal, Rocket, RotateCw,
+  Server, Sparkles, Terminal, Trash2, RefreshCw, Shield, WifiOff, type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -17,7 +17,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type App, type Database as DatabaseRecord } from "@/lib/api";
 import { formatRelativeTime, cn } from "@/lib/utils";
-import { ServerObservabilityPanel } from "@/components/servers/server-observability-panel";
 import { ServerDriftPanel } from "@/components/servers/server-drift-panel";
 import { AgentInstallCommands } from "@/components/servers/agent-install-commands";
 import { AgentUpdateModal } from "@/components/servers/agent-update-modal";
@@ -25,6 +24,9 @@ import { ServerCleanupModal } from "@/components/servers/server-cleanup-modal";
 import { AppsDatabasesCard } from "@/components/servers/detail/apps-databases-card";
 import { AgentCard, ServerDetailsCard } from "@/components/servers/detail/details-agent-cards";
 import { formatUptime, type ServerCurrentMetrics } from "@/components/servers/detail/format";
+import { AppsDatabasesTab } from "@/components/servers/detail/apps-databases-tab";
+import { MetricsTab } from "@/components/servers/detail/metrics-tab";
+import { SecurityTab } from "@/components/servers/detail/security-tab";
 import { KpiCards } from "@/components/servers/detail/kpi-cards";
 import { attentionIcons, NeedsAttention, type AttentionItem } from "@/components/servers/detail/needs-attention";
 
@@ -406,30 +408,15 @@ export default function ServerDetailPage() {
         </TabsContent>
 
         <TabsContent value="apps">
-          <AppsDatabasesCard serverId={serverId} apps={apps} databases={databases} />
+          <AppsDatabasesTab serverId={serverId} apps={apps} databases={databases} />
         </TabsContent>
 
         <TabsContent value="metrics">
-          <ServerObservabilityPanel serverId={serverId} />
+          <MetricsTab serverId={serverId} />
         </TabsContent>
 
         <TabsContent value="security">
-          <Card className="rounded-2xl shadow-xs">
-            <CardContent className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-              <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <ShieldCheck className="size-6" aria-hidden="true" />
-              </span>
-              <div className="flex-1">
-                <h2 className="text-lg font-semibold text-foreground">Firewall and attack monitoring</h2>
-                <p className="text-sm text-muted-foreground">Secure the server with a safe firewall, link Cloudflare and watch blocked traffic.</p>
-              </div>
-              <Button asChild>
-                <Link href={`/servers/${serverId}/security`}>
-                  Open security <ExternalLink aria-hidden="true" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
+          <SecurityTab serverId={serverId} />
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-5">
