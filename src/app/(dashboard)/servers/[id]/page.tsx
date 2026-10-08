@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle2, Clock, Container, FileText, HeartPulse, Info, MoreHorizontal, Rocket, RotateCw,
-  Server, Sparkles, Terminal, Trash2, RefreshCw, Shield, WifiOff, type LucideIcon,
+  CheckCircle2, Clock, Container, FileText, HeartPulse, Info, Rocket, RotateCw,
+  Server, Terminal, Trash2, Shield, WifiOff, type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -13,7 +13,6 @@ import { Header } from "@/components/layout/header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type App, type Database as DatabaseRecord } from "@/lib/api";
 import { formatRelativeTime, cn } from "@/lib/utils";
@@ -26,6 +25,7 @@ import { formatUptime, type ServerCurrentMetrics } from "@/components/servers/de
 import { AppsDatabasesTab } from "@/components/servers/detail/apps-databases-tab";
 import { MetricsTab } from "@/components/servers/detail/metrics-tab";
 import { SecurityTab } from "@/components/servers/detail/security-tab";
+import { ServerActionsMenu } from "@/components/servers/detail/server-actions-menu";
 import { KpiCards } from "@/components/servers/detail/kpi-cards";
 import { attentionIcons, NeedsAttention, type AttentionItem } from "@/components/servers/detail/needs-attention";
 
@@ -227,12 +227,6 @@ export default function ServerDetailPage() {
     refetchInterval: 30_000,
   });
 
-  const restartAgent = useMutation({
-    mutationFn: () => api.runAgentControlAction(serverId, { action: "agent_restart" }),
-    onSuccess: () => toast.success("Agent restart queued"),
-    onError: () => toast.error("Couldn't restart the agent."),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteServer(serverId),
     onSuccess: () => {
@@ -336,38 +330,16 @@ export default function ServerDetailPage() {
               <Terminal aria-hidden="true" /> Terminal
             </Link>
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon-lg" aria-label="More server actions">
-                <MoreHorizontal aria-hidden="true" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuLabel className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Server actions</DropdownMenuLabel>
-              <DropdownMenuItem onSelect={() => setAgentUpdateOpen(true)}>
-                <RefreshCw aria-hidden="true" />
-                <span className="flex flex-col">
-                  <span>{updateAvailable ? "Update agent" : "Check agent updates"}</span>
-                  {updateAvailable && agentUpdateInfo ? <span className="text-xs text-primary">v{agentUpdateInfo.latestVersion} available</span> : null}
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setCleanupOpen(true)}>
-                <Sparkles aria-hidden="true" /> Clean and secure
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => restartAgent.mutate()}>
-                <RotateCw aria-hidden="true" /> Restart agent
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-danger-text focus:text-danger-text"
-                onSelect={() => {
-                  if (confirm("Delete this server? This cannot be undone.")) deleteMutation.mutate();
-                }}
-              >
-                <Trash2 aria-hidden="true" /> Delete server
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ServerActionsMenu
+            serverId={serverId}
+            serverName={server.name}
+            updateVersion={updateAvailable ? agentUpdateInfo?.latestVersion : null}
+            onUpdate={() => setAgentUpdateOpen(true)}
+            onClean={() => setCleanupOpen(true)}
+            onDelete={() => {
+              if (confirm("Delete this server? This cannot be undone.")) deleteMutation.mutate();
+            }}
+          />
         </div>
       </div>
 
