@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export const APP_SECTIONS = [
     { id: "overview", label: "Overview" },
     { id: "deployments", label: "Deployments" },
+    { id: "domains", label: "Domains" },
     { id: "environment", label: "Environment" },
     { id: "logs", label: "Logs" },
     { id: "metrics", label: "Metrics" },
@@ -13,7 +14,7 @@ export const APP_SECTIONS = [
 ] as const;
 
 /** Sections reached from links (Overview "Manage", the header menu) rather than a tab. */
-const LINKED_SECTIONS = ["domains", "security"] as const;
+const LINKED_SECTIONS = ["security"] as const;
 
 export type AppSectionId = typeof APP_SECTIONS[number]["id"] | typeof LINKED_SECTIONS[number];
 

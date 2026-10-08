@@ -6,12 +6,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Check, ChevronRight, Clock, Copy, Cpu, ExternalLink, Folder, GitBranch, Globe, MemoryStick, MoreHorizontal, Package, Pencil, RotateCcw, Server as ServerIcon, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { DeleteLifecycleNotice } from "@/components/apps/DeleteLifecycleNotice";
-import { ErrorCard } from "@/components/apps/error-card";
+import { DeployFailedCard, DeployingCard, deployActor } from "@/components/apps/deploy-ui";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { api, ApiRequestError, type App, type AppDomainsResponse, type DeployErrorClassification, type DeploymentRecord, type Server as OpslinServer } from "@/lib/api";
 import { appDomainUrl, resolveVisibleDomain, shortSha } from "../app-helpers";
+import { isLockBusyDeployment } from "@/lib/deployment-selectors";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
 type OverviewSectionProps = {
@@ -127,15 +128,16 @@ export function OverviewSection({
     server,
     domainData,
     latestDeployment,
+    rollbackTarget,
     deployErrorClassification,
     deployErrorRaw,
     deleteFailureReason,
     deployPending,
     rollbackPending,
     deletePending,
-    deleteLocked,
     onDeploy,
     onRollback,
+    onViewLogs,
     onRetryDeleteCleanup,
     onApplyEnvFix,
     quickFixPending,
@@ -150,6 +152,9 @@ export function OverviewSection({
     const displayStatus = app.effectiveStatus ?? (app.status === "running" && !serverLive ? "offline" : app.status);
     const copy = stateCopy(displayStatus, app.name);
     const showDeployError = Boolean(deployErrorClassification || deployErrorRaw);
+    const isDeploying = app.status === "deploying" || (latestDeployment ? ["pending", "running"].includes(latestDeployment.status) : false);
+    const latestFailed = Boolean(latestDeployment && ["failed", "aborted"].includes(latestDeployment.status) && !isLockBusyDeployment(latestDeployment));
+    const isFailed = !isDeploying && (latestFailed || showDeployError);
 
     const requestWindow = range === "30d" ? "7d" : range;
     const { data: summary, error: summaryError } = useQuery({
@@ -211,12 +216,27 @@ export function OverviewSection({
             {app.status === "deleting" || app.status === "delete_failed" ? (
                 <DeleteLifecycleNotice status={app.status} errorReason={deleteFailureReason} onRetry={app.status === "delete_failed" ? onRetryDeleteCleanup : undefined} retryPending={deletePending} />
             ) : null}
-            {showDeployError ? (
-                <ErrorCard classification={deployErrorClassification} rawError={deployErrorRaw} onRetry={onDeploy} retryDisabled={deployPending || deleteLocked} onApplyEnvFix={onApplyEnvFix} quickFixPending={quickFixPending} />
-            ) : null}
 
             <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
                 <div className="min-w-0 space-y-5">
+                    {isDeploying ? (
+                        <DeployingCard deployment={latestDeployment} onViewLogs={onViewLogs} />
+                    ) : isFailed ? (
+                        <DeployFailedCard
+                            app={app}
+                            classification={deployErrorClassification}
+                            rawError={deployErrorRaw}
+                            liveRelease={(deploymentList ?? []).find((d) => d.status === "succeeded") ?? null}
+                            rollbackTarget={rollbackTarget}
+                            rollbackPending={rollbackPending}
+                            deployPending={deployPending}
+                            onViewLogs={onViewLogs}
+                            onRollback={onRollback}
+                            onRedeploy={onDeploy}
+                            onApplyEnvFix={onApplyEnvFix}
+                            quickFixPending={quickFixPending}
+                        />
+                    ) : (
                     <div className={cn("rounded-2xl border p-5", statusCardClass)}>
                         <div className="flex flex-wrap items-start justify-between gap-4">
                             <div className="flex items-center gap-4">
@@ -246,6 +266,7 @@ export function OverviewSection({
                             <Fact icon={Package} label="Runtime" value={latestDeployment?.buildpackName || "Auto-detected"} sub={latestDeployment?.buildpackVersion || undefined} />
                         </div>
                     </div>
+                    )}
 
                     <Card className="gap-0 rounded-2xl py-0 shadow-xs">
                         <div className="flex items-center justify-between px-5 pt-4">
@@ -319,7 +340,7 @@ export function OverviewSection({
                                                     </td>
                                                     <td className="px-3 py-3.5"><span className="flex items-center gap-1.5 text-foreground"><GitBranch className="size-3.5 text-muted-foreground" aria-hidden="true" />{app.branch ?? "main"}</span></td>
                                                     <td className="px-3 py-3.5 font-mono text-xs text-muted-foreground">{shortSha(d.sha)}</td>
-                                                    <td className="max-w-[180px] truncate px-3 py-3.5 text-foreground">{d.triggeredBy}</td>
+                                                    <td className="max-w-[180px] truncate px-3 py-3.5 text-foreground">{deployActor(d)}</td>
                                                     <td className="whitespace-nowrap px-3 py-3.5 text-muted-foreground">{formatRelativeTime(d.startedAt)}</td>
                                                     <td className="px-5 py-3.5 text-right">
                                                         <DropdownMenu>

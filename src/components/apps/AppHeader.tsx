@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { AlertTriangle, Eye, ExternalLink, Folder, GitBranch, Globe, Loader2, MoreHorizontal, Rocket, RotateCcw, ShieldCheck, StopCircle, Trash2, Server as ServerIcon } from "lucide-react";
+import { AlertTriangle, Eye, ExternalLink, GitBranch, Globe, Loader2, MoreHorizontal, Rocket, RotateCcw, ShieldCheck, StopCircle, Trash2, Server as ServerIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -82,7 +82,6 @@ export function AppHeader({
     // auto-deploy; a normal wizard/CLI-created app has nothing to show here.
     const [progressOpen, setProgressOpen] = useState(false);
 
-    const repo = app.gitUrl ? app.gitUrl.replace(/^https?:\/\/(www\.)?github\.com\//, "").replace(/\.git$/, "") : null;
 
     return (
         <div className="px-4 pt-5 sm:px-6 lg:px-8">
@@ -101,7 +100,7 @@ export function AppHeader({
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-3">
                             <h1 className="truncate text-3xl font-bold tracking-tight text-foreground">{app.name}</h1>
-                            <StatusBadge status={displayStatus} />
+                            <StatusBadge status={displayStatus} label={displayStatus === "running" ? "Live" : displayStatus === "deploying" ? "Building" : undefined} />
                         </div>
                         <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[15px] text-muted-foreground">
                             {isBackgroundWorker ? (
@@ -114,12 +113,11 @@ export function AppHeader({
                             ) : (
                                 <span>No link yet</span>
                             )}
-                            {app.branch ? <span className="flex items-center gap-1.5"><GitBranch className="size-4" aria-hidden="true" />{app.branch}</span> : null}
-                            {repo ? <span className="flex items-center gap-1.5"><Folder className="size-4" aria-hidden="true" />{repo}</span> : null}
-                            <span className="flex items-center gap-1.5">
+                            <Link href={`/servers/${server.id}`} className="flex items-center gap-1.5 hover:text-foreground">
                                 <ServerIcon className="size-4" aria-hidden="true" />
-                                on <Link href={`/servers/${server.id}`} className="font-medium text-primary hover:underline">{server.name}</Link>
-                            </span>
+                                {server.name}
+                            </Link>
+                            {app.branch ? <span className="flex items-center gap-1.5"><GitBranch className="size-4" aria-hidden="true" />{app.branch}</span> : null}
                             {deployedAgo ? <span className="sr-only">Deployed {deployedAgo}</span> : null}
                         </p>
                     </div>
@@ -152,7 +150,7 @@ export function AppHeader({
                     )}
 
                     {!deleteLocked && (
-                        <Button variant="dark" size="lg" onClick={onDeploy} disabled={deployPending}>
+                        <Button size="lg" onClick={onDeploy} disabled={deployPending}>
                             {deployPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Rocket aria-hidden="true" />}
                             {deployPending ? "Deploying..." : "Deploy"}
                         </Button>
@@ -183,9 +181,6 @@ export function AppHeader({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" sideOffset={12} className="w-60 rounded-2xl border-border/70 bg-card p-2 shadow-xl outline-none focus-visible:ring-0">
                             <DropdownMenuLabel className="px-3 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">App actions</DropdownMenuLabel>
-                            <DropdownMenuItem asChild className={MENU_ITEM}>
-                                <Link href={`/apps/${app.id}?section=domains`}><Globe aria-hidden="true" /> Domains</Link>
-                            </DropdownMenuItem>
                             <DropdownMenuItem asChild className={MENU_ITEM}>
                                 <Link href={`/apps/${app.id}?section=security`}><ShieldCheck aria-hidden="true" /> Security</Link>
                             </DropdownMenuItem>

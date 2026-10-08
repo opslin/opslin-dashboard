@@ -243,9 +243,9 @@ describe("AppDetailPage extraction smoke", () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(await screen.findByTestId("domain-setup-card")).toBeVisible();
-        expect(await screen.findByTestId("preview-domain-card")).toBeVisible();
-        expect(await screen.findByTestId("custom-domains-table")).toBeVisible();
+        expect(await screen.findByRole("heading", { name: "Domains" })).toBeVisible();
+        expect(await screen.findByRole("button", { name: /Add domain/i })).toBeVisible();
+        expect(screen.queryByTestId("domain-setup-card")).not.toBeInTheDocument();
     });
 
     it("renders the Deployments section and keeps rollback confirmation wired", async () => {
@@ -255,15 +255,13 @@ describe("AppDetailPage extraction smoke", () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(screen.getByText("Deployment History")).toBeVisible();
+        expect(await screen.findByRole("heading", { name: "Deployments" })).toBeVisible();
 
-        // Deployment history rows render once the deployments query resolves; wait for the
-        // per-row rollback button (not just the static "Actions" card one) before clicking, or
-        // this races the query and clicks a still-disabled button.
+        // Rows render once the deployments query resolves; wait for a per-row roll back button.
         await waitFor(() => {
-            expect(screen.getAllByRole("button", { name: /Rollback/i }).length).toBeGreaterThan(1);
+            expect(screen.getAllByRole("button", { name: /Roll back/i }).length).toBeGreaterThan(0);
         });
-        fireEvent.click(screen.getAllByRole("button", { name: /Rollback/i })[0]);
+        fireEvent.click(screen.getAllByRole("button", { name: /Roll back/i })[0]);
 
         expect(await screen.findByText("Roll back to version previous123456?")).toBeVisible();
     });
