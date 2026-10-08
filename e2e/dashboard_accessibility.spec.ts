@@ -5,6 +5,7 @@ import { installDashboardMocks } from "./mock-dashboard";
 const routes = [
   { path: "/", heading: /^apps$/i },
   { path: "/overview", heading: /^overview$/i },
+  { path: "/apps/new", heading: /let.s deploy your project/i },
   { path: "/apps/mock-app-1", heading: /observability api/i },
   { path: "/servers/mock-server-1", heading: /prod vps 01/i },
   { path: "/deployments", heading: /deployments/i },

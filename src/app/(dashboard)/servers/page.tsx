@@ -233,7 +233,7 @@ function ServerCard({
       {/* Action buttons */}
       <div className="flex items-center gap-2 mt-4 pt-3 border-t border-border/60">
         <Button asChild size="sm" className="h-8 text-xs">
-          <Link href={`/apps/new?serverId=${server.id}`}>
+          <Link href={`/apps/new?server=${server.id}`}>
             <Rocket className="h-3.5 w-3.5 mr-1.5" />
             Deploy App
           </Link>

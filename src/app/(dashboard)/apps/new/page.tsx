@@ -4,24 +4,24 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
-    ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, File, Link2, Loader2, Rocket, Search, Settings2, ShieldCheck, X, RefreshCw, Eye, EyeOff,
-    Play, Github, GitBranch, CloudUpload, Shield, Server, Info, Lightbulb, Settings, KeyRound, HeartPulse, Lock, Sparkles,
+    ArrowLeft, Check, ChevronDown, CircleDashed, CloudUpload, ExternalLink, Eye, EyeOff, File as FileIcon, FolderGit2, Github, Link2,
+    Loader2, Rocket, Search, Settings2, Sparkles, X,
 } from "lucide-react";
 import JSZip from "jszip";
+import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EnvVarsEditor, EnvVar } from "@/components/ui/env-vars-editor";
 import { UpgradePrompt } from "@/components/pricing/upgrade-prompt";
-import { Header } from "@/components/layout/header";
-import { ServerCapacityCard } from "@/components/deploy/server-capacity-card";
-import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
-import { GitHubRepoPicker } from "@/components/apps/github-repo-picker";
 import { ApiRequestError, api, type AutoDeployResult, type BuildpackName, type HealthCheckMode, type ManifestEntryRecord, type ServerJobStatus } from "@/lib/api";
 import { generateAppNameFromGitUrl } from "@/lib/onboarding";
-import { cn } from "@/lib/utils";
-import { usePlan } from "@/hooks/usePlan";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
 const CHUNK_SIZE = 5 * 1024 * 1024;
 
@@ -35,17 +35,6 @@ const buildpackOptions: Array<{ value: BuildpackName | ""; label: string }> = [
     { value: "java", label: "Java" },
     { value: "rust", label: "Rust" },
     { value: "static", label: "Static Site" },
-];
-
-const frameworkChips = [
-    { id: "react-vite", label: "React / Vite", icon: "⚛️" },
-    { id: "nextjs", label: "Next.js", icon: "▲" },
-    { id: "nodejs", label: "Node.js", icon: "🟢" },
-    { id: "vue-nuxt", label: "Vue / Nuxt", icon: "💚" },
-    { id: "angular", label: "Angular", icon: "🅰️" },
-    { id: "sveltekit", label: "SvelteKit", icon: "🧡" },
-    { id: "cra", label: "CRA", icon: "⚛️" },
-    { id: "custom", label: "Custom", icon: "🔧" },
 ];
 
 function describeAutoDeployFailure(result: AutoDeployResult): string {
@@ -116,76 +105,96 @@ async function uploadArchiveResumable(
     return uploadId;
 }
 
+
 // ---------------------------------------------------------------------------
-// Wizard rail — stage-rail progress indicator (design-system.md §6 grammar,
-// standard --motion-base timing; the 400-700ms cinematic budget is reserved
-// for the live deploy overlay, not this pre-deploy form).
+// Two-step deploy flow: 1) Import (pick the code)  2) Review & deploy.
+// Everything else (detection, server choice, domains, health checks, Docker
+// overrides) is automatic or tucked into "Optional settings".
 // ---------------------------------------------------------------------------
 
-type WizardStepId = "source" | "detect" | "env" | "server" | "confirm";
+type SourceType = "github" | "upload" | "git";
+type FlowStep = "import" | "deploy";
 
-const WIZARD_STEPS: Array<{ id: WizardStepId; label: string; desc: string }> = [
-    { id: "source", label: "Source", desc: "Connect your code" },
-    { id: "detect", label: "Detect", desc: "Runtime & build" },
-    { id: "env", label: "Environment", desc: "Secrets & config" },
-    { id: "server", label: "Server", desc: "Choose where it runs" },
-    { id: "confirm", label: "Confirm", desc: "Review & launch" },
-];
+const LANGUAGE_DOT: Record<string, string> = {
+    typescript: "bg-primary",
+    javascript: "bg-warning",
+    python: "bg-warning",
+    go: "bg-chart-sky",
+    rust: "bg-danger",
+    ruby: "bg-danger",
+    java: "bg-info",
+    php: "bg-chart-violet",
+};
 
-function WizardRail({ stepIndex, steps }: { stepIndex: number; steps: typeof WIZARD_STEPS }) {
+function repoSlug(gitUrl: string) {
+    const parts = gitUrl.trim().replace(/\.git$/i, "").split("/").filter(Boolean);
+    return parts.length >= 2 ? `${parts[parts.length - 2]}/${parts[parts.length - 1]}` : gitUrl.trim();
+}
+
+function Stepper({ step }: { step: FlowStep }) {
+    const importDone = step === "deploy";
     return (
-        <aside
-            className="hidden lg:flex lg:w-[220px] lg:shrink-0 flex-col rounded-[var(--opslin-radius-lg)] border border-border bg-card p-5 shadow-[var(--opslin-elevation-2)]"
-            aria-label="Deployment steps"
-        >
-            {steps.map((step, i) => {
-                const isDone = i < stepIndex;
-                const isActive = i === stepIndex;
-                return (
-                    <div key={step.id} className="flex gap-3">
-                        <div className="flex flex-col items-center">
-                            <div
-                                className={cn(
-                                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors",
-                                    isDone || isActive ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"
-                                )}
-                            >
-                                {isDone ? <Check className="h-4 w-4" /> : i + 1}
-                            </div>
-                            {i < steps.length - 1 && (
-                                <div className={cn("w-px flex-1 min-h-[28px]", isDone ? "bg-primary" : "bg-border")} />
-                            )}
-                        </div>
-                        <div className="pb-7">
-                            <div className={cn("text-sm font-medium", isActive || isDone ? "text-foreground" : "text-muted-foreground")}>{step.label}</div>
-                            <div className="text-[11px] text-muted-foreground">{step.desc}</div>
-                        </div>
-                    </div>
-                );
-            })}
-        </aside>
+        <ol aria-label="Progress" className="flex items-center justify-center gap-3 text-sm">
+            <li className="flex items-center gap-2" aria-current={step === "import" ? "step" : undefined}>
+                <span className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                    {importDone ? <Check className="size-4" aria-hidden="true" /> : "1"}
+                </span>
+                <span className={cn("font-medium", step === "import" ? "text-foreground" : "text-muted-foreground")}>Import</span>
+            </li>
+            <span className="h-px w-8 bg-border" aria-hidden="true" />
+            <li className="flex items-center gap-2" aria-current={step === "deploy" ? "step" : undefined}>
+                <span className={cn("flex size-7 items-center justify-center rounded-full text-xs font-semibold", step === "deploy" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>2</span>
+                <span className={cn("font-medium", step === "deploy" ? "text-foreground" : "text-muted-foreground")}>Deploy</span>
+            </li>
+        </ol>
     );
 }
 
-function WizardRailMobile({ stepIndex, steps }: { stepIndex: number; steps: typeof WIZARD_STEPS }) {
+type TimelineState = "done" | "active" | "pending";
+type TimelineItem = { label: string; state: TimelineState; detail?: string | null };
+
+function DeployingView({ name, percent, items }: { name: string; percent: number | null; items: TimelineItem[] }) {
     return (
-        <div className="flex lg:hidden items-center gap-1.5 overflow-x-auto pb-1" aria-label="Deployment steps">
-            {steps.map((step, i) => {
-                const isDone = i < stepIndex;
-                const isActive = i === stepIndex;
-                return (
-                    <div
-                        key={step.id}
-                        className={cn(
-                            "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium shrink-0",
-                            isActive ? "bg-primary text-primary-foreground" : isDone ? "bg-success-muted text-success-text" : "bg-secondary text-muted-foreground"
-                        )}
-                    >
-                        {isDone ? <Check className="h-3 w-3" /> : <span>{i + 1}</span>}
-                        {step.label}
-                    </div>
-                );
-            })}
+        <div className="space-y-6" data-testid="deploying-view">
+            <div className="space-y-3 text-center">
+                <h1 className="text-3xl font-bold tracking-tight text-foreground">Deploying {name}…</h1>
+                <div className="flex items-center gap-3">
+                    <Progress value={percent ?? 8} className={cn("h-2 bg-muted", percent === null && "animate-pulse")} aria-label="Deploy progress" />
+                    {percent !== null ? <span className="w-10 shrink-0 text-right text-sm tabular-nums text-muted-foreground">{Math.round(percent)}%</span> : null}
+                </div>
+            </div>
+            <Card className="gap-0 py-0">
+                <CardContent className="p-6">
+                    <ol className="space-y-5">
+                        {items.map((item, index) => (
+                            <li key={item.label} className="flex gap-3">
+                                <div className="flex flex-col items-center">
+                                    <span
+                                        className={cn(
+                                            "flex size-7 shrink-0 items-center justify-center rounded-full",
+                                            item.state === "done" && "bg-success text-success-foreground",
+                                            item.state === "active" && "text-primary",
+                                            item.state === "pending" && "bg-muted text-muted-foreground"
+                                        )}
+                                    >
+                                        {item.state === "done" ? <Check className="size-4" aria-hidden="true" /> : item.state === "active" ? <Loader2 className="size-5 animate-spin" aria-hidden="true" /> : <CircleDashed className="size-4" aria-hidden="true" />}
+                                    </span>
+                                    {index < items.length - 1 ? <span className="mt-1 h-full min-h-4 w-px bg-border" aria-hidden="true" /> : null}
+                                </div>
+                                <div className="min-w-0 flex-1 pb-1">
+                                    <p className={cn("text-[15px] font-medium", item.state === "pending" ? "text-muted-foreground" : "text-foreground")}>
+                                        {item.label}
+                                        {item.state === "pending" ? <span className="sr-only"> (pending)</span> : null}
+                                    </p>
+                                    {item.state === "active" && item.detail ? (
+                                        <p className="mt-2 truncate rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">› {item.detail}</p>
+                                    ) : null}
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                </CardContent>
+            </Card>
         </div>
     );
 }
@@ -195,12 +204,13 @@ function NewAppPageContent() {
     const searchParams = useSearchParams();
     const initialServerId = searchParams.get("server");
 
-    const [step, setStep] = useState<WizardStepId>("source");
-    const [sourceType, setSourceType] = useState<"github" | "upload" | "git" | "ai">("github");
+    const [step, setStep] = useState<FlowStep>("import");
+    const [sourceType, setSourceType] = useState<SourceType>("github");
     const [name, setName] = useState("");
+    const [nameEdited, setNameEdited] = useState(false);
     const [domain, setDomain] = useState("");
     const [envVars, setEnvVars] = useState<EnvVar[]>([]);
-    const [advancedOpen, setAdvancedOpen] = useState(false);
+    const [optionalOpen, setOptionalOpen] = useState(false);
     const [buildpackOverride, setBuildpackOverride] = useState<BuildpackName | "">("");
     const [healthCheckMode, setHealthCheckMode] = useState<HealthCheckMode>("auto");
     const [healthPath, setHealthPath] = useState("/health");
@@ -211,63 +221,70 @@ function NewAppPageContent() {
     const [showPassword, setShowPassword] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [uploadLabel, setUploadLabel] = useState("");
+    const [gitPhase, setGitPhase] = useState<"creating" | "starting">("creating");
     const [upgradePromptOpen, setUpgradePromptOpen] = useState(false);
     const [upgradePromptDetails, setUpgradePromptDetails] = useState<Record<string, unknown> | null>(null);
-    const { plan } = usePlan();
 
     const [files, setFiles] = useState<FileList | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const stripInputRef = useRef<HTMLInputElement>(null);
     const [gitUrl, setGitUrl] = useState("");
     const [branch, setBranch] = useState("main");
     const [githubInstallationId, setGithubInstallationId] = useState<string | null>(null);
     const [repoSearchQuery, setRepoSearchQuery] = useState("");
     const [selectedRepoKey, setSelectedRepoKey] = useState<string | null>(null);
+    const [changingServer, setChangingServer] = useState(false);
+    const [dragOver, setDragOver] = useState(false);
 
     const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: () => api.getServers() });
     const { data: reposData } = useQuery({ queryKey: ["github", "repos"], queryFn: () => api.getGitHubRepositories(), retry: false });
-    const repositories = reposData?.repositories || [];
+    const repositories = useMemo(() => reposData?.repositories ?? [], [reposData]);
 
+    // The server is picked for the person: the one from ?server=, else the first connected one.
     const [selectedServerId, setSelectedServerId] = useState(initialServerId || "");
+    const connectedServers = servers.filter((s) => s.status === "connected" || s.isLiveConnected);
+    const serverId = connectedServers.find((s) => s.id === selectedServerId)?.id ?? connectedServers[0]?.id ?? "";
+    const selectedServerData = servers.find((s) => s.id === serverId);
 
     const generatedName = useMemo(() => {
         if (sourceType === "upload" && files?.[0]?.name) return generateAppNameFromGitUrl(files[0].name);
         return generateAppNameFromGitUrl(gitUrl);
     }, [files, gitUrl, sourceType]);
-
-    useEffect(() => { if (!name && generatedName !== "app") setName(generatedName); }, [generatedName, name]);
+    const displayName = nameEdited ? name : generatedName === "app" ? "" : generatedName;
+    const finalName = (nameEdited ? name.trim() : "") || generatedName;
 
     const filteredRepos = useMemo(() => {
         const q = repoSearchQuery.trim().toLowerCase();
         if (!q) return repositories;
-        return repositories.filter(r => r.fullName.toLowerCase().includes(q) || (r.language || "").toLowerCase().includes(q));
+        return repositories.filter((r) => r.fullName.toLowerCase().includes(q) || (r.language || "").toLowerCase().includes(q));
     }, [repositories, repoSearchQuery]);
-
-    const finalName = name.trim() || generatedName;
+    const selectedRepo = repositories.find((r) => `${r.installationId}:${r.fullName}` === selectedRepoKey) ?? null;
 
     const envVarsObject = () => envVars.reduce((acc, v) => { if (v.key) acc[v.key] = v.value; return acc; }, {} as Record<string, string>);
-
-    const maybeShowUpgradePrompt = (error: unknown) => {
-        if (!(error instanceof ApiRequestError)) return false;
-        const details = error.details || {};
-        const code = String(details.error || details.code || "").toLowerCase();
-        if (!["plan_limit_exceeded", "plan_limit_reached", "trial_expired", "feature_not_available"].includes(code)) return false;
-        setUpgradePromptDetails(details); setUpgradePromptOpen(true); return true;
-    };
 
     const isPricingUpgradeError = (error: unknown) => {
         if (!(error instanceof ApiRequestError)) return false;
         const code = String(error.details.error || error.details.code || "").toLowerCase();
         return ["plan_limit_exceeded", "plan_limit_reached", "trial_expired", "feature_not_available"].includes(code);
     };
+    const maybeShowUpgradePrompt = (error: unknown) => {
+        if (!isPricingUpgradeError(error)) return false;
+        setUpgradePromptDetails((error as ApiRequestError).details || {});
+        setUpgradePromptOpen(true);
+        return true;
+    };
 
     const registryCredentials = () => registry && registryUsername && registryPassword ? { registry, username: registryUsername, password: registryPassword } : undefined;
+
+    // GitHub deploys use Opslin's AI (it writes the Dockerfile and wires infrastructure); uploads and plain Git URLs use the classic buildpack path.
+    const usesAi = sourceType === "github";
 
     const uploadMutation = useMutation({
         mutationFn: async () => {
             if (!files || files.length === 0) throw new Error("No files selected");
             const envVarsObj = envVarsObject();
             setUploadProgress(0.05); setUploadLabel("Creating app");
-            const app = await api.createApp(selectedServerId, {
+            const app = await api.createApp(serverId, {
                 name: finalName,
                 domain: domain || undefined,
                 envVars: Object.keys(envVarsObj).length > 0 ? envVarsObj : undefined,
@@ -277,13 +294,13 @@ function NewAppPageContent() {
                 dockerfileOverride: dockerfileOverride.trim() || undefined,
                 registryCredentials: registryCredentials(),
             });
-            setUploadProgress(0.1); setUploadLabel("Building archive");
+            setUploadProgress(0.1); setUploadLabel("Preparing your files");
             const { archive, archiveSha256, manifest } = await buildArchive(files);
             const uploadId = await uploadArchiveResumable(app.id, archive, archiveSha256, manifest, (progress, label) => {
                 setUploadProgress(0.1 + progress * 0.8); setUploadLabel(label);
             });
-            setUploadProgress(0.95); setUploadLabel("Triggering deploy");
-            await api.deployApp(selectedServerId, app.id, { uploadId });
+            setUploadProgress(0.95); setUploadLabel("Starting the build");
+            await api.deployApp(serverId, app.id, { uploadId });
             return app;
         },
         onSuccess: (data) => { setUploadProgress(1); setUploadLabel("Deploy started"); router.push(`/apps/${data.id}`); },
@@ -293,9 +310,9 @@ function NewAppPageContent() {
     const gitMutation = useMutation({
         mutationFn: async () => {
             const envVarsObj = envVarsObject();
-            const app = await api.createApp(selectedServerId, {
+            setGitPhase("creating");
+            const app = await api.createApp(serverId, {
                 name: finalName, gitUrl, branch,
-                githubInstallationId: sourceType === "github" ? githubInstallationId || undefined : undefined,
                 domain: domain || undefined,
                 envVars: Object.keys(envVarsObj).length > 0 ? envVarsObj : undefined,
                 buildpackOverride: buildpackOverride || undefined,
@@ -304,54 +321,558 @@ function NewAppPageContent() {
                 dockerfileOverride: dockerfileOverride.trim() || undefined,
                 registryCredentials: registryCredentials(),
             });
-            await api.deployApp(selectedServerId, app.id);
+            setGitPhase("starting");
+            await api.deployApp(serverId, app.id);
             return app;
         },
         onSuccess: (data) => { router.push(`/apps/${data.id}`); },
         onError: (error) => { void maybeShowUpgradePrompt(error); },
     });
 
-    // DIL Phase 20 — deploys every real, deployable unit the repo actually
-    // has (runAutoDeployRepo, single-app repos included — analyzeRepo
-    // itself returns exactly one unit for those) rather than asking the
-    // user to pick a unit path up front, which would need its own
-    // Analyze-first step. router.push targets primaryAppId, the same real
-    // App a plain git/upload deploy would have created — a multi-unit repo
-    // may still report resolved: false for a non-primary unit (e.g. a
-    // worker needing infra DIL can't auto-provision yet); that's surfaced
-    // on the app detail page's own Verify status, not blocked here.
-    // DIL Phase 22 — the AI-assisted deploy is now tracked, not awaited.
-    // triggerAiMutation only dispatches and gets back a jobId; the real
-    // work (5-10+ minutes for a real multi-service repo) is tracked the
-    // same way agent updates and firewall applies already are: poll
-    // getServerJobStatus + subscribe to /jobs/:jobId/live, merge live
-    // deltas over the polled base (mirrors agent-update-modal.tsx exactly).
+    // AI deploy: dispatched as a job, tracked by polling + a live socket (same as agent updates and firewall applies).
     const [aiJobId, setAiJobId] = useState<string | null>(null);
-    // A plain ref, not state: this only guards against double-navigating
-    // (the effect below can re-run for unrelated reasons) — it never needs
-    // to trigger a render itself, which also sidesteps the "don't setState
-    // inside an effect" lint rule for what's genuinely a one-shot latch.
-    const aiNavigatedRef = useRef(false);
     const [aiLiveProgress, setAiLiveProgress] = useState<NonNullable<ServerJobStatus["progress"]> | null>(null);
 
     const aiJobQuery = useQuery({
-        queryKey: ["server-job", selectedServerId, aiJobId],
-        queryFn: () => api.getServerJobStatus(selectedServerId, aiJobId!),
-        enabled: Boolean(selectedServerId) && Boolean(aiJobId),
+        queryKey: ["server-job", serverId, aiJobId],
+        queryFn: () => api.getServerJobStatus(serverId, aiJobId!),
+        enabled: Boolean(serverId) && Boolean(aiJobId),
         refetchInterval: (query) => {
             const status = query.state.data?.status;
             return status === "COMPLETED" || status === "FAILED" ? false : 2500;
         },
     });
 
+    useAiSocket(aiJobId, setAiLiveProgress);
+
+    const triggerAiMutation = useMutation({
+        mutationFn: async () => {
+            const extraEnvVarsObj = envVarsObject();
+            return api.triggerAutoDeploy(serverId, {
+                gitUrl,
+                branch,
+                githubInstallationId: githubInstallationId || undefined,
+                appNamePrefix: finalName,
+                extraEnvVars: Object.keys(extraEnvVarsObj).length > 0 ? extraEnvVarsObj : undefined,
+            });
+        },
+        onSuccess: (data) => {
+            setAiLiveProgress({ phase: "queued", percent: 5, message: null, status: "running" });
+            setAiJobId(data.jobId);
+        },
+        onError: (error) => { void maybeShowUpgradePrompt(error); },
+    });
+
+    const trackedAiJob = useMemo(() => {
+        const job = aiJobQuery.data;
+        if (!job) return null;
+        // Polled progress wins once the job reports something newer than the live socket.
+        const polled = job.progress || {};
+        const live = aiLiveProgress || {};
+        const percent = Math.max(Number(polled.percent ?? 0), Number(live.percent ?? 0));
+        return { ...job, progress: { ...polled, ...live, percent, message: live.message || polled.message || null } };
+    }, [aiJobQuery.data, aiLiveProgress]);
+
+    const aiResult = trackedAiJob?.status === "COMPLETED" ? (trackedAiJob.result as AutoDeployResult | undefined) : undefined;
+    const aiFailureMessage = trackedAiJob?.status === "FAILED"
+        ? (trackedAiJob.error || "AI-assisted deploy failed.")
+        : trackedAiJob?.status === "COMPLETED" && aiResult && !aiResult.primaryAppId
+            ? describeAutoDeployFailure(aiResult)
+            : null;
+    const aiDone = Boolean(aiResult?.primaryAppId);
+    const aiIsRunning = triggerAiMutation.isPending || (Boolean(aiJobId) && trackedAiJob?.status !== "COMPLETED" && trackedAiJob?.status !== "FAILED");
+
+    const handleSubmit = () => {
+        if (sourceType === "upload") uploadMutation.mutate();
+        else if (usesAi) triggerAiMutation.mutate();
+        else gitMutation.mutate();
+    };
+
+    const isLoading = uploadMutation.isPending || gitMutation.isPending || aiIsRunning || (usesAi && aiDone);
+    const error = uploadMutation.error || gitMutation.error || triggerAiMutation.error || (aiFailureMessage ? new Error(aiFailureMessage) : null);
+    const showInlineError = error && !isPricingUpgradeError(error);
+
+    const sourceReady = sourceType === "upload" ? Boolean(files?.length) : Boolean(gitUrl.trim());
+    const canDeploy = Boolean(serverId && finalName && sourceReady);
+
+    const resetSource = (next: SourceType) => {
+        setSourceType(next);
+        setGitUrl("");
+        setBranch("main");
+        setSelectedRepoKey(null);
+        setGithubInstallationId(null);
+        setFiles(null);
+        setNameEdited(false);
+        setName("");
+    };
+
+    const chooseRepository = (repo: typeof repositories[0]) => {
+        setSelectedRepoKey(`${repo.installationId}:${repo.fullName}`);
+        setGitUrl(repo.cloneUrl || `${repo.htmlUrl}.git`);
+        setBranch(repo.defaultBranch || "main");
+        setGithubInstallationId(repo.installationId);
+        setNameEdited(false);
+        setStep("deploy");
+    };
+
+    const takeDroppedFiles = (list: FileList | null) => {
+        if (!list || list.length === 0) return;
+        setSourceType("upload");
+        setGitUrl("");
+        setSelectedRepoKey(null);
+        setGithubInstallationId(null);
+        setNameEdited(false);
+        setFiles(list);
+        setStep("deploy");
+    };
+
+    // ----- the live progress view -------------------------------------------------
+    const deploying = step === "deploy" && isLoading;
+
+    let progressView: React.ReactNode = null;
+    if (deploying) {
+        if (usesAi) {
+            const percent = Math.max(5, Math.min(100, Number(trackedAiJob?.progress?.percent ?? 5)));
+            const stage = aiDone ? 4 : percent < 15 ? 0 : percent < 45 ? 1 : percent < 85 ? 2 : 3;
+            const stateFor = (index: number): TimelineState => (index < stage ? "done" : index === stage ? "active" : "pending");
+            const message = trackedAiJob?.progress?.message || null;
+            progressView = aiDone ? (
+                <div className="space-y-6 text-center" data-testid="deploy-success">
+                    <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-muted text-success-text">
+                        <Check className="size-7" aria-hidden="true" />
+                    </span>
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight text-foreground">{finalName} is live</h1>
+                        {aiResult?.primaryUrl ? (
+                            <a
+                                href={aiResult.primaryUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 inline-flex items-center gap-2 rounded-full border bg-primary/5 px-4 py-1.5 text-sm font-medium text-primary hover:underline"
+                            >
+                                {aiResult.primaryUrl.replace(/^https?:\/\//, "")}
+                                <ExternalLink className="size-4" aria-hidden="true" />
+                            </a>
+                        ) : null}
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-3">
+                        <Button variant="dark" size="lg" onClick={() => router.push(`/apps/${aiResult!.primaryAppId}`)}>Open app</Button>
+                        <Button variant="outline" size="lg" onClick={() => router.push(`/apps/${aiResult!.primaryAppId}?section=domains`)}>Add custom domain</Button>
+                    </div>
+                </div>
+            ) : (
+                <DeployingView
+                    name={finalName}
+                    percent={percent}
+                    items={[
+                        { label: "Cloning repository", state: stateFor(0), detail: message },
+                        { label: "Opslin AI is writing your Dockerfile", state: stateFor(1), detail: message },
+                        { label: "Building your app", state: stateFor(2), detail: message },
+                        { label: "Going live", state: stateFor(3), detail: message },
+                    ]}
+                />
+            );
+        } else if (sourceType === "upload") {
+            const done = (n: number) => uploadProgress >= n;
+            progressView = (
+                <DeployingView
+                    name={finalName}
+                    percent={uploadProgress * 100}
+                    items={[
+                        { label: "Creating your app", state: done(0.1) ? "done" : "active", detail: uploadLabel },
+                        { label: "Uploading your files", state: done(0.95) ? "done" : done(0.1) ? "active" : "pending", detail: uploadLabel },
+                        { label: "Starting the build", state: done(0.95) ? "active" : "pending", detail: uploadLabel },
+                    ]}
+                />
+            );
+        } else {
+            progressView = (
+                <DeployingView
+                    name={finalName}
+                    percent={gitPhase === "creating" ? 30 : 70}
+                    items={[
+                        { label: "Creating your app", state: gitPhase === "creating" ? "active" : "done", detail: "Setting up the project" },
+                        { label: "Starting the build", state: gitPhase === "starting" ? "active" : "pending", detail: "Handing off to your server" },
+                    ]}
+                />
+            );
+        }
+    }
+
+    // ----- step 1 -------------------------------------------------------------------
+    const importCard = (
+        <Card className="gap-0 py-0 shadow-sm">
+            <CardContent className="p-5 sm:p-6">
+                <Tabs value={sourceType} onValueChange={(value) => resetSource(value as SourceType)} className="gap-5">
+                    <TabsList aria-label="Where is your code?" className="grid h-12 w-full grid-cols-3 rounded-xl p-1">
+                        <TabsTrigger value="github" data-testid="source-github" className="h-full rounded-lg text-[15px]">
+                            <Github aria-hidden="true" /> GitHub
+                            <Badge variant="secondary" className="bg-primary/[0.06] text-primary">Recommended</Badge>
+                        </TabsTrigger>
+                        <TabsTrigger value="upload" data-testid="source-upload" className="h-full rounded-lg text-[15px]">
+                            <FileIcon aria-hidden="true" /> Drop files
+                        </TabsTrigger>
+                        <TabsTrigger value="git" data-testid="source-git" className="h-full rounded-lg text-[15px]">
+                            <Link2 aria-hidden="true" /> Git URL
+                        </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="github" className="space-y-4">
+                        <div className="relative">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                            <Input aria-label="Search your repositories" placeholder="Search your repositories" value={repoSearchQuery} onChange={(e) => setRepoSearchQuery(e.target.value)} className="h-11 pl-9" />
+                        </div>
+                        {filteredRepos.length === 0 ? (
+                            <div className="rounded-xl border border-dashed p-8 text-center">
+                                <Github className="mx-auto mb-3 size-9 text-muted-foreground" aria-hidden="true" />
+                                <p className="text-sm font-medium text-foreground">{repositories.length === 0 ? "No repositories yet" : "No repositories match your search"}</p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    {repositories.length === 0 ? "Connect your GitHub account to see your repositories." : "Try a different name or language."}
+                                </p>
+                                {repositories.length === 0 ? (
+                                    <Button className="mt-4" variant="dark" onClick={() => window.location.assign(api.getGitHubInstallUrl())}>
+                                        <Github aria-hidden="true" /> Connect GitHub
+                                    </Button>
+                                ) : null}
+                            </div>
+                        ) : (
+                            <ul className="max-h-[340px] space-y-2 overflow-y-auto pr-1" aria-label="Repositories">
+                                {filteredRepos.map((repo) => {
+                                    const key = `${repo.installationId}:${repo.fullName}`;
+                                    const language = repo.language || "";
+                                    return (
+                                        <li key={key}>
+                                            <button
+                                                type="button"
+                                                data-testid={`repo-${repo.fullName}`}
+                                                onClick={() => chooseRepository(repo)}
+                                                className={cn(
+                                                    "group flex w-full items-center gap-4 rounded-xl border bg-card px-4 py-3 text-left transition-colors hover:border-primary/60 hover:bg-primary/[0.03] focus-visible:ring-2 focus-visible:ring-ring",
+                                                    selectedRepoKey === key && "border-primary bg-primary/[0.04]"
+                                                )}
+                                            >
+                                                <FolderGit2 className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                                                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-foreground">{repo.fullName}</span>
+                                                {language ? (
+                                                    <span className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
+                                                        <span className={cn("size-2.5 rounded-full", LANGUAGE_DOT[language.toLowerCase()] ?? "bg-muted-foreground")} aria-hidden="true" />
+                                                        {language}
+                                                    </span>
+                                                ) : null}
+                                                {repo.updatedAt ? <span className="hidden text-sm text-muted-foreground md:block">Updated {formatRelativeTime(repo.updatedAt)}</span> : null}
+                                                <span className="inline-flex h-9 items-center rounded-lg bg-foreground px-4 text-sm font-medium text-background">Deploy</span>
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                        <p className="border-t pt-4 text-center text-sm text-muted-foreground">
+                            Not seeing your repo?{" "}
+                            <button type="button" className="font-medium text-primary underline underline-offset-2" onClick={() => window.location.assign(api.getGitHubInstallUrl())}>
+                                Configure GitHub access
+                            </button>
+                        </p>
+                    </TabsContent>
+
+                    <TabsContent value="upload" className="space-y-4">
+                        <button
+                            type="button"
+                            onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length > 0) setFiles(e.dataTransfer.files); }}
+                            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                            onDragLeave={() => setDragOver(false)}
+                            onClick={() => fileInputRef.current?.click()}
+                            className={cn("flex w-full flex-col items-center rounded-xl border-2 border-dashed p-10 text-center transition-colors hover:border-primary/50 hover:bg-primary/5", dragOver && "border-primary bg-primary/5")}
+                        >
+                            <CloudUpload className="mb-3 size-10 text-muted-foreground" aria-hidden="true" />
+                            <span className="text-[15px] font-medium text-foreground">Drop your project here, or click to browse</span>
+                            <span className="mt-1 text-sm text-muted-foreground">A folder or .zip. No Git needed.</span>
+                        </button>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            multiple
+                            aria-label="Choose project files"
+                            className="hidden"
+                            onChange={(e) => { if (e.target.files && e.target.files.length > 0) setFiles(e.target.files); }}
+                        />
+                        {files && files.length > 0 ? (
+                            <div className="space-y-2">
+                                <p className="text-sm font-medium text-foreground">Selected files ({files.length})</p>
+                                {Array.from(files).slice(0, 4).map((file, i) => (
+                                    <div key={`${file.name}-${i}`} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                                        <FileIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+                                        <span className="truncate text-foreground">{file.name}</span>
+                                        <span className="shrink-0 text-muted-foreground">({(file.size / 1024).toFixed(1)} KB)</span>
+                                    </div>
+                                ))}
+                                {files.length > 4 ? <p className="text-sm text-muted-foreground">and {files.length - 4} more</p> : null}
+                                <Button type="button" variant="ghost" size="sm" onClick={() => setFiles(null)}><X aria-hidden="true" /> Clear all</Button>
+                            </div>
+                        ) : null}
+                        <div className="flex justify-end">
+                            <Button size="lg" variant="dark" data-testid="continue-button" disabled={!sourceReady} onClick={() => setStep("deploy")}>Continue</Button>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="git" className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr,200px]">
+                            <div>
+                                <label htmlFor="git-url" className="mb-1.5 block text-sm font-medium text-foreground">Repository URL</label>
+                                <div className="relative">
+                                    <Link2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                                    <Input id="git-url" data-testid="manual-git-url" value={gitUrl} onChange={(e) => { setGitUrl(e.target.value); setGithubInstallationId(null); setNameEdited(false); }} placeholder="https://github.com/user/app.git" className="h-11 pl-9" />
+                                </div>
+                            </div>
+                            <div>
+                                <label htmlFor="git-branch" className="mb-1.5 block text-sm font-medium text-foreground">Branch</label>
+                                <Input id="git-branch" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" className="h-11" />
+                            </div>
+                        </div>
+                        <p className="text-sm text-muted-foreground">Works with any public HTTPS Git repository.</p>
+                        <div className="flex justify-end">
+                            <Button size="lg" variant="dark" data-testid="continue-button" disabled={!sourceReady} onClick={() => setStep("deploy")}>Continue</Button>
+                        </div>
+                    </TabsContent>
+                </Tabs>
+            </CardContent>
+        </Card>
+    );
+
+    const dropStrip = (
+        <div
+            role="button"
+            tabIndex={0}
+            onClick={() => stripInputRef.current?.click()}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stripInputRef.current?.click(); } }}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); takeDroppedFiles(e.dataTransfer.files); }}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            className={cn("flex cursor-pointer flex-col items-center gap-1 rounded-2xl border-2 border-dashed px-6 py-6 text-center transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring", dragOver && "border-primary bg-primary/5")}
+        >
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <CloudUpload className="size-5" aria-hidden="true" /> Or drop a folder or .zip here
+            </span>
+            <span className="text-xs text-muted-foreground">No Git needed</span>
+            <input
+                ref={stripInputRef}
+                type="file"
+                multiple
+                aria-label="Drop a folder or zip"
+                className="hidden"
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => { takeDroppedFiles(e.target.files); e.target.value = ""; }}
+            />
+        </div>
+    );
+
+    // ----- step 2 -------------------------------------------------------------------
+    const sourceTitle = sourceType === "upload" ? (files && files.length === 1 ? files[0].name : `${files?.length ?? 0} files`) : repoSlug(gitUrl);
+    const detectedChips = usesAi
+        ? [selectedRepo?.language, "Dockerfile written by Opslin AI", "Health checks & SSL set up for you"].filter(Boolean) as string[]
+        : [buildpackOverride ? `Using ${buildpackOptions.find((o) => o.value === buildpackOverride)?.label ?? buildpackOverride}` : "Stack detected automatically", "Health checks & SSL set up for you"];
+
+    const deployCard = (
+        <Card className="gap-0 py-0 shadow-sm">
+            <CardContent className="space-y-5 p-5 sm:p-6">
+                <div className="flex flex-wrap items-center gap-3">
+                    {sourceType === "upload" ? <FileIcon className="size-5" aria-hidden="true" /> : <Github className="size-5" aria-hidden="true" />}
+                    <span className="min-w-0 truncate text-base font-semibold text-foreground">{sourceTitle}</span>
+                    {sourceType !== "upload" ? (
+                        <span className="inline-flex items-center rounded-lg bg-muted px-2.5 py-1 text-sm text-foreground">{branch || "main"}</span>
+                    ) : null}
+                    <button type="button" className="ml-auto text-sm font-medium text-primary hover:underline" onClick={() => setStep("import")}>Change</button>
+                </div>
+
+                <div className="rounded-xl border border-primary/15 bg-primary/[0.04] p-4">
+                    <p className="flex items-center gap-2 text-[15px] font-semibold text-primary">
+                        <Sparkles className="size-4" aria-hidden="true" /> {usesAi ? "Opslin AI will set this up" : "Opslin will set this up"}
+                    </p>
+                    <ul className="mt-3 flex flex-wrap gap-2">
+                        {detectedChips.map((chip) => (
+                            <li key={chip} className="rounded-lg border bg-card px-3 py-1 text-sm text-foreground">{chip}</li>
+                        ))}
+                    </ul>
+                </div>
+
+                <div>
+                    <label htmlFor="app-name" className="mb-1.5 block text-sm font-semibold text-foreground">Project name</label>
+                    <Input id="app-name" value={displayName} onChange={(e) => { setNameEdited(true); setName(e.target.value); }} placeholder={generatedName} className="h-11" />
+                    <p className="mt-1.5 text-sm text-muted-foreground">
+                        {usesAi ? "If your repo has several services, each is named from this." : "You'll get a live link as soon as it's ready."}
+                    </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 border-t pt-4 text-sm">
+                    <span className="text-muted-foreground">Deploying to</span>
+                    {connectedServers.length === 0 ? (
+                        <span className="text-warning-text">No connected server. <Link href="/servers" className="font-medium underline">Add a server</Link> first.</span>
+                    ) : changingServer ? (
+                        <Select value={serverId} onValueChange={(value) => { setSelectedServerId(value); setChangingServer(false); }}>
+                            <SelectTrigger aria-label="Target Server" className="h-9 w-56"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                {connectedServers.map((s) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.ip})</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    ) : (
+                        <>
+                            <span className="size-2 rounded-full bg-success" aria-hidden="true" />
+                            <span className="font-medium text-foreground" data-testid="deploy-server">{selectedServerData?.name}</span>
+                            {connectedServers.length > 1 ? (
+                                <button type="button" className="font-medium text-primary hover:underline" onClick={() => setChangingServer(true)}>Change</button>
+                            ) : null}
+                        </>
+                    )}
+                </div>
+
+                <div className="border-t pt-2">
+                    <button
+                        type="button"
+                        aria-expanded={optionalOpen}
+                        onClick={() => setOptionalOpen((open) => !open)}
+                        className="flex w-full items-center gap-3 rounded-lg py-3 text-left focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                        <Settings2 className="size-5 text-muted-foreground" aria-hidden="true" />
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-[15px] font-semibold text-foreground">Optional settings</span>
+                            <span className="block text-sm text-muted-foreground">{usesAi ? "Environment variables" : "Environment variables, custom domain, health check"}</span>
+                        </span>
+                        <ChevronDown className={cn("size-5 text-muted-foreground transition-transform", optionalOpen && "rotate-180")} aria-hidden="true" />
+                    </button>
+
+                    {optionalOpen ? (
+                        <div className="space-y-5 pb-2 pt-2">
+                            <EnvVarsEditor envVars={envVars} onChange={setEnvVars} />
+                            {!usesAi ? (
+                                <>
+                                    <div>
+                                        <label htmlFor="domain" className="mb-1.5 block text-sm font-medium text-foreground">Custom domain</label>
+                                        <Input id="domain" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="app.example.com" className="h-10" />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1.5 block text-sm font-medium text-foreground">Health check</label>
+                                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                                            <Select value={healthCheckMode} onValueChange={(v) => setHealthCheckMode(v as HealthCheckMode)}>
+                                                <SelectTrigger data-testid="health-check-mode" aria-label="Health Check Mode" className="h-10"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="auto">Auto (recommended)</SelectItem>
+                                                    <SelectItem value="strict_http">Strict HTTP</SelectItem>
+                                                    <SelectItem value="port">Port readiness</SelectItem>
+                                                    <SelectItem value="process">Background worker (no port)</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <Input data-testid="health-check-path" aria-label="Health check path" value={healthPath} onChange={(e) => setHealthPath(e.target.value)} placeholder="/health" disabled={healthCheckMode === "process"} className="h-10 disabled:opacity-50" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label htmlFor="buildpack-override" className="mb-1.5 block text-sm font-medium text-foreground">Build type</label>
+                                        <Select value={buildpackOverride || "auto"} onValueChange={(v) => setBuildpackOverride(v === "auto" ? "" : (v as BuildpackName))}>
+                                            <SelectTrigger id="buildpack-override" aria-label="Build type" className="h-10 max-w-sm"><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                {buildpackOptions.map((o) => <SelectItem key={o.value || "auto"} value={o.value || "auto"}>{o.label}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <label htmlFor="dockerfile-override" className="mb-1.5 block text-sm font-medium text-foreground">Dockerfile <span className="font-normal text-muted-foreground">(optional)</span></label>
+                                        <Textarea id="dockerfile-override" value={dockerfileOverride} onChange={(e) => setDockerfileOverride(e.target.value)} placeholder="Paste your own Dockerfile here. Leave empty to let Opslin handle it." className="min-h-[100px] font-mono text-xs" />
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                        <div>
+                                            <label htmlFor="registry-host" className="mb-1.5 block text-sm font-medium text-foreground">Private registry host</label>
+                                            <Input id="registry-host" value={registry} onChange={(e) => setRegistry(e.target.value)} placeholder="ghcr.io" className="h-10" />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="registry-user" className="mb-1.5 block text-sm font-medium text-foreground">Registry username</label>
+                                            <Input id="registry-user" value={registryUsername} onChange={(e) => setRegistryUsername(e.target.value)} placeholder="octocat" className="h-10" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label htmlFor="registry-token" className="mb-1.5 block text-sm font-medium text-foreground">Registry password / token</label>
+                                        <div className="relative max-w-sm">
+                                            <Input id="registry-token" type={showPassword ? "text" : "password"} value={registryPassword} onChange={(e) => setRegistryPassword(e.target.value)} placeholder="••••••••••••••••" className="h-10 pr-10" />
+                                            <button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                                                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                            </button>
+                                        </div>
+                                        <p className="mt-1.5 text-sm text-muted-foreground">Only needed if your images are in a private registry.</p>
+                                    </div>
+                                </>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </div>
+
+                {showInlineError ? (
+                    <div role="alert" className="rounded-lg border border-danger/30 bg-danger-muted p-4 text-sm text-danger-text">
+                        {(error as Error).message}
+                    </div>
+                ) : null}
+
+                <div className="space-y-2">
+                    <Button size="lg" variant="dark" className="h-12 w-full text-base" data-testid="deploy-button" disabled={!canDeploy || isLoading} onClick={handleSubmit}>
+                        {isLoading ? <><Loader2 className="animate-spin" aria-hidden="true" /> Deploying</> : <><Rocket aria-hidden="true" /> Deploy</>}
+                    </Button>
+                    <p className="text-center text-sm text-muted-foreground">Takes about 1-2 minutes</p>
+                </div>
+            </CardContent>
+        </Card>
+    );
+
+    return (
+        <div className="mx-auto w-full max-w-[820px] px-4 py-10 sm:px-6">
+            <div className="space-y-8">
+                <Stepper step={deploying ? "deploy" : step} />
+
+                {progressView ?? (
+                    <>
+                        <div className="space-y-3 text-center">
+                            <h1 className="text-4xl font-bold tracking-tight text-foreground">
+                                {step === "import" ? "Let's deploy your project" : "Looks good. Ready to go live?"}
+                            </h1>
+                            <p className="text-lg text-muted-foreground">
+                                {step === "import" ? "Pick your code. Opslin's AI sets up everything else, no DevOps needed." : "We'll detect and set up everything automatically."}
+                            </p>
+                        </div>
+
+                        {step === "import" ? (
+                            <>
+                                {importCard}
+                                {dropStrip}
+                            </>
+                        ) : (
+                            <>
+                                {deployCard}
+                                <div className="text-center">
+                                    <button type="button" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" onClick={() => setStep("import")}>
+                                        <ArrowLeft className="size-4" aria-hidden="true" /> Back
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </>
+                )}
+            </div>
+
+            <UpgradePrompt open={upgradePromptOpen} onOpenChange={setUpgradePromptOpen} details={upgradePromptDetails} />
+        </div>
+    );
+}
+
+/** Live progress socket for an AI deploy job. Polling stays the fallback, so socket errors are ignored. */
+function useAiSocket(jobId: string | null, onProgress: (progress: NonNullable<ServerJobStatus["progress"]>) => void) {
+    const handler = useRef(onProgress);
     useEffect(() => {
-        if (!aiJobId || typeof window === "undefined") return;
+        handler.current = onProgress;
+    });
+    useEffect(() => {
+        if (!jobId || typeof window === "undefined") return;
         const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-        const socket = new WebSocket(`${apiBaseUrl.replace(/^http/, "ws")}/jobs/${aiJobId}/live`);
+        const socket = new WebSocket(`${apiBaseUrl.replace(/^http/, "ws")}/jobs/${jobId}/live`);
         socket.onmessage = (event) => {
             try {
                 const payload = JSON.parse(event.data) as Record<string, unknown>;
-                setAiLiveProgress({
+                handler.current({
                     phase: typeof payload.phase === "string" ? payload.phase : null,
                     percent: typeof payload.percent === "number" ? payload.percent : null,
                     message: typeof payload.line === "string" ? payload.line : null,
@@ -362,726 +883,7 @@ function NewAppPageContent() {
             }
         };
         return () => socket.close();
-    }, [aiJobId]);
-
-    const triggerAiMutation = useMutation({
-        mutationFn: async () => {
-            const extraEnvVarsObj = envVarsObject();
-            return api.triggerAutoDeploy(selectedServerId, {
-                gitUrl,
-                branch,
-                githubInstallationId: githubInstallationId || undefined,
-                appNamePrefix: finalName,
-                extraEnvVars: Object.keys(extraEnvVarsObj).length > 0 ? extraEnvVarsObj : undefined,
-            });
-        },
-        onSuccess: (data) => {
-            setAiJobId(data.jobId);
-            setAiLiveProgress({ phase: "queued", percent: 5, message: "Starting...", status: "running" });
-        },
-        onError: (error) => { void maybeShowUpgradePrompt(error); },
-    });
-
-    const trackedAiJob = useMemo(() => {
-        const job = aiJobQuery.data;
-        if (!job) return null;
-        return aiLiveProgress ? { ...job, progress: { ...(job.progress || {}), ...aiLiveProgress } } : job;
-    }, [aiJobQuery.data, aiLiveProgress]);
-
-    const aiResult = trackedAiJob?.status === "COMPLETED" ? (trackedAiJob.result as AutoDeployResult | undefined) : undefined;
-
-    // Navigate the moment the job completes with a real app to show; a
-    // multi-unit repo may still report resolved: false for a non-primary
-    // unit (e.g. a worker needing infra DIL can't auto-provision yet) —
-    // that's surfaced on the app detail page's own Verify status, not
-    // blocked here, same as before this phase.
-    useEffect(() => {
-        if (aiNavigatedRef.current || trackedAiJob?.status !== "COMPLETED" || !aiResult?.primaryAppId) return;
-        aiNavigatedRef.current = true;
-        router.push(`/apps/${aiResult.primaryAppId}`);
-    }, [trackedAiJob?.status, aiResult, router]);
-
-    const aiFailureMessage = trackedAiJob?.status === "FAILED"
-        ? (trackedAiJob.error || "AI-assisted deploy failed.")
-        : trackedAiJob?.status === "COMPLETED" && aiResult && !aiResult.primaryAppId
-            ? describeAutoDeployFailure(aiResult)
-            : null;
-    const aiIsRunning = triggerAiMutation.isPending
-        || (Boolean(aiJobId) && trackedAiJob?.status !== "COMPLETED" && trackedAiJob?.status !== "FAILED")
-        // Still "running" for the brief moment between the job completing
-        // and the navigate-away effect above actually firing.
-        || (trackedAiJob?.status === "COMPLETED" && Boolean(aiResult?.primaryAppId));
-
-    const handleSubmit = () => {
-        if (sourceType === "upload") uploadMutation.mutate();
-        else if (sourceType === "ai") triggerAiMutation.mutate();
-        else gitMutation.mutate();
-    };
-
-    const isLoading = uploadMutation.isPending || gitMutation.isPending || aiIsRunning;
-    const error = uploadMutation.error || gitMutation.error || triggerAiMutation.error
-        || (aiFailureMessage ? new Error(aiFailureMessage) : null);
-    const showInlineError = error && !isPricingUpgradeError(error);
-
-    const sourceReady = sourceType === "upload" ? Boolean(files?.length) : Boolean(gitUrl);
-    const canDeploy = Boolean(selectedServerId && finalName && sourceReady);
-
-    const handleDrop = (e: React.DragEvent) => { e.preventDefault(); if (e.dataTransfer.files.length > 0) setFiles(e.dataTransfer.files); };
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) setFiles(e.target.files); };
-
-    const selectRepository = (repo: typeof repositories[0]) => {
-        setSelectedRepoKey(`${repo.installationId}:${repo.fullName}`);
-        setGitUrl(repo.cloneUrl || `${repo.htmlUrl}.git`);
-        setBranch(repo.defaultBranch || "main");
-        setGithubInstallationId(repo.installationId);
-    };
-
-    const selectedServerData = servers.find(s => s.id === selectedServerId);
-    const connectedServers = servers.filter(s => s.status === "connected" || s.isLiveConnected);
-
-    // DIL Phase 20 — an AI-assisted deploy authors its own Dockerfile and
-    // detects its own health-check mode, so "Detect" (buildpack override)
-    // doesn't apply; skipped rather than shown-but-inert. "Environment" DOES
-    // apply as of Phase 21 (runAutoDeployRepo now accepts extraEnvVars) —
-    // kept in the flow so a caller-known value DIL can't infer (e.g. a
-    // third-party API key) can be pre-set before the first deploy runs.
-    const activeSteps = useMemo(
-        () => sourceType === "ai" ? WIZARD_STEPS.filter(s => s.id !== "detect") : WIZARD_STEPS,
-        [sourceType]
-    );
-    const stepIndex = activeSteps.findIndex(s => s.id === step);
-    const goNext = () => { const next = activeSteps[stepIndex + 1]; if (next) setStep(next.id); };
-    const goBack = () => { const prev = activeSteps[stepIndex - 1]; if (prev) setStep(prev.id); };
-    const stepCanContinue = step === "source" ? sourceReady : step === "server" ? Boolean(selectedServerId) : true;
-
-    const selectedBuildpackLabel = buildpackOverride
-        ? buildpackOptions.find(o => o.value === buildpackOverride)?.label ?? buildpackOverride
-        : "Auto-detect";
-
-    return (
-        <div className="dashboard-page">
-            <Header
-                title="Deploy an application"
-                description="Deploy your code to production in a few steps. Fast, secure, and reliable."
-                actions={
-                    <div className="hidden md:flex items-center gap-3 rounded-[var(--opslin-radius-lg)] border border-border bg-card px-4 py-3">
-                        <Play size={28} />
-                        <div>
-                            <div className="text-sm font-medium text-foreground">New to deployments?</div>
-                            <a href="#" className="text-xs text-brand hover:text-brand-hover font-medium">Learn how our deployment process works</a>
-                        </div>
-                    </div>
-                }
-            />
-
-            <StaggerGroup className="flex flex-col gap-5">
-                <StaggerItem>
-                    <WizardRailMobile stepIndex={stepIndex} steps={activeSteps} />
-                </StaggerItem>
-
-                <StaggerItem className="flex flex-col lg:flex-row gap-6 items-start">
-                    <WizardRail stepIndex={stepIndex} steps={activeSteps} />
-
-                    <div className="flex-1 min-w-0 flex flex-col xl:flex-row gap-5 items-start w-full">
-                        <div className="flex-1 min-w-0 space-y-5 w-full">
-                            {step === "source" && (
-                                <>
-                                    <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6">
-                                        <h2 className="text-lg font-semibold text-foreground mb-1">Choose your source</h2>
-                                        <p className="text-sm text-muted-foreground mb-5">Select where your application code is located.</p>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                            {[
-                                                { key: "github" as const, title: "GitHub", desc: "Connect your GitHub repository and we'll handle the rest.", icon: Github, recommended: true },
-                                                { key: "upload" as const, title: "Upload Files", desc: "Upload your project files directly from your computer.", icon: CloudUpload },
-                                                { key: "git" as const, title: "Git URL", desc: "Enter the HTTPS URL of any Git repository.", icon: Link2 },
-                                                { key: "ai" as const, title: "AI-Assisted", desc: "Point us at a repo — Opslin's AI writes the Dockerfile, provisions infra, and deploys automatically.", icon: Sparkles, beta: true },
-                                            ].map(option => {
-                                                const selected = sourceType === option.key;
-                                                return (
-                                                    <button
-                                                        key={option.key}
-                                                        type="button"
-                                                        data-testid={`source-${option.key}`}
-                                                        onClick={() => setSourceType(option.key)}
-                                                        className={cn(
-                                                            "relative rounded-[var(--opslin-radius-lg)] border-2 p-5 text-left transition-all",
-                                                            selected ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border hover:border-primary/40"
-                                                        )}
-                                                    >
-                                                        {selected && (
-                                                            <div className="absolute top-3 right-3 h-6 w-6 rounded-full bg-primary flex items-center justify-center">
-                                                                <Check className="h-3.5 w-3.5 text-primary-foreground" />
-                                                            </div>
-                                                        )}
-                                                        <option.icon size={36} className="mb-3" />
-                                                        <div className="flex items-center gap-2">
-                                                            <h3 className="font-semibold text-foreground">{option.title}</h3>
-                                                            {option.recommended && (
-                                                                <span className="inline-flex items-center rounded-full bg-warning-muted text-warning-text px-2 py-0.5 text-[10px] font-semibold">Recommended</span>
-                                                            )}
-                                                            {option.beta && (
-                                                                <span className="inline-flex items-center rounded-full bg-brand-muted text-brand px-2 py-0.5 text-[10px] font-semibold">Beta</span>
-                                                            )}
-                                                        </div>
-                                                        <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{option.desc}</p>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-
-                                    {sourceType === "github" && (
-                                        <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <div>
-                                                    <h2 className="text-lg font-semibold text-foreground">Select a repository</h2>
-                                                    <p className="text-sm text-muted-foreground mt-0.5">Choose the repository you want to deploy.</p>
-                                                </div>
-                                                <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => window.location.assign(api.getGitHubInstallUrl())}>
-                                                    <Github size={16} /> Connect GitHub
-                                                </Button>
-                                            </div>
-                                            <div className="flex items-center gap-2 mt-4">
-                                                <div className="relative flex-1">
-                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                                    <Input placeholder="Search repositories..." value={repoSearchQuery} onChange={e => setRepoSearchQuery(e.target.value)} className="pl-9 h-10 border-border bg-background" />
-                                                </div>
-                                                <Button variant="outline" size="icon" className="h-10 w-10"><RefreshCw className="h-4 w-4" /></Button>
-                                            </div>
-                                            <div className="mt-4 max-h-[440px] overflow-y-auto pr-1 space-y-2" style={{ scrollbarWidth: "thin" }}>
-                                                {filteredRepos.length === 0 ? (
-                                                    <div className="rounded-lg border border-dashed border-border p-8 text-center">
-                                                        <Github size={36} className="mx-auto mb-3" />
-                                                        <p className="text-sm font-medium text-foreground">No repositories yet</p>
-                                                        <p className="text-xs text-muted-foreground mt-1">Connect your GitHub account to see your repositories</p>
-                                                    </div>
-                                                ) : filteredRepos.map(repo => {
-                                                    const isSelected = selectedRepoKey === `${repo.installationId}:${repo.fullName}`;
-                                                    return (
-                                                        <button
-                                                            key={`${repo.installationId}:${repo.fullName}`}
-                                                            type="button"
-                                                            onClick={() => selectRepository(repo)}
-                                                            className={cn(
-                                                                "w-full flex items-center gap-4 rounded-lg border p-3 text-left transition-colors",
-                                                                isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/30"
-                                                            )}
-                                                        >
-                                                            {repo.private ? (
-                                                                <Lock size={28} className="shrink-0 text-muted-foreground" />
-                                                            ) : (
-                                                                <Github size={28} className="shrink-0" />
-                                                            )}
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-sm font-medium text-foreground truncate">{repo.fullName}</span>
-                                                                    <span className="inline-flex items-center rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-[10px] font-semibold shrink-0">
-                                                                        {repo.private ? "Private" : "Public"}
-                                                                    </span>
-                                                                    {repo.language && (
-                                                                        <span className="inline-flex items-center rounded-full bg-warning-muted text-warning-text px-2 py-0.5 text-[10px] font-semibold shrink-0">{repo.language}</span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <span className="text-xs text-muted-foreground shrink-0 hidden sm:block">
-                                                                {repo.updatedAt ? `Updated ${new Date(repo.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}
-                                                            </span>
-                                                            <span className="text-xs text-muted-foreground shrink-0 hidden md:flex items-center gap-1">
-                                                                <GitBranch size={16} /> {repo.defaultBranch || "main"}
-                                                            </span>
-                                                            <div className={cn("h-5 w-5 rounded-full border-2 shrink-0 flex items-center justify-center", isSelected ? "border-primary bg-primary" : "border-border")}>
-                                                                {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
-                                                            </div>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
-                                                <div>
-                                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Repository URL</label>
-                                                    <div className="relative">
-                                                        <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                                        <Input data-testid="manual-git-url" value={gitUrl} onChange={e => { setGitUrl(e.target.value); setGithubInstallationId(null); }} placeholder="https://github.com/owner/repo.git" className="pl-9 h-10 border-border bg-background" />
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Branch</label>
-                                                    <div className="relative">
-                                                        <GitBranch size={16} className="absolute left-3 top-1/2 -translate-y-1/2" />
-                                                        <Input value={branch} onChange={e => setBranch(e.target.value)} placeholder="main" className="pl-9 h-10 border-border bg-background" />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {sourceType === "git" && (
-                                        <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6">
-                                            <h2 className="text-lg font-semibold text-foreground mb-1">Git Repository URL</h2>
-                                            <p className="text-sm text-muted-foreground mb-4">Enter the HTTPS URL of any public Git repository.</p>
-                                            <div className="grid grid-cols-1 md:grid-cols-[1fr,200px] gap-4">
-                                                <div>
-                                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Repository URL</label>
-                                                    <div className="relative">
-                                                        <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                                        <Input data-testid="manual-git-url" value={gitUrl} onChange={e => { setGitUrl(e.target.value); setGithubInstallationId(null); }} placeholder="https://github.com/user/app.git" className="pl-9 h-10 border-border bg-background" />
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Branch</label>
-                                                    <Input value={branch} onChange={e => setBranch(e.target.value)} placeholder="main" className="h-10 border-border bg-background" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {sourceType === "ai" && (
-                                        <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6 space-y-5">
-                                            <div>
-                                                <h2 className="text-lg font-semibold text-foreground mb-1">AI-assisted deploy</h2>
-                                                <p className="text-sm text-muted-foreground">Pick a repository — Opslin&apos;s AI analyzes it, writes an optimized Dockerfile, detects and provisions any databases or storage it needs, and deploys.</p>
-                                            </div>
-                                            <GitHubRepoPicker
-                                                gitUrl={gitUrl}
-                                                branch={branch}
-                                                githubInstallationId={githubInstallationId}
-                                                onGitUrlChange={setGitUrl}
-                                                onBranchChange={setBranch}
-                                                onGitHubInstallationChange={setGithubInstallationId}
-                                            />
-                                            <div className="rounded-lg bg-info-muted border border-info/20 px-3 py-2.5 flex items-start gap-2">
-                                                <Sparkles className="h-3.5 w-3.5 text-info-text shrink-0 mt-0.5" />
-                                                <span className="text-[11px] text-foreground/80">Dockerfile, health checks, and infrastructure are configured automatically for this source type — Advanced options are skipped. You can still add environment variables on the next step for anything Opslin&apos;s AI can&apos;t infer.</span>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {sourceType === "upload" && (
-                                        <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6">
-                                            <h2 className="text-lg font-semibold text-foreground mb-1">Upload your project</h2>
-                                            <p className="text-sm text-muted-foreground mb-4">Drop your project files or browse to select.</p>
-                                            <div
-                                                onDrop={handleDrop}
-                                                onDragOver={(e) => e.preventDefault()}
-                                                onClick={() => fileInputRef.current?.click()}
-                                                className="cursor-pointer rounded-[var(--opslin-radius-lg)] border-2 border-dashed border-border p-12 text-center transition-colors hover:border-primary/50 hover:bg-primary/5"
-                                            >
-                                                <CloudUpload size={56} className="mx-auto mb-3" />
-                                                <p className="text-sm font-medium text-foreground">Drop files here or click to browse</p>
-                                                <p className="text-xs text-muted-foreground mt-1">ZIP, tar.gz, or project folder files</p>
-                                                <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" />
-                                            </div>
-                                            {files && files.length > 0 && (
-                                                <div className="mt-4 space-y-2">
-                                                    <p className="text-sm font-medium text-foreground">Selected files ({files.length})</p>
-                                                    {Array.from(files).slice(0, 6).map((file, i) => (
-                                                        <div key={`${file.name}-${i}`} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-2.5">
-                                                            <div className="flex items-center gap-2">
-                                                                <File className="h-4 w-4 text-muted-foreground" />
-                                                                <span className="text-sm text-foreground">{file.name}</span>
-                                                                <span className="text-xs text-muted-foreground">({(file.size / 1024).toFixed(1)} KB)</span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                    <Button type="button" variant="ghost" size="sm" onClick={() => setFiles(null)}>
-                                                        <X className="h-4 w-4 mr-1" /> Clear all
-                                                    </Button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </>
-                            )}
-
-                            {step === "detect" && (
-                                <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6 space-y-6">
-                                    <div>
-                                        <h2 className="text-lg font-semibold text-foreground mb-1">Runtime &amp; build</h2>
-                                        <p className="text-sm text-muted-foreground">Opslin detects your stack automatically at build time. Override it here if you need a specific buildpack.</p>
-                                    </div>
-
-                                    <div>
-                                        <label htmlFor="buildpack-override" className="text-xs font-medium text-muted-foreground mb-1.5 block">Buildpack Override</label>
-                                        <Select value={buildpackOverride || "auto"} onValueChange={v => setBuildpackOverride(v === "auto" ? "" : v as BuildpackName)}>
-                                            <SelectTrigger id="buildpack-override" aria-label="Buildpack Override" className="h-10 border-border bg-background max-w-sm"><SelectValue /></SelectTrigger>
-                                            <SelectContent>
-                                                {buildpackOptions.map(o => <SelectItem key={o.value || "auto"} value={o.value || "auto"}>{o.label}</SelectItem>)}
-                                            </SelectContent>
-                                        </Select>
-                                        <span className="inline-flex items-center gap-1 text-[11px] text-success-text font-medium mt-1.5">
-                                            <Check className="h-3 w-3" /> {buildpackOverride ? `Using ${selectedBuildpackLabel}` : "Auto-detect will scan your repository at build time"}
-                                        </span>
-                                        <div className="mt-3">
-                                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Supported frameworks</span>
-                                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                {frameworkChips.map(chip => (
-                                                    <span key={chip.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                                        <span className="text-[11px]">{chip.icon}</span> {chip.label}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="border-t border-border pt-6">
-                                        <div className="flex items-center gap-2 mb-4">
-                                            <Shield size={24} />
-                                            <h3 className="text-sm font-semibold text-foreground">Secure by default</h3>
-                                            <span className="inline-flex items-center rounded-full bg-brand-muted text-brand px-2 py-0.5 text-[10px] font-semibold">{plan?.name || "Business"}</span>
-                                        </div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                            {[
-                                                { label: "Runtime Ports", value: "Private 127.0.0.1", sub: "Not publicly accessible" },
-                                                { label: "Public Access", value: "IP preview", sub: "Access restricted" },
-                                                { label: "SSL", value: "Auto SSL enabled", sub: "Let's Encrypt" },
-                                                { label: "Health Checks", value: "Auto (recommended)", sub: "Auto-restart on failure" },
-                                            ].map(item => (
-                                                <div key={item.label} className="rounded-lg border border-border p-3">
-                                                    <div className="text-[10px] text-muted-foreground mb-1">{item.label}</div>
-                                                    <div className="text-xs font-semibold text-foreground">{item.value}</div>
-                                                    <div className="text-[10px] text-muted-foreground mt-0.5">{item.sub}</div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="mt-4 rounded-lg bg-info-muted border border-info/20 px-3 py-2 flex items-center gap-2">
-                                            <ShieldCheck className="h-3.5 w-3.5 text-info-text shrink-0" />
-                                            <span className="text-[11px] text-foreground/80">No public runtime ports are exposed. Your application is secure by default.</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {step === "env" && (
-                                <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6 space-y-4">
-                                    <div>
-                                        <h2 className="text-lg font-semibold text-foreground mb-1">Environment variables</h2>
-                                        <p className="text-sm text-muted-foreground">
-                                            {sourceType === "ai"
-                                                ? "Opslin's AI detects and wires database/storage connection details automatically — only add values it can't infer, like a third-party API key. Optional."
-                                                : "Add secrets and configuration your app needs at runtime. Optional — you can add these later too."}
-                                        </p>
-                                    </div>
-                                    <EnvVarsEditor envVars={envVars} onChange={setEnvVars} />
-                                </div>
-                            )}
-
-                            {step === "server" && (
-                                <div className="space-y-5">
-                                    <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6 space-y-4">
-                                        <div>
-                                            <h2 className="text-lg font-semibold text-foreground mb-1">Choose a server</h2>
-                                            <p className="text-sm text-muted-foreground">Select the VPS where this application will run.</p>
-                                        </div>
-                                        <Select value={selectedServerId} onValueChange={setSelectedServerId}>
-                                            <SelectTrigger aria-label="Target Server" className="h-[58px] border-border bg-background w-full sm:w-auto">
-                                                <SelectValue placeholder="Select a server">
-                                                    {selectedServerData && (
-                                                        <div className="flex items-center gap-3">
-                                                            <Server size={20} />
-                                                            <div className="text-left">
-                                                                <div className="text-sm font-medium text-foreground">{selectedServerData.name}</div>
-                                                                <div className="text-[11px] text-muted-foreground">{selectedServerData.ip}</div>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </SelectValue>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {connectedServers.map(s => (
-                                                    <SelectItem key={s.id} value={s.id}>
-                                                        <span className="flex items-center gap-2">
-                                                            <span className="h-2 w-2 rounded-full bg-success" />
-                                                            {s.name} <span className="text-muted-foreground">({s.ip})</span>
-                                                        </span>
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        {connectedServers.length === 0 && (
-                                            <p className="text-xs text-warning-text">No connected servers found. Add a server before deploying.</p>
-                                        )}
-                                        {selectedServerData && (
-                                            <span className="inline-flex items-center gap-1 text-[11px] text-success-text font-medium">
-                                                <Check className="h-3 w-3" /> Reachable
-                                            </span>
-                                        )}
-                                    </div>
-                                    {selectedServerId && <ServerCapacityCard serverId={selectedServerId} />}
-                                </div>
-                            )}
-
-                            {step === "confirm" && (
-                                <div className="space-y-5">
-                                    <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6">
-                                        <h2 className="text-lg font-semibold text-foreground mb-1">Review &amp; launch</h2>
-                                        <p className="text-sm text-muted-foreground mb-4">Confirm the details below, then deploy.</p>
-                                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            {[
-                                                { label: "Source", value: sourceType === "upload" ? `${files?.length ?? 0} file(s) selected` : (gitUrl || "Not set") },
-                                                { label: "Branch", value: sourceType === "upload" ? "—" : branch },
-                                                { label: "Server", value: selectedServerData ? `${selectedServerData.name} (${selectedServerData.ip})` : "Not selected" },
-                                                ...(sourceType === "ai"
-                                                    ? [
-                                                        { label: "Deploy mode", value: "AI-assisted — Dockerfile & infra configured automatically" },
-                                                        { label: "Environment variables", value: envVars.length === 0 ? "None (auto-wired infra only)" : `${envVars.length} configured` },
-                                                    ]
-                                                    : [
-                                                        { label: "Buildpack", value: selectedBuildpackLabel },
-                                                        { label: "Environment variables", value: envVars.length === 0 ? "None" : `${envVars.length} configured` },
-                                                        { label: "Domain", value: domain || "Not set (IP access only)" },
-                                                    ]),
-                                            ].map(row => (
-                                                <div key={row.label} className="rounded-lg border border-border p-3">
-                                                    <dt className="text-[10px] text-muted-foreground mb-1">{row.label}</dt>
-                                                    <dd className="text-sm font-medium text-foreground truncate">{row.value}</dd>
-                                                </div>
-                                            ))}
-                                        </dl>
-                                    </div>
-
-                                    <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6">
-                                        <label htmlFor="app-name" className="text-xs font-medium text-muted-foreground mb-1.5 block">{sourceType === "ai" ? "Application name prefix" : "Application name"}</label>
-                                        <Input id="app-name" value={name} onChange={e => setName(e.target.value)} placeholder={generatedName} className="h-10 border-border bg-background max-w-sm" />
-                                        <p className="text-[10px] text-muted-foreground mt-1.5">
-                                            {sourceType === "ai"
-                                                ? "If your repo deploys as multiple services, each app is named from this prefix. Leave empty to auto-generate."
-                                                : "Leave empty to auto-generate from your source."}
-                                        </p>
-                                    </div>
-
-                                    {sourceType !== "ai" && (
-                                    <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card overflow-hidden">
-                                        <button onClick={() => setAdvancedOpen(!advancedOpen)} className="w-full flex items-center justify-between p-5 hover:bg-muted/30 transition-colors">
-                                            <div className="flex items-center gap-2">
-                                                <Settings2 className="h-4 w-4 text-muted-foreground" />
-                                                <h3 className="text-base font-semibold text-foreground">Advanced options</h3>
-                                            </div>
-                                            {advancedOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                        </button>
-                                        {advancedOpen && (
-                                            <div className="px-5 pb-5 border-t border-border space-y-5">
-                                                <p className="text-xs text-muted-foreground pt-3">Customize how your application is served, health-checked, and pulled from a private registry.</p>
-                                                <div>
-                                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Domain (optional)</label>
-                                                    <div className="relative">
-                                                        <Input value={domain} onChange={e => setDomain(e.target.value)} placeholder="app.example.com" className="h-10 border-border bg-background pr-24" />
-                                                        {domain && (
-                                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1 text-[10px] text-success-text font-medium">
-                                                                <Check className="h-3 w-3" /> Available
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                <div>
-                                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Health Check</label>
-                                                    <div className="grid grid-cols-1 md:grid-cols-[1fr,1fr] gap-2">
-                                                        <Select value={healthCheckMode} onValueChange={v => setHealthCheckMode(v as HealthCheckMode)}>
-                                                            <SelectTrigger data-testid="health-check-mode" aria-label="Health Check Mode" className="h-10 border-border bg-background text-xs"><SelectValue /></SelectTrigger>
-                                                            <SelectContent>
-                                                                <SelectItem value="auto">Auto (recommended)</SelectItem>
-                                                                <SelectItem value="strict_http">Strict HTTP</SelectItem>
-                                                                <SelectItem value="port">Port readiness</SelectItem>
-                                                                <SelectItem value="process">Background worker (no port)</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                        <Input data-testid="health-check-path" value={healthPath} onChange={e => setHealthPath(e.target.value)} placeholder="/health" disabled={healthCheckMode === "process"} className="h-10 border-border bg-background disabled:opacity-50" />
-                                                    </div>
-                                                    <p className="text-[10px] text-muted-foreground mt-1.5">
-                                                        {healthCheckMode === "process"
-                                                            ? "No port or HTTP path is checked — Opslin only confirms the container is running."
-                                                            : "We'll ping this path to ensure your app is healthy"}
-                                                    </p>
-                                                </div>
-
-                                                <div>
-                                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Dockerfile Override <span className="opacity-60">(optional)</span></label>
-                                                    <div className="relative">
-                                                        <Textarea value={dockerfileOverride} onChange={e => setDockerfileOverride(e.target.value)} placeholder="Add custom Dockerfile content if you have a custom build process..." className="min-h-[100px] font-mono text-xs border-border bg-background" />
-                                                        <span className="absolute right-3 top-3 text-muted-foreground text-xs">{"</>"}</span>
-                                                    </div>
-                                                    <p className="text-[10px] text-muted-foreground mt-1.5">Leave empty to use auto-detection.</p>
-                                                </div>
-
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Registry Host</label>
-                                                        <Input value={registry} onChange={e => setRegistry(e.target.value)} placeholder="ghcr.io" className="h-10 border-border bg-background" />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Registry Username <span className="opacity-60">(optional)</span></label>
-                                                        <Input value={registryUsername} onChange={e => setRegistryUsername(e.target.value)} placeholder="octocat" className="h-10 border-border bg-background" />
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Registry Password / Token <span className="opacity-60">(optional)</span></label>
-                                                    <div className="relative max-w-sm">
-                                                        <Input type={showPassword ? "text" : "password"} value={registryPassword} onChange={e => setRegistryPassword(e.target.value)} placeholder="••••••••••••••••" className="h-10 border-border bg-background pr-10" />
-                                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                                                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                                        </button>
-                                                    </div>
-                                                    <p className="text-[10px] text-muted-foreground mt-1.5">Stored securely in Opslin. Required if your registry is private.</p>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                    )}
-
-                                    {sourceType === "ai" && (
-                                        <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-6 space-y-2">
-                                            <div className="flex items-center gap-2">
-                                                <Sparkles className="h-4 w-4 text-brand" />
-                                                <h3 className="text-base font-semibold text-foreground">What Opslin&apos;s AI will do</h3>
-                                            </div>
-                                            <p className="text-xs text-muted-foreground leading-relaxed">
-                                                Analyze your repository, author an optimized Dockerfile for every real deployable service it finds, detect and provision any databases or object storage your code needs, wire the connection details in automatically (alongside any environment variables you added), deploy, and verify the result — retrying automatically if something needs fixing. This can take 1-3 minutes.
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    {uploadLabel && sourceType === "upload" && (
-                                        <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-4">
-                                            <div className="flex items-center justify-between mb-2 text-sm">
-                                                <span className="font-medium text-foreground">{uploadLabel}</span>
-                                                <span className="text-muted-foreground">{Math.round(uploadProgress * 100)}%</span>
-                                            </div>
-                                            <div className="h-2 rounded-full bg-muted overflow-hidden">
-                                                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {sourceType === "ai" && aiIsRunning && (
-                                        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                                                    <Loader2 className="h-4 w-4 animate-spin text-brand shrink-0" />
-                                                    Deploying with AI
-                                                </div>
-                                                <span className="text-xs text-muted-foreground font-mono tabular-nums">
-                                                    {Math.max(5, Math.min(100, trackedAiJob?.progress?.percent ?? 5))}%
-                                                </span>
-                                            </div>
-                                            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                                                <div
-                                                    className="h-full rounded-full bg-brand transition-all"
-                                                    style={{ width: `${Math.max(5, Math.min(100, trackedAiJob?.progress?.percent ?? 5))}%` }}
-                                                />
-                                            </div>
-                                            <p className="text-xs text-muted-foreground">
-                                                {trackedAiJob?.progress?.message || "Starting..."}
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    {showInlineError && (
-                                        <div className="rounded-lg border border-danger/30 bg-danger-muted p-4 text-sm text-danger-text">
-                                            {(error as Error).message}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="flex items-center justify-between pt-1">
-                                <Button variant="outline" onClick={step === "source" ? () => router.push("/apps") : goBack}>
-                                    {step === "source" ? "Cancel" : (<><ArrowLeft className="h-4 w-4" /> Back</>)}
-                                </Button>
-                                {step === "confirm" ? (
-                                    <Button size="lg" data-testid="deploy-button" disabled={!canDeploy || isLoading} onClick={handleSubmit}>
-                                        {isLoading
-                                            ? (<><Loader2 className="h-4 w-4 animate-spin" /> {sourceType === "ai" ? "Analyzing & deploying" : "Deploying"}</>)
-                                            : (<><Rocket className="h-4 w-4" /> {sourceType === "ai" ? "Deploy with AI" : "Deploy Application"}</>)}
-                                    </Button>
-                                ) : (
-                                    <Button size="lg" data-testid="continue-button" disabled={!stepCanContinue} onClick={goNext}>
-                                        Continue <ArrowRight className="h-4 w-4" />
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-
-                        {step !== "source" && (
-                            <aside className="w-full xl:w-[280px] xl:shrink-0 space-y-4 xl:sticky xl:top-4 xl:self-start">
-                                <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-5">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <Info size={20} />
-                                        <h3 className="text-sm font-semibold text-foreground">Configuration Guide</h3>
-                                    </div>
-                                    <p className="text-[11px] text-muted-foreground mb-4">Understand each section easily.</p>
-                                    <div className="space-y-4">
-                                        {[
-                                            { icon: Settings, title: "Buildpack", desc: "We auto-detect your stack (Node, React, Next.js, etc.)." },
-                                            { icon: KeyRound, title: "Env Variables", desc: "Add keys like DATABASE_URL, JWT_SECRET, API_KEY, etc." },
-                                            { icon: Server, title: "Server", desc: "Select the server where your app will run." },
-                                            { icon: HeartPulse, title: "Health Check", desc: "We'll verify your app's health and auto-restart if needed." },
-                                        ].map(item => (
-                                            <div key={item.title} className="flex items-start gap-2.5">
-                                                <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                                                    <item.icon size={16} />
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <div className="text-xs font-semibold text-foreground">{item.title}</div>
-                                                    <div className="text-[10px] text-muted-foreground leading-relaxed">{item.desc}</div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="rounded-[var(--opslin-radius-lg)] border border-border bg-card p-5">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <Play size={20} />
-                                        <h3 className="text-sm font-semibold text-foreground">What happens next?</h3>
-                                    </div>
-                                    <div className="space-y-3">
-                                        {[
-                                            { num: 1, title: "We build your code", desc: "Opslin clones and builds your repository." },
-                                            { num: 2, title: "Deploy to server", desc: "Your application is deployed to the selected server." },
-                                            { num: 3, title: "Health verification", desc: "We verify your app is healthy and live." },
-                                            { num: 4, title: "You're live!", desc: "Your app is up and running securely." },
-                                        ].map(item => (
-                                            <div key={item.num} className="flex items-start gap-3">
-                                                <span className="flex items-center justify-center h-6 w-6 rounded-full bg-brand-muted text-brand text-xs font-bold shrink-0">{item.num}</span>
-                                                <div>
-                                                    <div className="text-xs font-semibold text-foreground">{item.title}</div>
-                                                    <div className="text-[10px] text-muted-foreground leading-relaxed">{item.desc}</div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="rounded-[var(--opslin-radius-lg)] border border-warning/30 bg-warning-muted p-5">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <Lightbulb size={20} />
-                                        <h3 className="text-sm font-semibold text-foreground">Tips</h3>
-                                    </div>
-                                    <ul className="space-y-2.5 text-[11px] text-foreground/90">
-                                        <li className="flex items-start gap-2">
-                                            <Check className="h-3 w-3 text-warning-text mt-0.5 shrink-0" />
-                                            <span><strong>Use Environment Variables</strong> — store secrets and configs securely.</span>
-                                        </li>
-                                        <li className="flex items-start gap-2">
-                                            <Check className="h-3 w-3 text-warning-text mt-0.5 shrink-0" />
-                                            <span><strong>Health Check helps</strong> — auto-restart unhealthy apps.</span>
-                                        </li>
-                                        <li className="flex items-start gap-2">
-                                            <Check className="h-3 w-3 text-warning-text mt-0.5 shrink-0" />
-                                            <span><strong>Leave Domain empty</strong> — if you only need IP access.</span>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </aside>
-                        )}
-                    </div>
-                </StaggerItem>
-            </StaggerGroup>
-
-            <UpgradePrompt open={upgradePromptOpen} onOpenChange={setUpgradePromptOpen} details={upgradePromptDetails} />
-        </div>
-    );
+    }, [jobId]);
 }
 
 export default function NewAppPage() {
