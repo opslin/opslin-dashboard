@@ -1,30 +1,45 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
-    Terminal, Copy, ClipboardPaste, Trash2, Maximize2, Minimize2,
-    Plus, Bookmark, Code2, X, Wifi, Shield, Zap, Clock, Cpu, Bot, Unplug
-} from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import { useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { BookOpen, ClipboardPaste, Copy, HelpCircle, Lock, Maximize2, Minimize2, Plus, Search, Server as ServerIcon, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
-import type { Server } from "@/lib/api";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlanGate } from "@/components/PlanGate";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
-import type { XTermTerminalHandle } from "@/components/terminal/xterm-terminal";
+import { CommandLibrary, type SavedSnippet } from "@/components/terminal/command-library";
+import { explainError, type ErrorHelp, type LibraryCommand } from "@/components/terminal/commands";
+import { GuideSheet } from "@/components/terminal/guide-sheet";
+import { AskBar, ConnectingOverlay, ConnectionBanner, ErrorExplainer, OfflineState, RunConfirm } from "@/components/terminal/terminal-parts";
+import type { TerminalStatus, XTermTerminalHandle } from "@/components/terminal/xterm-terminal";
+import { api } from "@/lib/api";
+import type { Server } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const XTermTerminal = dynamic(
     () => import("@/components/terminal/xterm-terminal").then((mod) => mod.XTermTerminal),
     { ssr: false }
 );
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const SNIPPETS_KEY = "opslin-terminal-snippets";
+const INTRO_KEY = "opslin-terminal-intro";
+const FONT_KEY = "opslin-terminal-font";
+const MIN_FONT = 11;
+const MAX_FONT = 20;
+
+const ANSI = /\u001b\[[0-9;?]*[a-zA-Z]|\u001b\][^\u0007]*\u0007/g;
+
+type Session = { id: string; label: string };
+
+const TOUR = [
+    { title: "Pick a ready-made command", body: "Choose a safe action from the library." },
+    { title: "Or describe what you want", body: "Get a command suggestion in plain English." },
+    { title: "See where you're connected", body: "Check your server and session here." },
+];
 
 function isServerLive(server: Server | undefined) {
     if (!server) return false;
@@ -32,392 +47,448 @@ function isServerLive(server: Server | undefined) {
     return server.status === "connected";
 }
 
-interface TerminalSession {
-    id: string;
-    serverId: string;
-    serverName: string;
-    path: string;
+function formatTimer(seconds: number) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-interface QuickCommand {
-    label: string;
-    command: string;
-    icon: string;
+function readStorage<T>(key: string, fallback: T): T {
+    try {
+        const raw = window.localStorage.getItem(key);
+        return raw ? (JSON.parse(raw) as T) : fallback;
+    } catch {
+        return fallback;
+    }
 }
 
-const QUICK_COMMANDS: QuickCommand[] = [
-    { label: "System Update", command: "sudo apt update && sudo apt upgrade -y", icon: "installing-updates" },
-    { label: "Disk Usage", command: "df -h", icon: "ssd" },
-    { label: "Memory Usage", command: "free -h", icon: "memory-slot" },
-    { label: "Process Monitor", command: "htop", icon: "processor" },
-    { label: "Docker Status", command: "docker ps -a", icon: "docker" },
-];
+function writeStorage(key: string, value: unknown) {
+    try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+        // Storage can be blocked; the page still works without it.
+    }
+}
 
-export default function TerminalPage() {
-    const [selectedServer, setSelectedServer] = useState<string>("");
-    const [sessions, setSessions] = useState<TerminalSession[]>([]);
-    const [activeSession, setActiveSession] = useState<string>("");
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const [isConnected, setIsConnected] = useState(false);
-    const [autoReconnect, setAutoReconnect] = useState(true);
-    const terminalContainerRef = useRef<HTMLDivElement>(null);
-    const xtermRef = useRef<XTermTerminalHandle>(null);
+function TerminalLoader() {
+    const params = useSearchParams();
+    const requestedServer = params.get("server") ?? params.get("serverId") ?? "";
+    const [chosen, setChosen] = useState("");
 
-    const { data: servers = [] } = useQuery({
+    const { data: servers = [], refetch } = useQuery({
         queryKey: ["servers"],
         queryFn: () => api.getServers(),
         refetchInterval: 30_000,
     });
 
-    const liveServers = servers.filter(isServerLive);
-    const selectedServerData = servers.find((s) => s.id === selectedServer);
-    const isSelectedServerLive = isServerLive(selectedServerData);
+    const serverId = useMemo(() => {
+        if (chosen && servers.some((item) => item.id === chosen)) return chosen;
+        if (requestedServer && servers.some((item) => item.id === requestedServer)) return requestedServer;
+        return (servers.find(isServerLive) ?? servers[0])?.id ?? "";
+    }, [chosen, requestedServer, servers]);
+    const live = isServerLive(servers.find((item) => item.id === serverId));
 
-    // Auto-select first live server
+    // A new key gives every server (and every offline-to-online change) a fresh shell.
+    return <TerminalWorkspace key={`${serverId}:${live}`} servers={servers} selectedServer={serverId} onSelectServer={setChosen} onRefresh={() => void refetch()} />;
+}
+
+function TerminalWorkspace({ servers, selectedServer, onSelectServer, onRefresh }: { servers: Server[]; selectedServer: string; onSelectServer: (id: string) => void; onRefresh: () => void }) {
+    const server = servers.find((item) => item.id === selectedServer);
+    const serverLive = isServerLive(server);
+    const serverName = server ? server.name || server.hostname || server.ip : "";
+
+    const counter = useRef(serverLive ? 1 : 0);
+    const [sessions, setSessions] = useState<Session[]>(serverLive ? [{ id: "session-1", label: "Shell 1" }] : []);
+    const [activeId, setActiveId] = useState(serverLive ? "session-1" : "");
+    const [statuses, setStatuses] = useState<Record<string, TerminalStatus>>({});
+    const [connectedAt, setConnectedAt] = useState<Record<string, number>>({});
+    const [now, setNow] = useState(() => Date.now());
+    const [libraryOpen, setLibraryOpen] = useState(() => (typeof window === "undefined" ? true : window.matchMedia("(min-width: 1024px)").matches));
+    const [guideOpen, setGuideOpen] = useState(false);
+    const [findOpen, setFindOpen] = useState(false);
+    const [findTerm, setFindTerm] = useState("");
+    const [fontSize, setFontSize] = useState(() => {
+        if (typeof window === "undefined") return 14;
+        const stored = readStorage<number>(FONT_KEY, 14);
+        return stored >= MIN_FONT && stored <= MAX_FONT ? stored : 14;
+    });
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [saved, setSaved] = useState<SavedSnippet[]>(() => (typeof window === "undefined" ? [] : readStorage<SavedSnippet[]>(SNIPPETS_KEY, [])));
+    const [introDismissed, setIntroDismissed] = useState(() => (typeof window === "undefined" ? true : readStorage<boolean>(INTRO_KEY, false)));
+    const [tourStep, setTourStep] = useState(() => (typeof window === "undefined" || readStorage<boolean>(INTRO_KEY, false) ? -1 : 0));
+    const [confirm, setConfirm] = useState<{ command: string; title: string } | null>(null);
+    const [hint, setHint] = useState("");
+    const [errorHelp, setErrorHelp] = useState<Record<string, ErrorHelp | null>>({});
+
+    const cardRef = useRef<HTMLDivElement>(null);
+    const handles = useRef<Record<string, XTermTerminalHandle | null>>({});
+    const buffers = useRef<Record<string, string>>({});
+    const hintTimer = useRef<number | undefined>(undefined);
+
+    const newSession = useCallback(() => {
+        counter.current += 1;
+        const session = { id: `session-${counter.current}`, label: `Shell ${counter.current}` };
+        setSessions((prev) => [...prev, session]);
+        setActiveId(session.id);
+    }, []);
+
     useEffect(() => {
-        if (liveServers.length > 0 && !selectedServer) {
-            const first = liveServers[0];
-            setSelectedServer(first.id);
-            const session: TerminalSession = {
-                id: `session-${Date.now()}`,
-                serverId: first.id,
-                serverName: first.name || first.hostname || first.ip,
-                path: "/opt/opslin",
-            };
-            setSessions([session]);
-            setActiveSession(session.id);
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+        document.addEventListener("fullscreenchange", onChange);
+        return () => document.removeEventListener("fullscreenchange", onChange);
+    }, []);
+
+    useEffect(() => {
+        if (!activeId) return;
+        const frame = window.requestAnimationFrame(() => {
+            handles.current[activeId]?.fit();
+            handles.current[activeId]?.focus();
+        });
+        return () => window.cancelAnimationFrame(frame);
+    }, [activeId, libraryOpen]);
+
+    const active = handles.current[activeId];
+    const status: TerminalStatus = statuses[activeId] ?? { state: "connecting" };
+    const connected = status.state === "connected";
+
+    const showHint = useCallback((text: string) => {
+        setHint(text);
+        window.clearTimeout(hintTimer.current);
+        hintTimer.current = window.setTimeout(() => setHint(""), 4000);
+    }, []);
+
+    const handleStatus = useCallback((id: string, next: TerminalStatus) => {
+        setStatuses((prev) => ({ ...prev, [id]: next }));
+        if (next.state === "connected") {
+            setConnectedAt((prev) => (prev[id] ? prev : { ...prev, [id]: Date.now() }));
+        } else if (next.state !== "reconnecting") {
+            setConnectedAt((prev) => {
+                if (!(id in prev)) return prev;
+                const rest = { ...prev };
+                delete rest[id];
+                return rest;
+            });
         }
-    }, [liveServers, selectedServer]);
+    }, []);
 
-    const handleNewSession = useCallback(() => {
-        if (!selectedServerData) return;
-        const session: TerminalSession = {
-            id: `session-${Date.now()}`,
-            serverId: selectedServer,
-            serverName: selectedServerData.name || selectedServerData.hostname || selectedServerData.ip,
-            path: "~",
-        };
-        setSessions(prev => [...prev, session]);
-        setActiveSession(session.id);
-    }, [selectedServer, selectedServerData]);
+    const handleOutput = useCallback((id: string, chunk: string) => {
+        const text = (buffers.current[id] ?? "") + chunk.replace(ANSI, "");
+        buffers.current[id] = text.slice(-1200);
+        const help = explainError(text.slice(-400));
+        if (help) {
+            setErrorHelp((prev) => (prev[id]?.explanation === help.explanation ? prev : { ...prev, [id]: help }));
+        }
+    }, []);
 
-    const handleCloseSession = useCallback((sessionId: string) => {
-        setSessions(prev => {
-            const next = prev.filter(s => s.id !== sessionId);
-            if (activeSession === sessionId && next.length > 0) {
-                setActiveSession(next[next.length - 1].id);
-            }
+    const runCommand = useCallback((command: string) => {
+        handles.current[activeId]?.sendCommand(command);
+        setErrorHelp((prev) => ({ ...prev, [activeId]: null }));
+        buffers.current[activeId] = "";
+    }, [activeId]);
+
+    const insertCommand = useCallback((command: string) => {
+        handles.current[activeId]?.insertText(command);
+        showHint("Inserted, not run. Press Enter to run it.");
+    }, [activeId, showHint]);
+
+    const requestRun = useCallback((command: string, title: string, risk: "read" | "change") => {
+        if (risk === "change") {
+            setConfirm({ command, title });
+            return;
+        }
+        runCommand(command);
+    }, [runCommand]);
+
+    const closeSession = (id: string) => {
+        setSessions((prev) => {
+            const next = prev.filter((item) => item.id !== id);
+            if (activeId === id) setActiveId(next[next.length - 1]?.id ?? "");
             return next;
         });
-    }, [activeSession]);
+    };
 
-    const handleConnect = useCallback(() => {
-        setIsConnected(true);
-    }, []);
+    const toggleFullscreen = () => {
+        if (!cardRef.current) return;
+        if (!document.fullscreenElement) void cardRef.current.requestFullscreen?.();
+        else void document.exitFullscreen();
+    };
 
-    const handleDisconnect = useCallback(() => {
-        setIsConnected(false);
-    }, []);
+    const changeFont = (delta: number) => {
+        setFontSize((prev) => {
+            const next = Math.min(MAX_FONT, Math.max(MIN_FONT, prev + delta));
+            writeStorage(FONT_KEY, next);
+            return next;
+        });
+    };
 
-    const handleQuickCommand = useCallback((command: string) => {
-        xtermRef.current?.sendCommand(command);
-    }, []);
+    const addSnippet = (snippet: { title: string; command: string }) => {
+        setSaved((prev) => {
+            const next = [...prev, { id: `saved-${Date.now()}`, ...snippet }];
+            writeStorage(SNIPPETS_KEY, next);
+            return next;
+        });
+        toast.success("Snippet saved");
+    };
 
-    const toggleFullscreen = useCallback(() => {
-        if (!terminalContainerRef.current) return;
-        if (!document.fullscreenElement) {
-            terminalContainerRef.current.requestFullscreen();
-            setIsFullscreen(true);
-        } else {
-            document.exitFullscreen();
-            setIsFullscreen(false);
+    const removeSnippet = (id: string) => {
+        setSaved((prev) => {
+            const next = prev.filter((item) => item.id !== id);
+            writeStorage(SNIPPETS_KEY, next);
+            return next;
+        });
+    };
+
+    const dismissIntro = () => {
+        setIntroDismissed(true);
+        setTourStep(-1);
+        writeStorage(INTRO_KEY, true);
+    };
+
+    const nextTour = () => {
+        if (tourStep >= TOUR.length - 1) {
+            dismissIntro();
+            return;
         }
-    }, []);
+        setTourStep((step) => step + 1);
+    };
 
-    const handleServerChange = useCallback((serverId: string) => {
-        setSelectedServer(serverId);
-        const server = servers.find(s => s.id === serverId);
-        if (!server) return;
-        const session: TerminalSession = {
-            id: `session-${Date.now()}`,
-            serverId,
-            serverName: server.name || server.hostname || server.ip,
-            path: "~",
-        };
-        setSessions([session]);
-        setActiveSession(session.id);
-        setIsConnected(false);
-    }, [servers]);
+    const copySelection = async () => {
+        const ok = await active?.copySelection();
+        if (ok) toast.success("Copied", { duration: 1500 });
+        else toast.info("Select some text in the terminal first");
+    };
 
-    // Compute uptime display
-    const serverUptime = selectedServerData?.connectedAt
-        ? (() => {
-            const diff = Date.now() - new Date(selectedServerData.connectedAt).getTime();
-            const days = Math.floor(diff / 86400000);
-            const hours = Math.floor((diff % 86400000) / 3600000);
-            const mins = Math.floor((diff % 3600000) / 60000);
-            return days > 0 ? `${days}d ${hours}h ${mins}m` : `${hours}h ${mins}m`;
-        })()
-        : "N/A";
+    const pasteClipboard = async () => {
+        const ok = await active?.paste();
+        if (!ok) toast.error("Could not paste. Allow clipboard access in your browser.");
+    };
+
+    const runFind = (direction: "next" | "previous") => {
+        if (findTerm && !active?.find(findTerm, direction)) toast.info("No more matches", { duration: 1500 });
+    };
+
+    const elapsed = connectedAt[activeId] ? Math.max(0, Math.floor((now - connectedAt[activeId]) / 1000)) : 0;
+    const secure = API_URL.startsWith("https");
+    const showWelcome = connected && !introDismissed;
+    const activeHelp = errorHelp[activeId] ?? null;
+
+    const pill = !serverLive
+        ? { label: "Offline", className: "border-border bg-muted text-muted-foreground", dot: "bg-muted-foreground" }
+        : status.state === "connected"
+            ? { label: "Connected", className: "border-success/30 bg-success-muted text-success-text", dot: "bg-success" }
+            : status.state === "reconnecting"
+              ? { label: "Reconnecting", className: "border-warning/30 bg-warning-muted text-warning-text", dot: "bg-warning" }
+              : status.state === "connecting"
+                ? { label: "Connecting", className: "border-primary/30 bg-primary/10 text-primary", dot: "bg-primary" }
+                : { label: "Disconnected", className: "border-border bg-muted text-muted-foreground", dot: "bg-muted-foreground" };
 
     return (
-        <PlanGate
-            feature="server.terminal"
-            fallback={<div className="p-6"><UpgradePrompt feature="server.terminal" /></div>}
-        >
-            <div className="dashboard-page">
-                {/* Header */}
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-3">
-                        <Terminal size={36} />
-                        <div>
-                            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Terminal</h1>
-                            <p className="text-sm text-muted-foreground">Access and manage your servers through a secure web terminal</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" className="h-8 gap-1.5 border-border/60 bg-card text-xs">
-                            <Bookmark className="h-3.5 w-3.5" /> Saved Sessions
-                        </Button>
-                        <Button variant="outline" size="sm" className="h-8 gap-1.5 border-border/60 bg-card text-xs">
-                            <Code2 className="h-3.5 w-3.5" /> Snippets
-                        </Button>
-                        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={handleNewSession} disabled={!isSelectedServerLive}>
-                            <Plus className="h-3.5 w-3.5" /> New Session
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Connected Server Info Bar */}
-                {selectedServerData && isSelectedServerLive && (
-                    <div className="rounded-xl border border-border/60 bg-card px-5 py-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium text-muted-foreground">Connected Server</span>
-                                <Select value={selectedServer} onValueChange={handleServerChange}>
-                                    <SelectTrigger className="h-7 w-auto gap-2 border-border/60 bg-background px-2.5 text-xs">
-                                        <span className="h-2 w-2 rounded-full bg-success" />
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {liveServers.map(s => (
-                                            <SelectItem key={s.id} value={s.id}>
-                                                {s.name || s.hostname || s.ip} ({s.ip})
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="flex items-center gap-5 text-xs text-muted-foreground sm:ml-auto">
-                                <div className="flex items-center gap-1.5">
-                                    <Cpu size={16} />
-                                    <span>{selectedServerData.os || "OS unknown"}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <Clock className="h-3.5 w-3.5" />
-                                    <span>{serverUptime}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <Bot size={16} />
-                                    <span>{selectedServerData.agentVersion ? `v${selectedServerData.agentVersion}` : "not reported"}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="font-mono">{selectedServerData.ip}</span>
-                                </div>
-                                <a href={`/servers/${selectedServer}`} className="text-info-text hover:text-info-text font-medium flex items-center gap-1">
-                                    Server Overview →
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Main Terminal Area */}
-                <div className="flex gap-4 min-h-[calc(100vh-320px)]">
-                    {/* Left Sidebar */}
-                    {!isFullscreen && (
-                        <div className="hidden lg:flex w-64 flex-col gap-4 shrink-0">
-                            {/* Sessions */}
-                            <div className="rounded-xl border border-border/60 bg-card p-4 flex-1">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-sm font-semibold text-foreground">Sessions</h3>
-                                    <button
-                                        onClick={handleNewSession}
-                                        disabled={!isSelectedServerLive}
-                                        className="h-6 w-6 rounded-md bg-info-muted hover:bg-info-muted flex items-center justify-center text-info-text transition-colors disabled:opacity-40"
-                                    >
-                                        <Plus className="h-3.5 w-3.5" />
-                                    </button>
-                                </div>
-                                <div className="space-y-1">
-                                    {sessions.map(session => (
-                                        <button
-                                            key={session.id}
-                                            onClick={() => setActiveSession(session.id)}
-                                            className={`w-full text-left rounded-lg px-3 py-2.5 text-xs transition-colors ${
-                                                activeSession === session.id
-                                                    ? "bg-info-muted border border-info/30 text-info-text"
-                                                    : "hover:bg-muted/50 text-foreground"
-                                            }`}
-                                        >
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <Terminal className="h-3.5 w-3.5 text-info-text" />
-                                                    <span className="font-medium truncate">{session.serverName}</span>
-                                                </div>
-                                                <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">SSH</span>
-                                            </div>
-                                            <div className="mt-1 text-[11px] text-muted-foreground pl-5 truncate">{session.path}</div>
-                                        </button>
-                                    ))}
-                                    {sessions.length === 0 && (
-                                        <p className="text-xs text-muted-foreground text-center py-4">No active sessions</p>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Quick Commands */}
-                            <div className="rounded-xl border border-border/60 bg-card p-4">
-                                <h3 className="text-sm font-semibold text-foreground mb-3">Quick Commands</h3>
-                                <div className="space-y-1">
-                                    {QUICK_COMMANDS.map(cmd => (
-                                        <button
-                                            key={cmd.label}
-                                            onClick={() => handleQuickCommand(cmd.command)}
-                                            disabled={!isConnected}
-                                            className="w-full text-left rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed"
-                                            title={cmd.command}
-                                        >
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <div className="text-xs font-medium text-foreground">{cmd.label}</div>
-                                                    <div className="text-[11px] text-muted-foreground font-mono truncate max-w-[160px]">{cmd.command}</div>
-                                                </div>
-                                                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-info-text">
-                                                    <Zap className="h-3.5 w-3.5" />
-                                                </span>
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                                <a href="#" className="mt-3 block text-xs text-info-text hover:text-info-text font-medium">
-                                    View All Snippets →
-                                </a>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Terminal Panel */}
-                    <div ref={terminalContainerRef} className="flex-1 flex flex-col rounded-xl border border-border/60 bg-card overflow-hidden min-w-0">
-                        {/* Tab Bar */}
-                        <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-3 py-1.5">
-                            <div className="flex items-center gap-1 overflow-x-auto">
-                                {sessions.map(session => (
-                                    <div
-                                        key={session.id}
-                                        className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs cursor-pointer transition-colors ${
-                                            activeSession === session.id
-                                                ? "bg-card border border-border/60 text-foreground shadow-sm"
-                                                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                                        }`}
-                                        onClick={() => setActiveSession(session.id)}
-                                    >
-                                        <Terminal className="h-3 w-3 text-info-text" />
-                                        <span className="font-medium truncate max-w-[120px]">{session.serverName}</span>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleCloseSession(session.id); }}
-                                            className="ml-1 rounded p-0.5 hover:bg-muted text-muted-foreground hover:text-foreground"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                                <button
-                                    onClick={handleNewSession}
-                                    disabled={!isSelectedServerLive}
-                                    className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40"
-                                >
-                                    <Plus className="h-3 w-3" /> New Tab
-                                </button>
-                            </div>
-                            {/* Toolbar */}
-                            <div className="flex items-center gap-1 ml-2">
-                                <button className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Copy">
-                                    <Copy className="h-3.5 w-3.5" />
-                                </button>
-                                <button className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Paste">
-                                    <ClipboardPaste className="h-3.5 w-3.5" />
-                                </button>
-                                <button className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Clear">
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                                <div className="w-px h-4 bg-border/60 mx-1" />
-                                <button onClick={toggleFullscreen} className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Fullscreen">
-                                    {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Terminal Content */}
-                        <div className="flex-1 min-h-[400px] bg-inverse">
-                            {selectedServer && isSelectedServerLive ? (
-                                <XTermTerminal
-                                    ref={xtermRef}
-                                    serverId={selectedServer}
-                                    onConnect={handleConnect}
-                                    onDisconnect={handleDisconnect}
-                                />
-                            ) : (
-                                <div className="flex h-full items-center justify-center">
-                                    <div className="text-center">
-                                        {liveServers.length === 0 ? (
-                                            <>
-                                                <Unplug size={48} className="mx-auto mb-4" />
-                                                <h3 className="text-base font-medium text-text-on-inverse-muted">No servers online</h3>
-                                                <p className="mt-1 text-sm text-text-on-inverse-muted">Terminal requires an active agent connection</p>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Terminal size={48} className="mx-auto mb-4" />
-                                                <h3 className="text-base font-medium text-text-on-inverse-muted">Select a server</h3>
-                                                <p className="mt-1 text-sm text-text-on-inverse-muted">Choose a server to open a terminal session</p>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Status Bar */}
-                        <div className="flex items-center justify-between border-t border-border/60 bg-muted/30 px-4 py-1.5 text-[11px]">
-                            <div className="flex items-center gap-4">
-                                <span className={`flex items-center gap-1.5 font-medium ${isConnected ? "text-success-text" : "text-muted-foreground"}`}>
-                                    <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? "bg-success" : "bg-muted-foreground/40"}`} />
-                                    {isConnected ? "Connected" : "Disconnected"}
-                                </span>
-                                <span className="flex items-center gap-1 text-muted-foreground">
-                                    <Shield className="h-3 w-3" /> Secure
-                                </span>
-                                <span className="flex items-center gap-1 text-muted-foreground">
-                                    <Wifi className="h-3 w-3" /> WebSocket
-                                </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Auto-reconnect</span>
-                                <button
-                                    onClick={() => setAutoReconnect(!autoReconnect)}
-                                    className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${autoReconnect ? "bg-info" : "bg-muted-foreground/30"}`}
-                                >
-                                    <span className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${autoReconnect ? "translate-x-4" : "translate-x-0.5"}`} />
-                                </button>
-                                <span className={`font-medium ${autoReconnect ? "text-info-text" : "text-muted-foreground"}`}>
-                                    {autoReconnect ? "ON" : "OFF"}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
+        <div className="dashboard-page">
+            <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-3xl font-bold tracking-tight text-foreground">Terminal</h1>
+                {servers.length > 0 ? (
+                    <Select value={selectedServer} onValueChange={onSelectServer}>
+                        <SelectTrigger aria-label="Server" className="h-10 w-auto gap-2 rounded-lg bg-card px-3 text-sm font-medium">
+                            <span className={cn("size-2 rounded-full", serverLive ? "bg-success" : "bg-muted-foreground")} aria-hidden="true" />
+                            <SelectValue>{serverName}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                            {servers.map((item) => (
+                                <SelectItem key={item.id} value={item.id}>
+                                    {item.name || item.hostname || item.ip} {isServerLive(item) ? "" : "(offline)"}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                ) : null}
+                {serverLive ? (
+                    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium", pill.className)}>
+                        <span className={cn("size-1.5 rounded-full", pill.dot)} aria-hidden="true" />
+                        {pill.label}
+                    </span>
+                ) : null}
+                <div className="ml-auto flex items-center gap-2">
+                    <Button variant="outline" aria-pressed={libraryOpen} onClick={() => setLibraryOpen((open) => !open)}><BookOpen aria-hidden="true" />Command library</Button>
+                    <Button variant="outline" onClick={() => setGuideOpen(true)}><HelpCircle aria-hidden="true" />Guide</Button>
                 </div>
             </div>
+
+            <div className={cn("grid items-stretch gap-5", libraryOpen && "lg:grid-cols-[minmax(0,1fr)_380px]")}>
+                <div ref={cardRef} className="relative flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-xs">
+                    <div className="flex items-center gap-1 border-b bg-muted/30 px-2" role="tablist" aria-label="Shell sessions">
+                        {sessions.map((session) => {
+                            const sessionStatus = statuses[session.id]?.state;
+                            const isActive = session.id === activeId;
+                            return (
+                                <div key={session.id} className={cn("relative flex items-center gap-2 px-3 py-3 text-sm", isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>
+                                    <button type="button" role="tab" aria-selected={isActive} onClick={() => setActiveId(session.id)} className="flex items-center gap-2 font-medium focus-visible:ring-2 focus-visible:ring-ring">
+                                        <span className={cn("size-2 rounded-full", sessionStatus === "connected" ? "bg-success" : sessionStatus === "reconnecting" ? "bg-warning" : "bg-muted-foreground/50")} aria-hidden="true" />
+                                        {session.label}
+                                    </button>
+                                    {sessions.length > 1 ? (
+                                        <button type="button" onClick={() => closeSession(session.id)} aria-label={`Close ${session.label}`} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><X className="size-3" aria-hidden="true" /></button>
+                                    ) : null}
+                                    {isActive ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" aria-hidden="true" /> : null}
+                                </div>
+                            );
+                        })}
+                        <button type="button" onClick={newSession} disabled={!serverLive} aria-label="New shell" className="ml-1 rounded-md border bg-background p-1.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"><Plus className="size-4" aria-hidden="true" /></button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1 border-b px-3 py-1.5 text-xs text-muted-foreground">
+                        <button type="button" onClick={() => void copySelection()} disabled={!connected} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"><Copy className="size-3.5" aria-hidden="true" />Copy</button>
+                        <button type="button" onClick={() => void pasteClipboard()} disabled={!connected} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"><ClipboardPaste className="size-3.5" aria-hidden="true" />Paste</button>
+                        <button type="button" onClick={() => active?.clear()} disabled={!connected} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"><Trash2 className="size-3.5" aria-hidden="true" />Clear</button>
+                        <span className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
+                        <button type="button" aria-pressed={findOpen} onClick={() => { setFindOpen((open) => !open); active?.clearFind(); }} disabled={!serverLive} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"><Search className="size-3.5" aria-hidden="true" />Find</button>
+                        <div className="ml-auto flex items-center gap-1">
+                            <button type="button" onClick={() => changeFont(-1)} disabled={fontSize <= MIN_FONT} aria-label="Smaller text" className="rounded-md px-2 py-1.5 font-medium hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40">A−</button>
+                            <span className="w-10 text-center font-semibold tabular-nums text-foreground">{fontSize}px</span>
+                            <button type="button" onClick={() => changeFont(1)} disabled={fontSize >= MAX_FONT} aria-label="Larger text" className="rounded-md px-2 py-1.5 font-medium hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40">A+</button>
+                            <span className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
+                            <button type="button" onClick={toggleFullscreen} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                                {isFullscreen ? <Minimize2 className="size-3.5" aria-hidden="true" /> : <Maximize2 className="size-3.5" aria-hidden="true" />}
+                                {isFullscreen ? "Exit full screen" : "Fullscreen"}
+                            </button>
+                        </div>
+                    </div>
+
+                    {findOpen ? (
+                        <form
+                            onSubmit={(event) => { event.preventDefault(); runFind("next"); }}
+                            className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2"
+                        >
+                            <input autoFocus value={findTerm} onChange={(event) => { setFindTerm(event.target.value); if (event.target.value) active?.find(event.target.value, "next"); }} placeholder="Find in terminal" aria-label="Find in terminal" className="h-8 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                            <Button type="button" size="sm" variant="outline" onClick={() => runFind("previous")}>Previous</Button>
+                            <Button type="submit" size="sm" variant="outline">Next</Button>
+                            <button type="button" onClick={() => { setFindOpen(false); active?.clearFind(); }} aria-label="Close find" className="rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><X className="size-4" aria-hidden="true" /></button>
+                        </form>
+                    ) : null}
+
+                    <div className="relative h-[clamp(420px,calc(100vh-430px),720px)] bg-inverse">
+                        {serverLive && sessions.length > 0 ? (
+                            <>
+                                {sessions.map((session) => (
+                                    <div key={session.id} className={cn("absolute inset-0", session.id === activeId ? "" : "pointer-events-none invisible")} aria-hidden={session.id !== activeId}>
+                                        <XTermTerminal
+                                            ref={(handle) => { handles.current[session.id] = handle; }}
+                                            serverId={selectedServer}
+                                            fontSize={fontSize}
+                                            onStatusChange={(next) => handleStatus(session.id, next)}
+                                            onOutput={(chunk) => handleOutput(session.id, chunk)}
+                                        />
+                                    </div>
+                                ))}
+                                {status.state === "connecting" ? <ConnectingOverlay serverName={serverName} /> : null}
+                                {status.state === "reconnecting" || status.state === "disconnected" || status.state === "error" ? (
+                                    <ConnectionBanner state={status.state} retryIn={status.retryIn} onRetry={() => active?.reconnect()} />
+                                ) : null}
+                                {activeHelp && connected ? (
+                                    <ErrorExplainer help={activeHelp} onInsert={insertCommand} onDismiss={() => setErrorHelp((prev) => ({ ...prev, [activeId]: null }))} />
+                                ) : null}
+                                {showWelcome ? (
+                                    <div className="absolute left-1/2 top-1/2 z-20 w-[min(440px,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-background p-6 shadow-xl">
+                                        <button type="button" onClick={dismissIntro} aria-label="Close" className="absolute right-4 top-4 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><X className="size-4" aria-hidden="true" /></button>
+                                        <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><TerminalIcon className="size-5" aria-hidden="true" /></span>
+                                        <h2 className="mt-4 text-xl font-bold text-foreground">New to the terminal?</h2>
+                                        <p className="mt-1.5 text-sm text-muted-foreground">A terminal lets you give your server written instructions. Start with a safe command:</p>
+                                        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-inverse px-4 py-3">
+                                            <code className="font-mono text-sm text-text-inverse">uptime</code>
+                                            <Button size="sm" onClick={() => { runCommand("uptime"); dismissIntro(); }}>Try it</Button>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-primary">
+                                            <button type="button" className="hover:underline" onClick={() => setGuideOpen(true)}>What is a terminal?</button>
+                                            <button type="button" className="hover:underline" onClick={() => setGuideOpen(true)}>Move around folders</button>
+                                            <button type="button" className="hover:underline" onClick={() => setGuideOpen(true)}>Stay safe</button>
+                                        </div>
+                                        <div className="mt-3 flex justify-end">
+                                            <button type="button" onClick={dismissIntro} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+                                        </div>
+                                    </div>
+                                ) : null}
+                                {confirm ? (
+                                    <RunConfirm
+                                        command={confirm.command}
+                                        title={confirm.title}
+                                        onCancel={() => { setConfirm(null); active?.focus(); }}
+                                        onConfirm={() => { runCommand(confirm.command); setConfirm(null); }}
+                                    />
+                                ) : null}
+                                {hint ? (
+                                    <p role="status" className="absolute bottom-3 left-4 z-10 rounded-md bg-white/10 px-2.5 py-1 font-mono text-xs text-text-on-inverse-muted backdrop-blur"># {hint}</p>
+                                ) : null}
+                                {showWelcome && tourStep >= 0 ? (
+                                    <div className="absolute bottom-4 right-4 z-30 flex w-[min(300px,calc(100%-2rem))] items-start gap-3 rounded-xl border bg-background p-3.5 shadow-xl" role="status">
+                                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{tourStep + 1}</span>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-semibold text-foreground">{TOUR[tourStep].title}</p>
+                                            <p className="text-xs text-muted-foreground">{TOUR[tourStep].body}</p>
+                                            <div className="mt-2.5 flex items-center justify-end gap-3">
+                                                <button type="button" onClick={dismissIntro} className="text-xs text-muted-foreground hover:text-foreground">Skip tour</button>
+                                                <Button size="sm" onClick={nextTour}>{tourStep >= TOUR.length - 1 ? "Done" : "Next"}</Button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </>
+                        ) : (
+                            <OfflineState serverId={server?.id} serverName={serverName} noServers={servers.length === 0} onReconnect={onRefresh} />
+                        )}
+                    </div>
+
+                    <AskBar
+                        disabled={!connected}
+                        highlight={showWelcome && tourStep === 1}
+                        onInsert={insertCommand}
+                        onRun={requestRun}
+                    />
+
+                    <div className={cn("flex flex-wrap items-center gap-x-5 gap-y-1 border-t bg-muted/30 px-5 py-2 text-xs text-muted-foreground", showWelcome && tourStep === 2 && "ring-2 ring-inset ring-primary")}>
+                        <span className={cn("flex items-center gap-1.5 font-medium", connected ? "text-success-text" : "")}>
+                            <span className={cn("size-1.5 rounded-full", connected ? "bg-success" : "bg-muted-foreground/50")} aria-hidden="true" />
+                            {pill.label}
+                        </span>
+                        {server ? (
+                            <span className="flex items-center gap-1.5"><ServerIcon className="size-3.5" aria-hidden="true" />{serverName}<span className="font-mono">{server.publicIp || server.ip}</span></span>
+                        ) : null}
+                        {secure ? <span className="flex items-center gap-1.5"><Lock className="size-3.5" aria-hidden="true" />Encrypted</span> : null}
+                        {connected ? <span className="ml-auto flex items-center gap-1.5 tabular-nums">Session {formatTimer(elapsed)}</span> : null}
+                    </div>
+                </div>
+
+                {libraryOpen ? (
+                    <div className="relative lg:min-h-[480px]">
+                        <CommandLibrary
+                            saved={saved}
+                            disabled={!connected}
+                            highlight={showWelcome && tourStep === 0}
+                            firstTime={showWelcome}
+                            onInsert={(item: LibraryCommand) => insertCommand(item.command)}
+                            onRun={(item: LibraryCommand) => requestRun(item.command, `${item.title}?`, item.risk)}
+                            onAddSnippet={addSnippet}
+                            onRemoveSnippet={removeSnippet}
+                            onClose={() => setLibraryOpen(false)}
+                        />
+                    </div>
+                ) : null}
+            </div>
+
+            <GuideSheet open={guideOpen} onOpenChange={setGuideOpen} onOpenLibrary={() => setLibraryOpen(true)} />
+        </div>
+    );
+}
+
+export default function TerminalPage() {
+    return (
+        <PlanGate feature="server.terminal" fallback={<div className="p-6"><UpgradePrompt feature="server.terminal" /></div>}>
+            <Suspense fallback={null}>
+                <TerminalLoader />
+            </Suspense>
         </PlanGate>
     );
 }
