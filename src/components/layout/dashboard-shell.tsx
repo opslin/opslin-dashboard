@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronRight,
   Command,
-  Cpu,
   Crown,
   Database,
   History,
@@ -61,7 +60,6 @@ type NavItem = {
 const primaryNavigation: NavItem[] = [
   { label: "Overview", href: "/overview", icon: Home },
   { label: "Servers", href: "/servers", icon: Server },
-  { label: "Agents", href: "/agents", icon: Cpu },
   { label: "Apps", href: "/apps", icon: AppWindow },
   { label: "Deployments", href: "/deployments", icon: Rocket },
   { label: "Monitoring", href: "/monitoring", icon: MonitorDot },

@@ -16,7 +16,6 @@ import {
     Settings,
     LogOut,
     Users,
-    ServerCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,7 +25,6 @@ import { useAuth } from "@/hooks/use-auth";
 const navigation = [
     { name: "Overview", href: "/", icon: LayoutDashboard },
     { name: "Servers", href: "/servers", icon: Server },
-    { name: "Agents", href: "/agents", icon: ServerCog },
     { name: "Apps", href: "/apps", icon: Box },
     { name: "Databases", href: "/databases", icon: Database },
     // DIL Phase 15 — no "Backups" entry exists in THIS legacy nav to anchor
