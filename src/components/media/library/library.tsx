@@ -28,7 +28,8 @@ import { ACCEPTED_TYPES, collectDropped, fromDirectoryInput, isAcceptedImage, ta
 import { EXPORT_MAX_FILES, assetsToCsv, assetsToJson, downloadBlob, exportZip } from "./export";
 import { ConfirmDialog, MoveDialog, NameDialog, TagDialog } from "./library-dialogs";
 import { createUploadQueue, type UploadItem } from "./upload-queue";
-import { AssetCard, AssetMenu, FolderCard, LibraryStats, TYPE_TABS, Thumb, formatLabel, matchesType, type TypeTab } from "./library-parts";
+import { LibraryStats } from "./library-stats";
+import { AssetCard, AssetMenu, FolderCard, TYPE_TABS, Thumb, formatLabel, matchesType, type TypeTab } from "./library-parts";
 import { LIBRARY_KEY, SORTS, libraryErrorCode, libraryErrorText, useLibraryAssets, useLibraryFolders, type SortKey } from "./use-library";
 
 type Project = Extract<MediaState, { configured: true }>;
@@ -335,7 +336,7 @@ export function Library({ media }: { media: Project }) {
                 ) : null}
             </div>
 
-            <LibraryStats fallbackTotal={total} />
+            {!folder && !searching ? <LibraryStats fallbackTotal={total} /> : null}
 
             <Tabs value={typeTab} onValueChange={(value) => setTypeTab(value as TypeTab)} className="gap-6">
                 {selected.size > 0 ? (
@@ -366,7 +367,7 @@ export function Library({ media }: { media: Project }) {
                         <div className="flex flex-wrap items-center gap-2 pb-3">
                             <div className="relative">
                                 <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" aria-hidden="true" />
-                                <Input aria-label="Search images" placeholder="Search" className="w-40 pl-8 sm:w-52" value={searchText} onChange={(event) => setSearchText(event.target.value)} />
+                                <Input aria-label="Search images" placeholder="Search images, folders or tags" className="w-48 pl-8 sm:w-64" value={searchText} onChange={(event) => setSearchText(event.target.value)} />
                             </div>
                             <ToggleGroup value={view} onValueChange={changeView}>
                                 <ToggleGroupItem value="grid" aria-label="Grid view" className="px-2"><LayoutGrid className="size-4" aria-hidden="true" /></ToggleGroupItem>

@@ -1,14 +1,13 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { Folder, FolderOpen, Image as ImageIcon, Link2, MoreVertical, Upload } from "lucide-react";
+import { Folder, Image as ImageIcon, Link2, MoreVertical } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes, formatCount } from "@/components/media/media-format";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { api, type MediaAsset, type MediaFolder } from "@/lib/api";
+import type { MediaAsset, MediaFolder } from "@/lib/api";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { placeholderColor, thumbSrc } from "./use-library";
 
@@ -33,79 +32,6 @@ export function matchesType(asset: Pick<MediaAsset, "type">, tab: TypeTab) {
 export function formatLabel(type: string) {
     const label = type.replace("image/", "").toUpperCase();
     return label === "JPEG" ? "JPG" : label;
-}
-
-// ── stats ───────────────────────────────────────────────────────────────
-
-function ProgressRing({ percent, label }: { percent: number; label: string }) {
-    const value = Math.max(0, Math.min(100, Math.round(percent)));
-    const radius = 18;
-    const circumference = 2 * Math.PI * radius;
-    return (
-        <span className="relative flex size-12 shrink-0 items-center justify-center" role="img" aria-label={`${label}: ${value}%`}>
-            <svg viewBox="0 0 44 44" className="size-12 -rotate-90" aria-hidden="true">
-                <circle cx="22" cy="22" r={radius} fill="none" strokeWidth="4" className="stroke-muted" />
-                <circle
-                    cx="22"
-                    cy="22"
-                    r={radius}
-                    fill="none"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    className="stroke-primary"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={circumference * (1 - value / 100)}
-                />
-            </svg>
-            <span className="absolute text-[11px] font-semibold tabular-nums text-foreground" aria-hidden="true">{value}%</span>
-        </span>
-    );
-}
-
-function Stat({ icon: Icon, tone, value, label, trailing }: { icon: typeof ImageIcon; tone: string; value: React.ReactNode; label: string; trailing?: React.ReactNode }) {
-    return (
-        <Card className="gap-0 py-0">
-            <CardContent className="flex items-center gap-4 p-5">
-                <span className={cn("flex size-12 shrink-0 items-center justify-center rounded-xl", tone)}>
-                    <Icon className="size-6" aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                    <p className="truncate text-2xl font-semibold leading-tight tabular-nums text-foreground">{value}</p>
-                    <p className="truncate text-sm text-muted-foreground">{label}</p>
-                </div>
-                {trailing}
-            </CardContent>
-        </Card>
-    );
-}
-
-/** Four summary cards from the library's own usage numbers (files, storage, uploads today, folders). */
-export function LibraryStats({ fallbackTotal }: { fallbackTotal: number }) {
-    const usage = useQuery({
-        queryKey: ["media", "usage"],
-        queryFn: () => api.getMediaUsage(),
-        staleTime: 30_000,
-        refetchInterval: 60_000,
-        retry: false,
-    });
-    const data = usage.data && usage.data.available ? usage.data : null;
-    const library = data?.library ?? null;
-    const dash = "—";
-
-    return (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="library-stats">
-            <Stat icon={ImageIcon} tone="bg-primary/10 text-primary" label="Total Files" value={library ? formatCount(library.assets) : fallbackTotal > 0 ? formatCount(fallbackTotal) : dash} />
-            <Stat
-                icon={Folder}
-                tone="bg-info-muted text-info-text"
-                label="Storage Used"
-                value={library ? formatBytes(library.storedBytes) : dash}
-                trailing={data ? <ProgressRing percent={data.percent} label="Today's upload limit used" /> : undefined}
-            />
-            <Stat icon={Upload} tone="bg-success-muted text-success-text" label="Uploaded Today" value={data ? formatCount(data.objects) : dash} />
-            <Stat icon={FolderOpen} tone="bg-warning-muted text-warning-text" label="Active Folders" value={library ? formatCount(library.folders) : dash} />
-        </div>
-    );
 }
 
 // ── folders ─────────────────────────────────────────────────────────────
