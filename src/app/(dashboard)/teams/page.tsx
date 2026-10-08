@@ -18,7 +18,7 @@ const ROLE_OPTIONS: OrgRole[] = ["OWNER", "ADMIN", "MEMBER", "VIEWER"];
 const ROLE_CONFIG: Record<string, { label: string; bg: string; text: string; accessLevel: string }> = {
     OWNER: { label: "Owner", bg: "bg-warning-muted", text: "text-warning-text", accessLevel: "Full access" },
     ADMIN: { label: "Admin", bg: "bg-info-muted", text: "text-info-text", accessLevel: "Admin access" },
-    MEMBER: { label: "Developer", bg: "bg-chart-violet/15", text: "text-chart-violet", accessLevel: "Development access" },
+    MEMBER: { label: "Developer", bg: "bg-chart-violet/15", text: "text-chart-violet-text", accessLevel: "Development access" },
     VIEWER: { label: "Viewer", bg: "bg-success-muted", text: "text-success-text", accessLevel: "Read only" },
 };
 
@@ -247,7 +247,7 @@ export default function TeamsPage() {
                                                         <DropdownMenuItem key={role} onClick={() => updateRoleMutation.mutate({ userId: member.userId, role })}>Change to {ROLE_CONFIG[role]?.label || role}</DropdownMenuItem>
                                                     ))}
                                                     <DropdownMenuSeparator />
-                                                    <DropdownMenuItem className="text-danger-text focus:text-danger" onClick={() => { if (confirm(`Remove ${member.user.name}?`)) removeMemberMutation.mutate(member.userId); }}>
+                                                    <DropdownMenuItem className="text-danger-text focus:text-danger-text" onClick={() => { if (confirm(`Remove ${member.user.name}?`)) removeMemberMutation.mutate(member.userId); }}>
                                                         <Trash2 className="h-4 w-4 mr-2" /> Remove member
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
@@ -286,7 +286,7 @@ export default function TeamsPage() {
                     {[
                         { role: "Owner", subtitle: "Full access", color: "bg-warning-muted text-warning-text", permissions: ["All permissions", "Manage team", "Billing & settings", "Delete resources"], count: members.filter(m => m.role === "OWNER").length },
                         { role: "Admin", subtitle: "High access", color: "bg-info-muted text-info-text", permissions: ["Manage team", "App deployments", "System settings", "View billing"], count: adminCount },
-                        { role: "Developer", subtitle: "Development", color: "bg-chart-violet/15 text-chart-violet", permissions: ["Deploy apps", "Manage servers", "View logs", "No team management"], count: devCount },
+                        { role: "Developer", subtitle: "Development", color: "bg-chart-violet/15 text-chart-violet-text", permissions: ["Deploy apps", "Manage servers", "View logs", "No team management"], count: devCount },
                         { role: "Viewer", subtitle: "Read-only", color: "bg-success-muted text-success-text", permissions: ["View apps", "View servers", "View logs", "No modifications"], count: viewerCount },
                     ].map(item => (
                         <div key={item.role} className="rounded-xl border border-border p-4">
@@ -346,7 +346,7 @@ export default function TeamsPage() {
                                         <td className="py-3.5 px-6 text-right">
                                             <div className="flex items-center justify-end gap-1.5">
                                                 <Button variant="outline" size="sm" className="h-7 text-[11px] border-border" onClick={() => resendMutation.mutate(invite.id)}>Resend</Button>
-                                                <Button variant="outline" size="sm" className="h-7 text-[11px] border-border text-danger-text hover:text-danger/80" onClick={() => revokeMutation.mutate(invite.id)}>Revoke</Button>
+                                                <Button variant="outline" size="sm" className="h-7 text-[11px] border-border text-danger-text hover:text-danger-text/80" onClick={() => revokeMutation.mutate(invite.id)}>Revoke</Button>
                                             </div>
                                         </td>
                                     </tr>
@@ -374,7 +374,7 @@ export default function TeamsPage() {
                         <div className="text-xs text-muted-foreground">Learn more about roles, permissions, and best practices</div>
                     </div>
                 </div>
-                <a href="#" className="text-sm text-info-text hover:text-info/80 font-medium flex items-center gap-1">
+                <a href="#" className="text-sm text-info-text hover:text-info-text/80 font-medium flex items-center gap-1">
                     View Documentation <span className="text-xs">↗</span>
                 </a>
             </div>

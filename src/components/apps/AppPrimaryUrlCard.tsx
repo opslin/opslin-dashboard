@@ -90,7 +90,7 @@ export function AppPrimaryUrlCard({
                     )}
                 </div>
                 {httpLive ? (
-                    <p className="mt-1 text-xs text-info/80">
+                    <p className="mt-1 text-xs text-info-text/80">
                         Your app is accessible over HTTP. HTTPS will be available after SSL setup.
                     </p>
                 ) : null}

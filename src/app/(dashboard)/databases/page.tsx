@@ -250,7 +250,7 @@ export default function DatabasesPage() {
                                 <Link href="/databases/new"><Plus className="h-4 w-4 mr-2" /> Create Your First Database</Link>
                             </Button>
                         )}
-                        <a href="#" className="mt-3 text-xs text-info-text hover:text-info font-medium flex items-center gap-1">
+                        <a href="#" className="mt-3 text-xs text-info-text hover:text-info-text font-medium flex items-center gap-1">
                             Explore Documentation <ExternalLink className="h-3 w-3" />
                         </a>
                     </div>
@@ -369,7 +369,7 @@ export default function DatabasesPage() {
                                                     <Link href={`/databases/${db.id}?server=${serverId}`} className="flex items-center gap-3 group/link">
                                                         <DatabaseBrandIcon engine={dbConfig.engine} size={24} />
                                                         <div>
-                                                            <div className="font-medium text-foreground group-hover/link:text-info transition-colors">{db.name}</div>
+                                                            <div className="font-medium text-foreground group-hover/link:text-info-text transition-colors">{db.name}</div>
                                                             <div className="text-[11px] text-muted-foreground font-mono flex items-center gap-1">
                                                                 db_{db.id.slice(0, 12)} <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 cursor-pointer" />
                                                             </div>
@@ -417,7 +417,7 @@ export default function DatabasesPage() {
                                                                 </DropdownMenuItem>
                                                             )}
                                                             <DropdownMenuSeparator />
-                                                            <DropdownMenuItem className="text-danger-text focus:text-danger" onClick={() => setDeleteConfirm({ db, serverId })}>
+                                                            <DropdownMenuItem className="text-danger-text focus:text-danger-text" onClick={() => setDeleteConfirm({ db, serverId })}>
                                                                 <Trash2 className="h-4 w-4 mr-2" />Delete
                                                             </DropdownMenuItem>
                                                         </DropdownMenuContent>

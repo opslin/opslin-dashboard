@@ -25,9 +25,8 @@ export function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <Button type="button" variant="outline" size="sm" className="min-w-24 justify-start gap-2" disabled>
+      <Button type="button" variant="outline" size="icon" className="size-10" aria-label="Theme" disabled>
         <SunMedium className="size-4" />
-        Light
       </Button>
     );
   }
@@ -41,12 +40,11 @@ export function ThemeToggle() {
         <Button
           type="button"
           variant="outline"
-          size="sm"
-          className="min-w-24 justify-start gap-2"
+          size="icon"
+          className="size-10"
           aria-label={`Theme: ${active.label}. Click to change.`}
         >
           <ActiveIcon className="size-4" />
-          <span>{active.label}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-36">

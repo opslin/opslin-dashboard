@@ -113,7 +113,7 @@ export function SecuritySummaryCard({
           <span
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
               status === "Fortified"
-                ? "bg-success-muted text-success"
+                ? "bg-success-muted text-success-text"
                 : status === "Protected" || status === "Hardened"
                   ? "bg-[var(--opslin-info-muted)] text-[var(--opslin-info-default)]"
                   : "bg-muted text-muted-foreground"

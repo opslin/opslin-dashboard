@@ -321,7 +321,7 @@ export default function AgentsPage() {
                             <ServerIcon size={20} />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-foreground truncate group-hover:text-info transition-colors">
+                            <p className="text-sm font-semibold text-foreground truncate group-hover:text-info-text transition-colors">
                               {server.name}
                             </p>
                             <p className="text-xs text-muted-foreground truncate">

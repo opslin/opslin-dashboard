@@ -11,13 +11,13 @@
 // paint — kept as literal strings here too, matching the existing pattern,
 // with each one commented to the Evergreen token it mirrors.
 export const COLORS = {
-  // Background — forest-black, same family as --opslin-bg-inverse (#0D1712)
+  // Background — forest-black, same family as --opslin-bg-inverse (hsl 150 33% 7%)
   panelBg: "hsl(155 25% 6%)",
   panelBgOpacity: 0.97,
   dotGrid: "hsl(155 15% 18%)",
   dotGridOpacity: 0.3,
 
-  // Stage accents — accent-bright (#22C55E) for active/completed states
+  // Stage accents — accent-bright (hsl 142 71% 45%) for active/completed states
   active: "hsl(142 71% 45%)",
   activePulse: "hsl(142 69% 58%)",
   completed: "hsl(142 71% 45%)",

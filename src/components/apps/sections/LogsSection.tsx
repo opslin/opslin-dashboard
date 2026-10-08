@@ -82,7 +82,7 @@ export function LogsSection({
                         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                         <div>
                             <p className="font-medium">Agent appears offline</p>
-                            <p className="mt-1 text-warning/80">
+                            <p className="mt-1">
                                 Logs may be stale until the server agent reconnects.
                                 {server.lastSeenAt ? ` Last seen ${formatRelativeTime(server.lastSeenAt)}.` : ""}
                             </p>

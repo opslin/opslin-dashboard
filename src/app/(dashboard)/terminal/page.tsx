@@ -224,7 +224,7 @@ export default function TerminalPage() {
                                 <div className="flex items-center gap-1.5">
                                     <span className="font-mono">{selectedServerData.ip}</span>
                                 </div>
-                                <a href={`/servers/${selectedServer}`} className="text-info-text hover:text-info font-medium flex items-center gap-1">
+                                <a href={`/servers/${selectedServer}`} className="text-info-text hover:text-info-text font-medium flex items-center gap-1">
                                     Server Overview →
                                 </a>
                             </div>
@@ -256,7 +256,7 @@ export default function TerminalPage() {
                                             onClick={() => setActiveSession(session.id)}
                                             className={`w-full text-left rounded-lg px-3 py-2.5 text-xs transition-colors ${
                                                 activeSession === session.id
-                                                    ? "bg-info-muted border border-info/30 text-info"
+                                                    ? "bg-info-muted border border-info/30 text-info-text"
                                                     : "hover:bg-muted/50 text-foreground"
                                             }`}
                                         >
@@ -300,7 +300,7 @@ export default function TerminalPage() {
                                         </button>
                                     ))}
                                 </div>
-                                <a href="#" className="mt-3 block text-xs text-info-text hover:text-info font-medium">
+                                <a href="#" className="mt-3 block text-xs text-info-text hover:text-info-text font-medium">
                                     View All Snippets →
                                 </a>
                             </div>
@@ -391,7 +391,7 @@ export default function TerminalPage() {
                         {/* Status Bar */}
                         <div className="flex items-center justify-between border-t border-border/60 bg-muted/30 px-4 py-1.5 text-[11px]">
                             <div className="flex items-center gap-4">
-                                <span className={`flex items-center gap-1.5 font-medium ${isConnected ? "text-success" : "text-muted-foreground"}`}>
+                                <span className={`flex items-center gap-1.5 font-medium ${isConnected ? "text-success-text" : "text-muted-foreground"}`}>
                                     <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? "bg-success" : "bg-muted-foreground/40"}`} />
                                     {isConnected ? "Connected" : "Disconnected"}
                                 </span>
@@ -410,7 +410,7 @@ export default function TerminalPage() {
                                 >
                                     <span className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${autoReconnect ? "translate-x-4" : "translate-x-0.5"}`} />
                                 </button>
-                                <span className={`font-medium ${autoReconnect ? "text-info" : "text-muted-foreground"}`}>
+                                <span className={`font-medium ${autoReconnect ? "text-info-text" : "text-muted-foreground"}`}>
                                     {autoReconnect ? "ON" : "OFF"}
                                 </span>
                             </div>

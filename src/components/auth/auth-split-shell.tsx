@@ -62,11 +62,11 @@ export function AuthSplitShell({ children }: { children: ReactNode }) {
         </div>
 
         <div className="relative" key={fact.label}>
-          <p className="animate-fade-in text-6xl font-semibold tracking-tight text-text-inverse">{fact.stat}</p>
-          <p className="animate-fade-in mt-3 text-sm font-semibold uppercase tracking-[0.2em] text-text-on-inverse-muted">
+          <p className="animate-in fade-in duration-500 text-6xl font-semibold tracking-tight text-text-inverse">{fact.stat}</p>
+          <p className="animate-in fade-in duration-500 mt-3 text-sm font-semibold uppercase tracking-[0.2em] text-text-on-inverse-muted">
             {fact.label}
           </p>
-          <p className="animate-fade-in mt-3 max-w-sm text-sm leading-6 text-text-on-inverse-muted">{fact.detail}</p>
+          <p className="animate-in fade-in duration-500 mt-3 max-w-sm text-sm leading-6 text-text-on-inverse-muted">{fact.detail}</p>
         </div>
 
         <div className="relative flex items-center gap-1.5">

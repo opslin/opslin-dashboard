@@ -1,66 +1,48 @@
 import { test, expect } from "@playwright/test";
 import { installDashboardMocks } from "./mock-dashboard";
 
-async function openGitSource(page: Parameters<typeof installDashboardMocks>[0]) {
+async function openImport(page: Parameters<typeof installDashboardMocks>[0]) {
   await installDashboardMocks(page);
   await page.goto("/apps/new");
-  await page.getByTestId("source-github").click();
+  await expect(page.getByRole("heading", { name: "Let's deploy your project" })).toBeVisible({ timeout: 30_000 });
 }
 
-test("GitHub connect button is visible on the new app page", async ({ page }) => {
-  await openGitSource(page);
+test("import step offers GitHub, Drop files and Git URL", async ({ page }) => {
+  await openImport(page);
 
-  await expect(page.getByTestId("github-repo-picker")).toBeVisible();
-  await expect(page.getByTestId("github-connect-button")).toBeVisible();
+  await expect(page.getByTestId("source-github")).toBeVisible();
+  await expect(page.getByTestId("source-upload")).toBeVisible();
+  await expect(page.getByTestId("source-git")).toBeVisible();
+  await expect(page.getByText("Or drop a folder or .zip here")).toBeVisible();
 });
 
-test("repo picker shows search and repository list", async ({ page }) => {
-  await openGitSource(page);
+test("repo list can be searched and one click opens the review step", async ({ page }) => {
+  await openImport(page);
 
-  await expect(page.getByTestId("repo-search")).toBeVisible();
-  await expect(page.getByTestId("repo-list")).toBeVisible();
+  await page.getByLabel("Search your repositories").fill("api");
+  await expect(page.getByTestId("repo-acme/api")).toBeVisible();
+  await expect(page.getByTestId("repo-acme/worker")).toBeHidden();
 
-  await page.getByTestId("repo-search").fill("api");
-  await expect(page.getByTestId("repo-item-acme-api")).toBeVisible();
-  await expect(page.getByTestId("repo-item-acme-worker")).toBeHidden();
+  await page.getByTestId("repo-acme/api").click();
+  await expect(page.getByRole("heading", { name: "Looks good. Ready to go live?" })).toBeVisible();
+  await expect(page.getByText("acme/api")).toBeVisible();
+  await expect(page.getByTestId("deploy-server")).toHaveText("Prod VPS 01");
 });
 
-test("branch dropdown populates after selecting a repository", async ({ page }) => {
-  await openGitSource(page);
+test("manual Git URL still creates a classic Git app", async ({ page }) => {
+  await openImport(page);
 
-  await page.getByTestId("repo-item-acme-api").click();
-
-  await expect(page.getByTestId("manual-git-url")).toHaveValue("https://github.com/acme/api.git");
-  await expect(page.getByTestId("branch-select")).toBeVisible();
-  await expect(page.getByTestId("branch-select")).toContainText("develop");
-
-  await page.getByTestId("branch-select").selectOption("develop");
-  await expect(page.getByTestId("branch-select")).toHaveValue("develop");
-});
-
-test("manual Git URL fallback still creates a Git app", async ({ page }) => {
-  await openGitSource(page);
-
-  await page.getByTestId("source-git-url").click();
+  await page.getByTestId("source-git").click();
   await page.getByTestId("manual-git-url").fill("https://github.com/manual/project.git");
-  await page.getByTestId("manual-branch").fill("release");
-  await page.getByTestId("continue-to-deploy").click();
-  await page.locator("select[required]").selectOption("mock-server-1");
-  await page.getByLabel("App Name").fill("Manual Git App");
+  await page.getByLabel("Branch").fill("release");
+  await page.getByTestId("continue-button").click();
+  await page.getByLabel("Project name").fill("Manual Git App");
 
-  const createRequest = page.waitForRequest((request) =>
-    request.method() === "POST" &&
-    request.url().endsWith("/servers/mock-server-1/apps")
-  );
+  const createRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/servers/mock-server-1/apps"));
   await page.getByTestId("deploy-button").click();
 
-  const request = await createRequest;
-  const body = JSON.parse(request.postData() || "{}");
-  expect(body).toMatchObject({
-    name: "Manual Git App",
-    gitUrl: "https://github.com/manual/project.git",
-    branch: "release",
-  });
+  const body = JSON.parse((await createRequest).postData() || "{}");
+  expect(body).toMatchObject({ name: "Manual Git App", gitUrl: "https://github.com/manual/project.git", branch: "release" });
   expect(body.githubInstallationId).toBeUndefined();
-  await expect(page).toHaveURL(/\/apps\/mock-app-created$/);
+  await expect(page).toHaveURL(/\/apps\/mock-app-created$/, { timeout: 30_000 });
 });

@@ -553,6 +553,7 @@ export default function ServerDetailPage() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
+              aria-label="Delete server"
               onClick={() => {
                 if (confirm("Delete this server? This cannot be undone.")) {
                   deleteMutation.mutate();
@@ -601,7 +602,7 @@ export default function ServerDetailPage() {
           detail={`${liveDatabases.length} databases running`}
           icon={<Box className="h-3 w-3" />}
           iconBg="bg-chart-violet/10"
-          iconColor="text-chart-violet"
+          iconColor="text-chart-violet-text"
         />
         <StatusMiniCard
           label="Firewall"

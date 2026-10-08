@@ -41,7 +41,8 @@ vi.mock("@/lib/api", async () => {
             getServers: vi.fn(),
             getGitHubRepositories: vi.fn(),
             getGitHubInstallUrl: vi.fn(() => "https://github.com/apps/opslin/installations/new"),
-            getCapacityAdvisory: vi.fn(),
+            getServerJobStatus: vi.fn(),
+            triggerAutoDeploy: vi.fn(),
             createApp: vi.fn(),
             deployApp: vi.fn(),
         },
@@ -63,82 +64,63 @@ function renderPage() {
     );
 }
 
-async function advanceToConfirm(withGitUrl = "https://github.com/acme/frontend.git") {
-    fireEvent.click(screen.getByTestId("source-git"));
-    fireEvent.change(screen.getByTestId("manual-git-url"), { target: { value: withGitUrl } });
-    fireEvent.click(screen.getByTestId("continue-button")); // source -> detect
-    fireEvent.click(await screen.findByTestId("continue-button")); // detect -> env
-    fireEvent.click(await screen.findByTestId("continue-button")); // env -> server
-    fireEvent.click(await screen.findByTestId("continue-button")); // server -> confirm
+async function reachReview(gitUrl = "https://github.com/acme/frontend.git") {
+    fireEvent.mouseDown(screen.getByTestId("source-git"), { button: 0 });
+    fireEvent.change(await screen.findByTestId("manual-git-url"), { target: { value: gitUrl } });
+    fireEvent.click(screen.getByTestId("continue-button"));
+    await screen.findByRole("heading", { name: "Looks good. Ready to go live?" });
 }
 
-describe("NewAppPage", () => {
+describe("NewAppPage (two-step deploy)", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(api.getServers).mockResolvedValue([
-            {
-                id: "server-1",
-                name: "Production VPS",
-                ip: "10.0.0.10",
-                status: "connected",
-                createdAt: "2026-01-01T00:00:00.000Z",
-            },
+            { id: "server-1", name: "Production VPS", ip: "10.0.0.10", status: "connected", createdAt: "2026-01-01T00:00:00.000Z" },
         ]);
-        vi.mocked(api.getGitHubRepositories).mockResolvedValue({ repositories: [] });
-        vi.mocked(api.getCapacityAdvisory).mockRejectedValue(
-            Object.assign(new Error("no metrics"), { status: 404 })
-        );
-        vi.mocked(api.createApp).mockResolvedValue({
-            id: "app-1",
-            name: "frontend",
-            status: "pending",
-            createdAt: "2026-01-01T00:00:00.000Z",
+        vi.mocked(api.getGitHubRepositories).mockResolvedValue({
+            repositories: [
+                {
+                    id: 1, name: "api", fullName: "acme/api", owner: "acme", private: false,
+                    htmlUrl: "https://github.com/acme/api", cloneUrl: "https://github.com/acme/api.git", sshUrl: "git@github.com:acme/api.git",
+                    defaultBranch: "develop", language: "TypeScript", updatedAt: "2026-01-02T00:00:00.000Z", installationId: "inst-1", installationAccount: "acme",
+                },
+            ],
         });
+        vi.mocked(api.createApp).mockResolvedValue({ id: "app-1", name: "frontend", status: "pending", createdAt: "2026-01-01T00:00:00.000Z" });
         vi.mocked(api.deployApp).mockResolvedValue({
-            id: "app-1",
-            name: "frontend",
-            status: "deploying",
-            message: "Deploy started",
-            jobId: "job-1",
-            deploymentId: "deployment-1",
-            gitSha: "abc123",
+            id: "app-1", name: "frontend", status: "deploying", message: "Deploy started", jobId: "job-1", deploymentId: "deployment-1", gitSha: "abc123",
+        });
+        vi.mocked(api.triggerAutoDeploy).mockResolvedValue({ jobId: "job-ai-1", serverId: "server-1" });
+        vi.mocked(api.getServerJobStatus).mockResolvedValue({
+            id: "job-ai-1", type: "auto_deploy", status: "RUNNING",
+            progress: { phase: "build", percent: 62, message: "compiling production bundle", status: "running" },
         });
     });
 
-    it("walks through all five steps and deploys with the selected buildpack", async () => {
+    it("starts on the import step with three ways to bring code and a disabled Continue for Git URL", async () => {
         renderPage();
-
-        // Step 1: source
-        expect(screen.getByText("Choose your source")).toBeInTheDocument();
-        expect(screen.getByTestId("continue-button")).toBeDisabled();
-        fireEvent.click(screen.getByTestId("source-git"));
-        fireEvent.change(screen.getByTestId("manual-git-url"), {
-            target: { value: "https://github.com/acme/frontend.git" },
-        });
+        expect(screen.getByRole("heading", { name: "Let's deploy your project" })).toBeInTheDocument();
+        expect(screen.getByTestId("source-github")).toBeInTheDocument();
+        expect(screen.getByTestId("source-upload")).toBeInTheDocument();
+        fireEvent.mouseDown(screen.getByTestId("source-git"), { button: 0 });
+        expect(await screen.findByTestId("continue-button")).toBeDisabled();
+        fireEvent.change(screen.getByTestId("manual-git-url"), { target: { value: "https://github.com/acme/frontend.git" } });
         expect(screen.getByTestId("continue-button")).not.toBeDisabled();
-        fireEvent.click(screen.getByTestId("continue-button"));
+    });
 
-        // Step 2: detect — buildpack override is a first-class field here
-        expect(await screen.findByRole("heading", { name: "Runtime & build" })).toBeInTheDocument();
-        const buildpackSelect = screen.getByLabelText("Buildpack Override");
-        expect(within(buildpackSelect).getByText("Auto-detect")).toBeInTheDocument();
-        fireEvent.click(screen.getByTestId("continue-button"));
+    it("deploys a Git URL in two steps with the server picked automatically", async () => {
+        renderPage();
+        await reachReview();
 
-        // Step 3: env vars
-        expect(await screen.findByText("Environment variables")).toBeInTheDocument();
-        fireEvent.click(screen.getByTestId("continue-button"));
+        // The one connected server is chosen for the person and there is nothing to configure.
+        expect(await screen.findByTestId("deploy-server")).toHaveTextContent("Production VPS");
+        expect(screen.queryByText("Choose a server")).not.toBeInTheDocument();
+        expect(screen.queryByText("Runtime & build")).not.toBeInTheDocument();
 
-        // Step 4: server — capacity card should render for the pre-selected server
-        expect(await screen.findByText("Choose a server")).toBeInTheDocument();
-        await waitFor(() => expect(api.getCapacityAdvisory).toHaveBeenCalledWith("server-1"));
-        fireEvent.click(screen.getByTestId("continue-button"));
-
-        // Step 5: confirm
-        expect(await screen.findByRole("heading", { name: "Review & launch" })).toBeInTheDocument();
         fireEvent.click(screen.getByTestId("deploy-button"));
-
         await waitFor(() => {
             expect(api.createApp).toHaveBeenCalledWith("server-1", expect.objectContaining({
+                name: "frontend",
                 gitUrl: "https://github.com/acme/frontend.git",
                 branch: "main",
             }));
@@ -147,38 +129,74 @@ describe("NewAppPage", () => {
         expect(routerMock.push).toHaveBeenCalledWith("/apps/app-1");
     });
 
-    it("sends health check mode and path from the confirm step's advanced options", async () => {
+    it("sends health check mode and path from Optional settings", async () => {
         renderPage();
-        await advanceToConfirm("https://github.com/acme/api.git");
+        await reachReview("https://github.com/acme/api.git");
 
-        fireEvent.click(await screen.findByText("Advanced options"));
-        const modeSelect = screen.getByLabelText("Health Check Mode");
+        fireEvent.click(screen.getByRole("button", { name: /Optional settings/ }));
+        const modeSelect = await screen.findByLabelText("Health Check Mode");
         expect(within(modeSelect).getByText("Auto (recommended)")).toBeInTheDocument();
-
-        fireEvent.change(screen.getByTestId("health-check-path"), {
-            target: { value: " /ready " },
-        });
+        fireEvent.change(screen.getByTestId("health-check-path"), { target: { value: " /ready " } });
         fireEvent.click(screen.getByTestId("deploy-button"));
 
         await waitFor(() => {
-            expect(api.createApp).toHaveBeenCalledWith("server-1", expect.objectContaining({
-                healthCheckMode: "auto",
-                healthPath: "/ready",
-            }));
+            expect(api.createApp).toHaveBeenCalledWith("server-1", expect.objectContaining({ healthCheckMode: "auto", healthPath: "/ready" }));
         });
     });
 
-    it("lets the back button return to a previous step without losing entered data", async () => {
+    it("keeps the project name editable and lets Change return to the import step with data intact", async () => {
         renderPage();
-        fireEvent.click(screen.getByTestId("source-git"));
-        fireEvent.change(screen.getByTestId("manual-git-url"), {
-            target: { value: "https://github.com/acme/frontend.git" },
-        });
-        fireEvent.click(screen.getByTestId("continue-button"));
-        expect(await screen.findByRole("heading", { name: "Runtime & build" })).toBeInTheDocument();
+        await reachReview();
+        const nameInput = screen.getByLabelText("Project name");
+        expect(nameInput).toHaveValue("frontend");
+        fireEvent.change(nameInput, { target: { value: "my-site" } });
 
-        fireEvent.click(screen.getByText("Back"));
-        expect(await screen.findByRole("heading", { name: "Choose your source" })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Change" }));
+        expect(await screen.findByRole("heading", { name: "Let's deploy your project" })).toBeInTheDocument();
         expect(screen.getByTestId("manual-git-url")).toHaveValue("https://github.com/acme/frontend.git");
+    });
+
+    it("lists GitHub repositories and one click on a repo opens the review step", async () => {
+        renderPage();
+        fireEvent.change(await screen.findByLabelText("Search your repositories"), { target: { value: "api" } });
+        fireEvent.click(await screen.findByTestId("repo-acme/api"));
+        expect(await screen.findByRole("heading", { name: "Looks good. Ready to go live?" })).toBeInTheDocument();
+        expect(screen.getByText("acme/api")).toBeInTheDocument();
+        expect(screen.getByText("develop")).toBeInTheDocument();
+        expect(screen.getByText("Dockerfile written by Opslin AI")).toBeInTheDocument();
+    });
+
+    it("deploys a GitHub repo with Opslin's AI and shows live progress", async () => {
+        renderPage();
+        fireEvent.click(await screen.findByTestId("repo-acme/api"));
+        fireEvent.click(await screen.findByTestId("deploy-button"));
+
+        await waitFor(() => {
+            expect(api.triggerAutoDeploy).toHaveBeenCalledWith("server-1", expect.objectContaining({
+                gitUrl: "https://github.com/acme/api.git",
+                branch: "develop",
+                githubInstallationId: "inst-1",
+                appNamePrefix: "api",
+            }));
+        });
+        expect(api.createApp).not.toHaveBeenCalled();
+        expect(await screen.findByText("Deploying api…")).toBeInTheDocument();
+        expect(await screen.findByText("Opslin AI is writing your Dockerfile")).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByText("62%")).toBeInTheDocument());
+    });
+
+    it("shows the live link and next actions when the AI deploy finishes", async () => {
+        vi.mocked(api.getServerJobStatus).mockResolvedValue({
+            id: "job-ai-1", type: "auto_deploy", status: "COMPLETED",
+            result: { units: [], primaryUrl: "https://api.example.com", primaryAppId: "app-9", deployGroupId: null },
+        });
+        renderPage();
+        fireEvent.click(await screen.findByTestId("repo-acme/api"));
+        fireEvent.click(await screen.findByTestId("deploy-button"));
+
+        expect(await screen.findByText("api is live")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: /api\.example\.com/ })).toHaveAttribute("href", "https://api.example.com");
+        fireEvent.click(screen.getByRole("button", { name: "Open app" }));
+        expect(routerMock.push).toHaveBeenCalledWith("/apps/app-9");
     });
 });

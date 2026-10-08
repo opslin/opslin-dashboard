@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusBadge } from "@/components/ui/status-badge";
 import { StatTile } from "@/components/patterns/stat-tile";
 import { EmptyState } from "@/components/patterns/empty-state";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
 import { Header } from "@/components/layout/header";
 import { PendingConfigDialog } from "@/components/apps/PendingConfigDialog";
@@ -205,7 +206,7 @@ export default function AppsPage() {
     queryFn: () => api.getServers(),
   });
 
-  const { data: allApps = [], isLoading } = useQuery({
+  const { data: allApps = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["all-apps"],
     queryFn: () => api.getAllApps(),
   });
@@ -277,7 +278,7 @@ export default function AppsPage() {
   const deletingApps = allApps.filter((a) => a.status === "deleting" || a.status === "delete_failed").length;
 
   return (
-    <div className="dashboard-page">
+    <>
       <Header
         title="Apps"
         description="Deploy and manage your applications across all servers."
@@ -291,6 +292,7 @@ export default function AppsPage() {
         }
       />
 
+      <div className="dashboard-page">
       <StaggerGroup className="flex flex-col gap-5">
         <StaggerItem className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatTile label="Total apps" value={totalApps} icon={Box} />
@@ -321,7 +323,7 @@ export default function AppsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select value={serverFilter} onValueChange={setServerFilter}>
-              <SelectTrigger size="sm" className="w-[140px]">
+              <SelectTrigger size="sm" aria-label="Filter by server" className="w-[140px]">
                 <SelectValue placeholder="All servers" />
               </SelectTrigger>
               <SelectContent>
@@ -332,7 +334,7 @@ export default function AppsPage() {
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger size="sm" className="w-[140px]">
+              <SelectTrigger size="sm" aria-label="Filter by status" className="w-[140px]">
                 <SelectValue placeholder="All status" />
               </SelectTrigger>
               <SelectContent>
@@ -352,6 +354,17 @@ export default function AppsPage() {
               <div key={i} className="h-40 animate-pulse rounded-lg bg-muted" />
             ))}
           </div>
+        ) : isError ? (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>Unable to load apps</AlertTitle>
+            <AlertDescription>
+              <p>{error instanceof Error ? error.message : "Something went wrong while loading your apps."}</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+                Try again
+              </Button>
+            </AlertDescription>
+          </Alert>
         ) : filteredApps.length === 0 ? (
           <EmptyState
             icon={Rocket}
@@ -480,7 +493,7 @@ export default function AppsPage() {
             <div className="flex items-center gap-4">
               <Rocket size={40} />
               <div>
-                <h3 className="text-sm font-semibold text-foreground">Ready to deploy something amazing?</h3>
+                <h2 className="text-sm font-semibold text-foreground">Ready to deploy something amazing?</h2>
                 <p className="text-xs text-muted-foreground">Connect your repository and deploy in minutes.</p>
               </div>
             </div>
@@ -519,6 +532,7 @@ export default function AppsPage() {
           onOpenChange={(open) => { if (!open) setProgressApp(null); }}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }

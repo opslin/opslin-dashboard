@@ -48,11 +48,11 @@ const UNIT_STATUS_META: Record<DeployProgressUnit["status"], { tone: StatusTone;
 function UnitStatusIcon({ status }: { status: DeployProgressUnit["status"] }) {
     switch (status) {
         case "done":
-            return <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden="true" />;
+            return <CheckCircle2 className="size-4 shrink-0 text-success-text" aria-hidden="true" />;
         case "deploying":
-            return <Loader2 className="size-4 shrink-0 animate-spin text-info" aria-hidden="true" />;
+            return <Loader2 className="size-4 shrink-0 animate-spin text-info-text" aria-hidden="true" />;
         case "blocked":
-            return <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />;
+            return <TriangleAlert className="size-4 shrink-0 text-warning-text" aria-hidden="true" />;
         default:
             return <Circle className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />;
     }
@@ -95,9 +95,9 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, open, onOpenCh
                         {job?.status === "FAILED" ? (
                             <XCircle className="size-4 text-destructive" />
                         ) : job?.status === "COMPLETED" ? (
-                            <CheckCircle2 className="size-4 text-success" />
+                            <CheckCircle2 className="size-4 text-success-text" />
                         ) : (
-                            <Loader2 className="size-4 animate-spin text-info" />
+                            <Loader2 className="size-4 animate-spin text-info-text" />
                         )}
                         Deploy progress
                     </DialogTitle>

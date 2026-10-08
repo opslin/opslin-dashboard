@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const APP_SECTIONS = [
     { id: "overview", label: "Overview" },
@@ -29,40 +30,31 @@ type AppSectionNavProps = {
     value: AppSectionId;
     onValueChange: (value: AppSectionId) => void;
     className?: string;
+    /** Content for the selected section. Rendered inside the tab panel so the tabs have a real `tabpanel` to control. */
+    children?: React.ReactNode;
 };
 
-export function AppSectionNav({ value, onValueChange, className }: AppSectionNavProps) {
+export function AppSectionNav({ value, onValueChange, className, children }: AppSectionNavProps) {
     return (
-        <div className={cn("border-b border-border bg-card -mx-6 px-6 sm:-mx-0 sm:px-0", className)}>
+        <Tabs
+            value={value}
+            onValueChange={(next) => onValueChange(next as AppSectionId)}
+            className={cn("gap-0", className)}
+        >
             <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                <nav
-                    aria-label="App sections"
-                    className="flex items-center gap-6 min-w-max"
-                >
+                <TabsList variant="line" aria-label="App sections" className="min-w-max">
                     {APP_SECTIONS.map((section) => (
-                        <button
-                            key={section.id}
-                            type="button"
-                            role="tab"
-                            aria-selected={value === section.id}
-                            onClick={() => onValueChange(section.id)}
-                            className={cn(
-                                "relative py-3 text-sm font-medium transition-colors whitespace-nowrap",
-                                "hover:text-foreground",
-                                value === section.id
-                                    ? "text-brand"
-                                    : "text-muted-foreground"
-                            )}
-                        >
+                        <TabsTrigger key={section.id} value={section.id}>
                             {section.label}
-                            {/* Active underline */}
-                            {value === section.id && (
-                                <span className="absolute inset-x-0 -bottom-px h-0.5 bg-brand rounded-full" />
-                            )}
-                        </button>
+                        </TabsTrigger>
                     ))}
-                </nav>
+                </TabsList>
             </div>
-        </div>
+            {children ? (
+                <TabsContent value={value} className="mt-6 space-y-6">
+                    {children}
+                </TabsContent>
+            ) : null}
+        </Tabs>
     );
 }

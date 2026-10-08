@@ -427,8 +427,8 @@ function ReadyView({ media }: { media: Project }) {
     const tab: Tab = raw === "guide" || raw === "settings" ? raw : "library";
     const go = (next: string) => router.replace(next === "library" ? "/media" : `/media?tab=${next}`, { scroll: false });
     return (
-        <Tabs value={tab} onValueChange={go} className="gap-4">
-            <TabsList>
+        <Tabs value={tab} onValueChange={go} className="gap-6">
+            <TabsList variant="line" aria-label="Media sections" className="gap-8">
                 <TabsTrigger value="library">Library</TabsTrigger>
                 <TabsTrigger value="guide">Guide</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -494,8 +494,9 @@ function MediaContent() {
 /** The library needs room for its toolbar; the setup and settings screens stay narrow. */
 function MediaFrame({ wide, children }: { wide: boolean; children: React.ReactNode }) {
     return (
-        <div className={cn("dashboard-page space-y-4", wide ? "max-w-6xl" : "max-w-3xl")}>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">Media</h1>
+        <div className={cn("dashboard-page pt-6 lg:pt-8", wide ? "space-y-6" : "max-w-3xl space-y-4")}>
+            {/* The ready library draws its own "Media Library" heading; every other state keeps this one. */}
+            {wide ? null : <h1 className="text-xl font-semibold tracking-tight text-foreground">Media</h1>}
             {children}
         </div>
     );

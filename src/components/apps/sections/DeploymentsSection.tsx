@@ -743,13 +743,13 @@ function DeploymentCommandCenter({
                                     {blockedByCi ? "Safe Deploy blocked" : healthFailure ? deployErrorClassification?.title : "Failure details"}
                                 </p>
                             </div>
-                            <p className="mt-2 text-sm text-danger/80">
+                            <p className="mt-2 text-sm text-danger-text/80">
                                 {blockedByCi
                                     ? ciRunFailureMessage(blockedCiRun)
                                     : deployErrorClassification?.summary || deployment?.healthLog || "The latest deployment attempt failed."}
                             </p>
                             {blockedByCi ? (
-                                <p className="mt-2 text-sm text-danger/80">
+                                <p className="mt-2 text-sm text-danger-text/80">
                                     Opslin did not create a deployment attempt for this commit, so the previous live release was not changed.
                                 </p>
                             ) : null}
@@ -1006,7 +1006,7 @@ export function DeploymentsSection({
                                                 </p>
                                                 <p className={cn(
                                                     "text-sm",
-                                                    failedCi ? "text-danger/80" : "text-info/80"
+                                                    failedCi ? "text-danger-text/80" : "text-info-text/80"
                                                 )}>
                                                     {ciRunFailureCopy(ciRun)}
                                                     {ciRunTime(ciRun) ? ` · ${formatRelativeTime(ciRunTime(ciRun)!)}`

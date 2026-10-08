@@ -1290,8 +1290,8 @@ function AppDetailPageContent() {
                 onRetryDeleteCleanup={retryDeleteCleanup}
             />
 
-            <div className="p-6 space-y-6">
-                <AppSectionNav value={selectedSection} onValueChange={setSelectedSection} />
+            <div className="p-6">
+                <AppSectionNav value={selectedSection} onValueChange={setSelectedSection}>
 
                 {preflightState && (
                     <PreflightChecksPanel
@@ -1362,8 +1362,8 @@ function AppDetailPageContent() {
                                         <details className="group mt-3 rounded-md border border-danger/15 bg-card/70 px-3 py-2">
                                             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-danger-text">
                                                 Failure details
-                                                <span className="text-xs text-danger/80 group-open:hidden">Show</span>
-                                                <span className="hidden text-xs text-danger/80 group-open:inline">Hide</span>
+                                                <span className="text-xs text-danger-text/80 group-open:hidden">Show</span>
+                                                <span className="hidden text-xs text-danger-text/80 group-open:inline">Hide</span>
                                             </summary>
                                             <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-foreground/80">
                                                 {deployErrorRaw}
@@ -1546,6 +1546,7 @@ function AppDetailPageContent() {
                         <AppSecurityPage appId={appId} embedded />
                     )}
                 </div>
+                </AppSectionNav>
             </div>
 
             {/* Unified deploy live view, overlay mode (doc 04 §2) — full-screen

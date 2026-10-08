@@ -838,7 +838,7 @@ export function OverviewSection({
                                 <p className="text-[10px] text-muted-foreground mt-0.5">{requestAnalyticsLocked ? "Requires Pro plan" : "Total requests"}</p>
                             </div>
                             <div className="rounded-xl border border-border px-3 py-2.5">
-                                <div className="flex items-center gap-1.5 text-chart-violet">
+                                <div className="flex items-center gap-1.5 text-chart-violet-text">
                                     <Download className="h-3.5 w-3.5" />
                                     <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Throughput</span>
                                 </div>
@@ -968,7 +968,7 @@ export function OverviewSection({
                             subtitle="Stream and inspect logs"
                             icon={<FileText size={36} />}
                             iconBg="bg-chart-violet/10"
-                            iconColor="text-chart-violet"
+                            iconColor="text-chart-violet-text"
                             onClick={onViewLogs}
                         />
                         <QuickActionCard
