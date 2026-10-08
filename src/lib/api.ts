@@ -465,6 +465,23 @@ class ApiClient {
         );
     }
 
+    // Connect a server over SSH (the "easy" path: the person enters IP + login and Opslin installs the agent).
+    async testSshConnection(data: SshConnectInput) {
+        return this.post<SshTestResult>("/servers/ssh/test", data);
+    }
+
+    async createSshKey() {
+        return this.post<SshGeneratedKey>("/servers/ssh/keys", {});
+    }
+
+    async startSshInstall(data: SshConnectInput & { name?: string }) {
+        return this.post<{ jobId: string }>("/servers/ssh/install", data);
+    }
+
+    async getSshInstall(jobId: string) {
+        return this.get<SshInstallStatus>(`/servers/ssh/install/${jobId}`);
+    }
+
     async getConnectCommand(serverId: string) {
         return this.get<{ command: string }>(`/servers/${serverId}/connect-command`);
     }
@@ -2135,6 +2152,43 @@ export type DeployProgressSnapshot = {
     message: string | null;
     updatedAt: string;
 };
+
+export type SshAuth =
+    | { type: "password"; password: string }
+    | { type: "key"; privateKey: string; passphrase?: string }
+    | { type: "generated"; keyId: string };
+
+export interface SshConnectInput {
+    host: string;
+    port: number;
+    username: string;
+    auth: SshAuth;
+}
+
+export interface SshTestResult {
+    ok: boolean;
+    os?: string | null;
+    arch?: string | null;
+    cpuCores?: number | null;
+    memoryMb?: number | null;
+    message?: string | null;
+}
+
+export interface SshGeneratedKey {
+    keyId: string;
+    publicKey: string;
+}
+
+export type SshInstallPhase = "login" | "check" | "docker" | "agent" | "connect";
+
+export interface SshInstallStatus {
+    status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+    phase?: SshInstallPhase | null;
+    percent?: number | null;
+    message?: string | null;
+    error?: string | null;
+    serverId?: string | null;
+}
 
 export interface ServerJobStatus {
     id: string;
