@@ -128,7 +128,7 @@ export function DetailsCard({ server, updateAvailable, onUpdate }: { server: Ser
                 <DetailRow label="Agent">
                     v{server.agentVersion || "?"}
                     {updateAvailable ? (
-                        <button type="button" onClick={onUpdate} className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/15">
+                        <button type="button" onClick={onUpdate} className="rounded-full border border-primary/30 bg-background px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/10">
                             Update available
                         </button>
                     ) : null}
