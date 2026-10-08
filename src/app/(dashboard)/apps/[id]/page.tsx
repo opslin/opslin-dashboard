@@ -1290,7 +1290,7 @@ function AppDetailPageContent() {
                 onRetryDeleteCleanup={retryDeleteCleanup}
             />
 
-            <div className="p-6">
+            <div className="px-4 pb-8 pt-5 sm:px-6 lg:px-8">
                 <AppSectionNav value={selectedSection} onValueChange={setSelectedSection}>
 
                 {preflightState && (

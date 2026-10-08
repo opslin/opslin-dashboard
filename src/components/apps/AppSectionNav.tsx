@@ -5,18 +5,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const APP_SECTIONS = [
     { id: "overview", label: "Overview" },
-    { id: "security", label: "Security" },
     { id: "deployments", label: "Deployments" },
-    { id: "domains", label: "Domains" },
     { id: "environment", label: "Environment" },
     { id: "logs", label: "Logs" },
     { id: "metrics", label: "Metrics" },
     { id: "settings", label: "Settings" },
 ] as const;
 
-export type AppSectionId = typeof APP_SECTIONS[number]["id"];
+/** Sections reached from links (Overview "Manage", the header menu) rather than a tab. */
+const LINKED_SECTIONS = ["domains", "security"] as const;
 
-const sectionIds = new Set<string>(APP_SECTIONS.map((section) => section.id));
+export type AppSectionId = typeof APP_SECTIONS[number]["id"] | typeof LINKED_SECTIONS[number];
+
+const sectionIds = new Set<string>([...APP_SECTIONS.map((section) => section.id), ...LINKED_SECTIONS]);
 
 export function isAppSectionId(value: string | null | undefined): value is AppSectionId {
     return Boolean(value && sectionIds.has(value));
@@ -33,6 +34,11 @@ type AppSectionNavProps = {
     /** Content for the selected section. Rendered inside the tab panel so the tabs have a real `tabpanel` to control. */
     children?: React.ReactNode;
 };
+
+const tabIds = new Set<string>(APP_SECTIONS.map((section) => section.id));
+function isTabSection(value: string) {
+    return tabIds.has(value);
+}
 
 export function AppSectionNav({ value, onValueChange, className, children }: AppSectionNavProps) {
     return (
@@ -51,9 +57,13 @@ export function AppSectionNav({ value, onValueChange, className, children }: App
                 </TabsList>
             </div>
             {children ? (
-                <TabsContent value={value} className="mt-6 space-y-6">
-                    {children}
-                </TabsContent>
+                isTabSection(value) ? (
+                    <TabsContent value={value} className="mt-6 space-y-6">
+                        {children}
+                    </TabsContent>
+                ) : (
+                    <div className="mt-6 space-y-6">{children}</div>
+                )
             ) : null}
         </Tabs>
     );

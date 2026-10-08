@@ -199,20 +199,18 @@ describe("AppDetailPage extraction smoke", () => {
         vi.mocked(api.getDeployGates).mockResolvedValue([]);
     });
 
-    it("renders the extracted header, primary URL card, and seven-section shell", async () => {
+    it("renders the extracted header, primary URL card, and six-tab shell", async () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        expect(
-            screen.getByText((_, element) => element?.tagName === "P" && element.textContent?.startsWith("Deployed on Production VPS") === true)
-        ).toBeVisible();
-        expect(screen.getByRole("link", { name: /Back to Apps/i })).toHaveAttribute("href", "/apps");
+        expect(screen.getAllByRole("link", { name: "Production VPS" })[0]).toBeVisible();
+        expect(screen.getByRole("link", { name: "Apps" })).toHaveAttribute("href", "/apps");
         expect((await screen.findAllByRole("link", { name: /smoke\.example\.com/ }))[0]).toBeVisible();
 
-        for (const section of ["Overview", "Deployments", "Domains", "Environment", "Logs", "Metrics", "Settings"]) {
+        for (const section of ["Overview", "Deployments", "Environment", "Logs", "Metrics", "Settings"]) {
             expect(screen.getByRole("tab", { name: section })).toBeVisible();
         }
-        expect(screen.getByText("Quick Actions")).toBeVisible();
+        expect(screen.queryByText("Quick Actions")).not.toBeInTheDocument();
         expect(screen.queryByTestId("domain-setup-card")).not.toBeInTheDocument();
         expect(screen.queryByTestId("custom-domains-table")).not.toBeInTheDocument();
         expect(screen.queryByTestId("app-live-monitor")).not.toBeInTheDocument();
@@ -223,9 +221,9 @@ describe("AppDetailPage extraction smoke", () => {
         renderPage();
 
         expect(await screen.findByRole("heading", { name: "Smoke App" })).toBeVisible();
-        fireEvent.mouseDown(screen.getByRole("tab", { name: "Domains" }), { button: 0 });
+        fireEvent.mouseDown(screen.getByRole("tab", { name: "Logs" }), { button: 0 });
 
-        expect(navigationMocks.replace).toHaveBeenCalledWith("/apps/app-1?section=domains", { scroll: false });
+        expect(navigationMocks.replace).toHaveBeenCalledWith("/apps/app-1?section=logs", { scroll: false });
     });
 
     it("preserves the selected section from the URL on refresh", async () => {

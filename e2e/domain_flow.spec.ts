@@ -121,7 +121,7 @@ test("custom domain flow supports add, check, and confirmed removal", async ({ p
   });
 
   await page.goto("/apps/mock-app-1");
-  await expect(page.getByRole("heading", { name: /observability api/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /observability api/i, level: 1 })).toBeVisible();
 
   await page.getByRole("tab", { name: /domains/i }).click();
   const domainsTab = page.getByRole("tabpanel", { name: /domains/i });

@@ -17,7 +17,7 @@ test("dashboard v2 supports keyboard-only navigation and command palette flow", 
     await page.getByRole("option", { name: /Observability API/i }).press("Enter");
     // First visit compiles /apps/[id] under `next dev`, which can exceed the default 5s.
     await expect(page).toHaveURL(/\/apps\/mock-app-1$/, { timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: /observability api/i })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: /observability api/i, level: 1 })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/abcdef1/i).first()).toBeVisible();
 
     await page.keyboard.press(`${modKey}+K`);
