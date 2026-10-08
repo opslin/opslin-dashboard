@@ -41,29 +41,34 @@ export function DeleteAppConfirmDialog({
 
     return (
         <AlertDialog open={open} onOpenChange={onOpenChange}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>Delete app?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        This will stop the app, remove its container/runtime files, remove Opslin-managed domains/routes, and delete the app record after cleanup succeeds.
-                    </AlertDialogDescription>
+            <AlertDialogContent className="max-w-md gap-5 rounded-2xl p-6">
+                <AlertDialogHeader className="items-start gap-4 text-left">
+                    <span className="flex size-12 items-center justify-center rounded-full bg-danger-muted text-danger-text">
+                        <Trash2 className="size-6" aria-hidden="true" />
+                    </span>
+                    <div className="space-y-1.5">
+                        <AlertDialogTitle className="text-xl font-bold">Delete app?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This stops <span className="font-semibold text-foreground">{appName}</span>{" "}and removes its containers, files and domains. This can&apos;t be undone.
+                        </AlertDialogDescription>
+                    </div>
                 </AlertDialogHeader>
 
                 <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                        App name: <span className="font-medium text-foreground">{appName}</span>
-                    </p>
-                    <Label htmlFor="delete-app-confirm-name">Type the app name to confirm.</Label>
+                    <Label htmlFor="delete-app-confirm-name">Type the app name to confirm</Label>
                     <Input
                         id="delete-app-confirm-name"
                         value={typedName}
                         onChange={(event) => setTypedName(event.target.value)}
                         autoComplete="off"
+                        placeholder={appName}
                         disabled={pending}
+                        className="h-10"
                     />
+                    <p className="text-xs text-muted-foreground">Type <span className="font-medium text-foreground">{appName}</span> to enable the delete button.</p>
                 </div>
 
-                <AlertDialogFooter>
+                <AlertDialogFooter className="gap-2 sm:justify-end">
                     <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
                     <Button
                         type="button"

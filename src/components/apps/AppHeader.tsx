@@ -2,16 +2,18 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, ExternalLink, Loader2, Rocket, RotateCcw, StopCircle, Package, Server as ServerIcon } from "lucide-react";
+import { AlertTriangle, Eye, ExternalLink, GitBranch, Globe, Loader2, MoreHorizontal, Rocket, RotateCcw, ShieldCheck, StopCircle, Trash2, Server as ServerIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { LivePulse } from "@/components/patterns/live-pulse";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { App, Server } from "@/lib/api";
-import { DeleteAppAction } from "./DeleteAppAction";
+import { DeleteAppConfirmDialog } from "./DeleteAppConfirmDialog";
 import { DeleteLifecycleNotice } from "./DeleteLifecycleNotice";
 import { PendingConfigDialog } from "./PendingConfigDialog";
 import { DeployProgressDialog } from "./DeployProgressDialog";
 import { formatRelativeTime } from "@/lib/utils";
+
+const MENU_ITEM = "gap-3.5 rounded-lg px-3 py-2.5 text-[15px] font-semibold text-foreground focus:bg-muted [&_svg]:size-[18px] [&_svg]:text-muted-foreground";
 
 type AppHeaderProps = {
     app: App;
@@ -74,171 +76,138 @@ export function AppHeader({
     const isBackgroundWorker = app.role === "worker";
     const pendingConfigKeyCount = app.pendingConfig?.keys?.length ?? 0;
     const [configOpen, setConfigOpen] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [deleteOpen, setDeleteOpen] = useState(false);
     // DIL Phase 25 — set only for an app created by an AI-assisted
     // auto-deploy; a normal wizard/CLI-created app has nothing to show here.
     const [progressOpen, setProgressOpen] = useState(false);
 
-    return (
-        <div className="border-b border-border bg-card">
-            {/* Back link */}
-            <div className="px-4 sm:px-6 lg:px-8 pt-4">
-                <Link
-                    href="/apps"
-                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                    Back to Apps
-                </Link>
-            </div>
 
-            {/* Main header row */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 px-4 sm:px-6 lg:px-8 py-5">
-                {/* Left: App icon + name + status + domain + server */}
-                <div className="flex items-center gap-4 min-w-0">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-brand-muted border border-border flex-shrink-0">
-                        <Package size={36} />
-                    </div>
+    return (
+        <div className="px-4 pt-5 sm:px-6 lg:px-8">
+            {menuOpen ? <div className="pointer-events-none fixed inset-0 z-40 bg-slate-900/20" aria-hidden="true" /> : null}
+            <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Link href="/apps" className="hover:text-foreground">Apps</Link>
+                <span aria-hidden="true">/</span>
+                <span className="text-foreground">{app.name}</span>
+            </nav>
+
+            <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-4">
+                    <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Globe className="size-7" aria-hidden="true" />
+                    </span>
                     <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <h1 className="text-xl font-bold text-foreground truncate">{app.name}</h1>
-                            {isDisplayRunning && (
-                                <CheckCircle2 className="h-5 w-5 text-success-text flex-shrink-0" />
-                            )}
-                            <StatusBadge status={displayStatus} />
+                        <div className="flex flex-wrap items-center gap-3">
+                            <h1 className="truncate text-3xl font-bold tracking-tight text-foreground">{app.name}</h1>
+                            <StatusBadge status={displayStatus} label={displayStatus === "running" ? "Live" : displayStatus === "deploying" ? "Building" : undefined} />
                         </div>
-                        {isBackgroundWorker ? (
-                            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5 min-w-0">
-                                {isDisplayRunning && <LivePulse />}
-                                <span>Background worker — no public URL</span>
-                            </p>
-                        ) : headerDomain && (
-                            <p className="text-sm text-foreground mt-1 flex items-center gap-1.5 min-w-0">
-                                {isDisplayRunning && <LivePulse />}
-                                <a
-                                    href={previewUrl || `http://${headerDomain}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="font-medium truncate hover:text-brand transition-colors"
-                                >
+                        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[15px] text-muted-foreground">
+                            {isBackgroundWorker ? (
+                                <span>Background worker, no public URL</span>
+                            ) : headerDomain ? (
+                                <a href={previewUrl || `http://${headerDomain}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 font-medium text-primary hover:underline">
                                     {headerDomain}
+                                    <ExternalLink className="size-3.5" aria-hidden="true" />
                                 </a>
-                            </p>
-                        )}
-                        <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
-                            {"Deployed on "}
-                            <ServerIcon size={16} className="inline-block" />
-                            <span className="font-medium text-foreground">{server.name}</span>
-                            {deployedAgo ? <span>· {deployedAgo}</span> : null}
+                            ) : (
+                                <span>No link yet</span>
+                            )}
+                            <Link href={`/servers/${server.id}`} className="flex items-center gap-1.5 hover:text-foreground">
+                                <ServerIcon className="size-4" aria-hidden="true" />
+                                {server.name}
+                            </Link>
+                            {app.branch ? <span className="flex items-center gap-1.5"><GitBranch className="size-4" aria-hidden="true" />{app.branch}</span> : null}
+                            {deployedAgo ? <span className="sr-only">Deployed {deployedAgo}</span> : null}
                         </p>
                     </div>
                 </div>
 
-                {/* Right: Action buttons */}
                 <div className="flex flex-wrap items-center gap-2.5">
-                    {/* DIL Phase 23 — this app deployed but is blocked on config
-                        Opslin refused to guess. Deliberately first in the row and
-                        in destructive styling: it's the only action that will
-                        actually get the app running, so it must outrank Deploy. */}
+                    {/* DIL Phase 23: blocked on config Opslin refused to guess. First in the row so it outranks Deploy. */}
                     {pendingConfigKeyCount > 0 && (
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => setConfigOpen(true)}
-                            className="h-9 px-4 text-sm"
-                        >
-                            <AlertTriangle className="h-4 w-4 mr-1.5" />
+                        <Button variant="destructive" size="lg" onClick={() => setConfigOpen(true)}>
+                            <AlertTriangle aria-hidden="true" />
                             {pendingConfigKeyCount} value{pendingConfigKeyCount === 1 ? "" : "s"} needed
                         </Button>
                     )}
 
-                    {/* DIL Phase 25 — reachable any time after an AI-assisted
-                        deploy, not just while the wizard tab that started it
-                        is still open. */}
+                    {/* DIL Phase 25: reachable any time after an AI-assisted deploy. */}
                     {app.lastAutoDeployJobId && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setProgressOpen(true)}
-                            className="h-9 px-4 text-sm"
-                        >
-                            <Eye className="h-4 w-4 mr-1.5" />
+                        <Button variant="outline" size="lg" onClick={() => setProgressOpen(true)}>
+                            <Eye aria-hidden="true" />
                             AI deploy progress
                         </Button>
                     )}
 
-                    {/* Live Preview button */}
                     {previewUrl && isDisplayRunning && !isBackgroundWorker && (
-                        <Button asChild variant="outline" size="sm" className="h-9 px-4 text-sm">
+                        <Button asChild variant="outline" size="lg">
                             <a href={previewUrl} target="_blank" rel="noopener noreferrer">
-                                <ExternalLink className="h-4 w-4 mr-1.5" />
-                                Live Preview
+                                <ExternalLink aria-hidden="true" />
+                                Visit
                             </a>
                         </Button>
                     )}
 
-                    {/* Deploy button */}
                     {!deleteLocked && (
-                        <Button
-                            size="sm"
-                            onClick={onDeploy}
-                            disabled={deployPending}
-                            className="h-9 px-4 text-sm"
-                        >
-                            {deployPending ? (
-                                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                            ) : (
-                                <Rocket className="h-4 w-4 mr-1.5" />
-                            )}
+                        <Button size="lg" onClick={onDeploy} disabled={deployPending}>
+                            {deployPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Rocket aria-hidden="true" />}
                             {deployPending ? "Deploying..." : "Deploy"}
                         </Button>
                     )}
 
-                    {/* Stop button */}
                     {isDeleting ? (
-                        <Button variant="outline" size="sm" disabled className="h-9 px-4 text-sm">
-                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        <Button variant="outline" size="lg" disabled>
+                            <Loader2 className="animate-spin" aria-hidden="true" />
                             Deleting...
                         </Button>
                     ) : isDeleteFailed ? (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={onRetryDeleteCleanup}
-                            disabled={deletePending}
-                            className="h-9 px-4 text-sm"
-                        >
-                            {deletePending ? (
-                                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                            ) : (
-                                <RotateCcw className="h-4 w-4 mr-1.5" />
-                            )}
+                        <Button variant="outline" size="lg" onClick={onRetryDeleteCleanup} disabled={deletePending}>
+                            {deletePending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <RotateCcw aria-hidden="true" />}
                             Retry Cleanup
                         </Button>
-                    ) : app.status === "running" ? (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={onStop}
-                            disabled={stopPending || deleteLocked}
-                            className="h-9 px-4 text-sm"
-                        >
-                            <StopCircle className="h-4 w-4 mr-1.5" />
-                            {stopPending ? "Stopping..." : "Stop"}
-                        </Button>
                     ) : isStopping ? (
-                        <Button variant="outline" size="sm" disabled className="h-9 px-4 text-sm">
-                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        <Button variant="outline" size="lg" disabled>
+                            <Loader2 className="animate-spin" aria-hidden="true" />
                             Stopping...
                         </Button>
                     ) : null}
 
-                    {/* Delete App button */}
-                    <DeleteAppAction
+                    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="icon-lg" aria-label="More app actions" className="relative z-50">
+                                <MoreHorizontal aria-hidden="true" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" sideOffset={12} className="w-60 rounded-2xl border-border/70 bg-card p-2 shadow-xl outline-none focus-visible:ring-0">
+                            <DropdownMenuLabel className="px-3 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">App actions</DropdownMenuLabel>
+                            <DropdownMenuItem asChild className={MENU_ITEM}>
+                                <Link href={`/apps/${app.id}?section=security`}><ShieldCheck aria-hidden="true" /> Security</Link>
+                            </DropdownMenuItem>
+                            {app.status === "running" && !deleteLocked ? (
+                                <DropdownMenuItem className={MENU_ITEM} disabled={stopPending} onSelect={onStop}>
+                                    <StopCircle aria-hidden="true" /> {stopPending ? "Stopping..." : "Stop app"}
+                                </DropdownMenuItem>
+                            ) : null}
+                            <DropdownMenuSeparator className="mx-1 my-2" />
+                            <DropdownMenuItem
+                                className={`${MENU_ITEM} text-danger-text focus:bg-danger-muted focus:text-danger-text [&_svg]:!text-danger-text`}
+                                disabled={deleteLocked || deletePending}
+                                onSelect={() => setDeleteOpen(true)}
+                            >
+                                <Trash2 aria-hidden="true" /> Delete app
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    <DeleteAppConfirmDialog
                         appName={app.name}
-                        onConfirm={onDelete}
+                        open={deleteOpen}
                         pending={deletePending}
-                        disabled={deleteLocked}
-                        size="sm"
+                        onOpenChange={setDeleteOpen}
+                        onConfirm={() => {
+                            onDelete();
+                            setDeleteOpen(false);
+                        }}
                     />
                 </div>
             </div>

@@ -20,6 +20,7 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
+import { AgentUpdateModal } from "@/components/servers/agent-update-modal";
 import { api, type Server as ServerType } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -69,8 +70,10 @@ function ServerCard({
   server,
   metrics,
   uptimeSec,
+  onUpdateAgent,
 }: {
   server: ServerType;
+  onUpdateAgent?: (serverId: string) => void;
   metrics?: {
     cpuPercent: number;
     memUsed: number;
@@ -139,6 +142,11 @@ function ServerCard({
               Docker Ready
             </span>
           )}
+          {server.agentVersionWarning && onUpdateAgent ? (
+            <Button type="button" size="sm" variant="outline" onClick={() => onUpdateAgent(server.id)}>
+              Update agent
+            </Button>
+          ) : null}
           {/* Three-dot menu */}
           <button className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-muted-foreground hover:bg-muted transition-colors">
             <MoreVertical className="h-4 w-4" />
@@ -267,6 +275,7 @@ export default function ServersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("recent");
+  const [updateServerId, setUpdateServerId] = useState<string | null>(null);
 
   const { data: servers = [], isLoading: serversLoading } = useQuery({
     queryKey: ["servers"],
@@ -407,6 +416,7 @@ export default function ServersPage() {
               <ServerCard
                 key={server.id}
                 server={server}
+                onUpdateAgent={setUpdateServerId}
                 metrics={
                   server.id === primaryServer?.id && primaryMetrics
                     ? {
@@ -426,6 +436,15 @@ export default function ServersPage() {
       </div>
       </StaggerItem>
       </StaggerGroup>
+      {updateServerId ? (
+        <AgentUpdateModal
+          serverId={updateServerId}
+          open
+          onOpenChange={(open) => {
+            if (!open) setUpdateServerId(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

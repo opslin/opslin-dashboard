@@ -2,7 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Box, StopCircle, RotateCcw, Trash2 } from "lucide-react";
+import { Box, StopCircle, Trash2 } from "lucide-react";
 import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -13,8 +13,6 @@ import { ProgressModal, parseError } from "@/components/ui/progress-modal";
 import type { EnvVar } from "@/components/ui/env-vars-editor";
 import { DeployLiveView } from "@/components/deploy/live/deploy-live-view";
 import {
-    DeployProgressIndicator,
-    PreviousVersionRunningNotice,
     type DeployProgressProps,
 } from "@/components/deployment/deploy-progress-indicator";
 import { RollbackConfirmDialog } from "@/components/apps/RollbackConfirmDialog";
@@ -634,6 +632,24 @@ function AppDetailPageContent() {
         },
     });
 
+    const savedEnvList = useMemo(
+        () => envRecordToMaskedList((appData?.app?.envVars as Record<string, string> | null | undefined) || {}),
+        [appData?.app?.envVars]
+    );
+    const envChangeCount = useMemo(() => {
+        if (!envVarsChanged) return 0;
+        const saved = new Map(savedEnvList.map((v) => [v.key, v.value]));
+        const current = new Map(envVars.map((v) => [v.key, v.value]));
+        let n = 0;
+        for (const [k, v] of current) if (!saved.has(k) || saved.get(k) !== v) n++;
+        for (const k of saved.keys()) if (!current.has(k)) n++;
+        return n;
+    }, [envVars, envVarsChanged, savedEnvList]);
+    const discardEnvChanges = () => {
+        setEnvVars(savedEnvList);
+        setEnvVarsChanged(false);
+    };
+
     const handleEnvVarsChange = (newVars: EnvVar[]) => {
         setEnvVars(newVars);
         setEnvVarsChanged(true);
@@ -713,7 +729,7 @@ function AppDetailPageContent() {
         logs: "",
         error: "",
     });
-    const [deploymentWarnings, setDeploymentWarnings] = useState<string[]>([]);
+    const [, setDeploymentWarnings] = useState<string[]>([]);
 
     // Poll for status updates during operations
     const pollForUpdates = useCallback(async (
@@ -1191,12 +1207,6 @@ function AppDetailPageContent() {
         () => normalizeDashboardProgress(latestDeployment?.queue?.progress, latestDeployment?.status),
         [latestDeployment]
     );
-    const liveDeployProgress = progressModal.isOpen &&
-        (progressModal.type === "deploy" || progressModal.type === "rollback") &&
-        progressModal.latestProgress
-        ? progressModal.latestProgress
-        : cachedDeployProgress;
-
     useEffect(() => {
         if (cachedDeployProgress?.phase.toLowerCase() === "warning") {
             setDeploymentWarnings((current) => appendUniqueWarning(current, cachedDeployProgress.line));
@@ -1267,13 +1277,6 @@ function AppDetailPageContent() {
         ? app.deployLogs || null
         : null;
     const retryDeleteCleanup = () => deleteMutation.mutate();
-    const previousVersionStillRunning = latestDeploymentFailed && app.status === "running";
-    const warningLinesToRender = deploymentWarnings.filter((warning) =>
-        !(liveDeployProgress?.phase.toLowerCase() === "warning" && liveDeployProgress.line === warning)
-    );
-    const showDeployProgressPanel = Boolean(liveDeployProgress) ||
-        deploymentWarnings.length > 0 ||
-        latestDeploymentFailed;
 
     return (
         <>
@@ -1290,7 +1293,7 @@ function AppDetailPageContent() {
                 onRetryDeleteCleanup={retryDeleteCleanup}
             />
 
-            <div className="p-6">
+            <div className="px-4 pb-8 pt-5 sm:px-6 lg:px-8">
                 <AppSectionNav value={selectedSection} onValueChange={setSelectedSection}>
 
                 {preflightState && (
@@ -1302,78 +1305,6 @@ function AppDetailPageContent() {
                         pending={deployMutation.isPending}
                         onOverrideAndDeploy={(checkIds) => deployMutation.mutate(checkIds)}
                     />
-                )}
-
-                {showDeployProgressPanel && (
-                    <Card className="border-border shadow-sm">
-                        <CardContent className="space-y-4 p-4">
-                            {liveDeployProgress ? (
-                                <DeployProgressIndicator
-                                    phase={liveDeployProgress.phase}
-                                    line={liveDeployProgress.line}
-                                    percent={liveDeployProgress.percent}
-                                    status={liveDeployProgress.status}
-                                />
-                            ) : latestDeploymentFailed ? (
-                                <DeployProgressIndicator
-                                    phase="failed"
-                                    line={parseError(deployErrorRaw || "Deployment failed")}
-                                    percent={100}
-                                    status="failed"
-                                />
-                            ) : null}
-
-                            {warningLinesToRender.length > 0 && (
-                                <div className="space-y-2">
-                                    {warningLinesToRender.map((warning) => (
-                                        <DeployProgressIndicator
-                                            key={warning}
-                                            phase="warning"
-                                            line={warning}
-                                            percent={liveDeployProgress?.percent ?? 0}
-                                            status="running"
-                                        />
-                                    ))}
-                                </div>
-                            )}
-
-                            {previousVersionStillRunning ? (
-                                <PreviousVersionRunningNotice
-                                    details={deployErrorRaw}
-                                    onRetry={() => deployMutation.mutate(undefined)}
-                                    retryPending={deployMutation.isPending}
-                                />
-                            ) : latestDeploymentFailed ? (
-                                <div className="rounded-lg border border-danger/20 bg-danger-muted px-4 py-3">
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                        <p className="text-sm font-medium text-danger-text">Deployment is in a failed state.</p>
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => deployMutation.mutate(undefined)}
-                                            disabled={deployMutation.isPending}
-                                        >
-                                            <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                                            {deployMutation.isPending ? "Retrying..." : "Retry Deploy"}
-                                        </Button>
-                                    </div>
-                                    {deployErrorRaw && (
-                                        <details className="group mt-3 rounded-md border border-danger/15 bg-card/70 px-3 py-2">
-                                            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-danger-text">
-                                                Failure details
-                                                <span className="text-xs text-danger-text/80 group-open:hidden">Show</span>
-                                                <span className="hidden text-xs text-danger-text/80 group-open:inline">Hide</span>
-                                            </summary>
-                                            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-foreground/80">
-                                                {deployErrorRaw}
-                                            </pre>
-                                        </details>
-                                    )}
-                                </div>
-                            ) : null}
-                        </CardContent>
-                    </Card>
                 )}
 
                 <div className="space-y-6">
@@ -1474,6 +1405,8 @@ function AppDetailPageContent() {
                             onChange={handleEnvVarsChange}
                             onSave={() => updateEnvVarsMutation.mutate()}
                             onSaveAndRedeploy={saveAndRedeploy}
+                            changeCount={envChangeCount}
+                            onDiscard={discardEnvChanges}
                         />
                     )}
 
@@ -1481,6 +1414,7 @@ function AppDetailPageContent() {
                         <LogsSection
                             appId={appId}
                             appName={app.name}
+                            buildLogs={app.deployLogs}
                             server={server}
                             active={selectedSection === "logs"}
                         />
@@ -1497,6 +1431,13 @@ function AppDetailPageContent() {
 
                     {selectedSection === "settings" && (
                         <SettingsSection
+                            currentDeployMode={currentDeployMode}
+                            deployGateId={activeDeployGate?.id}
+                            repoFullName={repoFullName}
+                            onDeployModeChanged={() => {
+                                void refetchDeployGates();
+                                queryClient.invalidateQueries({ queryKey: ["deployGates", appId] });
+                            }}
                             app={app}
                             server={server}
                             buildpackOverride={buildpackOverride}

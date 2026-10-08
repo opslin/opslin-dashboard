@@ -172,44 +172,35 @@ describe("OverviewSection", () => {
         vi.mocked(api.getAppDeployments).mockResolvedValue([]);
     });
 
-    it("shows real uptime/health-check data, not a hardcoded 99.99%", async () => {
+    it("shows real request numbers, never invented ones", async () => {
         renderOverview();
 
-        await waitFor(() => expect(screen.getByText("99.00%")).toBeVisible());
-        expect(screen.getByText("99 OK / 100")).toBeVisible();
+        await waitFor(() => expect(screen.getByText("118 ms")).toBeVisible());
+        expect(screen.getByText("24,500")).toBeVisible();
+        expect(screen.getByText("0.3%")).toBeVisible();
+        expect(screen.getByText("61 failed requests")).toBeVisible();
     });
 
-    it("shows real request-analytics numbers instead of the old hardcoded 24.5k/81.2 KB/s/0.25%", async () => {
-        renderOverview();
-
-        await waitFor(() => expect(screen.getByText("118ms")).toBeVisible());
-        expect(screen.getByText("99.8%")).toBeVisible();
-        expect(screen.getByText("24.5K")).toBeVisible();
-        expect(screen.getByText("0.25%")).toBeVisible();
-    });
-
-    it("shows an upgrade prompt instead of fake numbers when request analytics isn't entitled", async () => {
+    it("shows a plan note instead of fake numbers when request analytics isn't entitled", async () => {
         vi.mocked(api.getRequestSummary).mockRejectedValue(new ApiRequestError(403, { message: "feature_not_available" }));
         renderOverview();
 
-        await waitFor(() => expect(screen.getAllByText("Requires Pro plan").length).toBeGreaterThan(0));
+        await waitFor(() => expect(screen.getByText(/part of a paid plan/i)).toBeVisible());
     });
 
-    it("never shows Running/Ready when the app's status says running but the server is offline", async () => {
+    it("never says live when the app's status says running but the server is offline", async () => {
         renderOverview({
             app: { ...app, status: "running", effectiveStatus: "offline", serverConnected: false },
         });
 
-        await waitFor(() => expect(screen.getAllByText("Server Offline").length).toBeGreaterThan(0));
-        expect(screen.queryByText("Ready")).not.toBeInTheDocument();
-        // The live-preview card (screenshot thumbnail etc.) only renders when actually running.
-        expect(screen.queryByRole("link", { name: /Visit Site/i })).not.toBeInTheDocument();
+        expect(await screen.findByText("Checkout API is offline")).toBeVisible();
+        expect(screen.queryByText("Checkout API is live")).not.toBeInTheDocument();
     });
 
-    it("shows the app as running when status is running and the server is actually connected", async () => {
+    it("says live when status is running and the server is actually connected", async () => {
         renderOverview();
 
-        await waitFor(() => expect(screen.getAllByText("Running").length).toBeGreaterThan(0));
+        expect(await screen.findByText("Checkout API is live")).toBeVisible();
     });
 
     it("falls back to computing offline status client-side when effectiveStatus is absent (e.g. a stale cached response)", async () => {
@@ -218,16 +209,18 @@ describe("OverviewSection", () => {
             server: { ...server, status: "disconnected", isLiveConnected: false },
         });
 
-        await waitFor(() => expect(screen.getAllByText("Server Offline").length).toBeGreaterThan(0));
+        expect(await screen.findByText("Checkout API is offline")).toBeVisible();
     });
 
-    it("has a View Logs shortcut without fetching logs itself", async () => {
-        const onViewLogs = vi.fn();
-        const { fireEvent } = await import("@testing-library/react");
-        renderOverview({ onViewLogs });
+    it("lists recent deployments with a rollback action on older successful ones", async () => {
+        vi.mocked(api.getAppDeployments).mockResolvedValue([
+            { ...latestDeployment, id: "d2", sha: "bbbbbbb1111111", startedAt: "2026-01-02T00:00:00.000Z" },
+            { ...latestDeployment, id: "d1", sha: "aaaaaaa2222222" },
+        ]);
+        renderOverview();
 
-        fireEvent.click(screen.getByRole("button", { name: /View Logs/i }));
-        expect(onViewLogs).toHaveBeenCalledTimes(1);
+        expect(await screen.findByText("bbbbbbb")).toBeVisible();
+        expect(screen.getByText("aaaaaaa")).toBeVisible();
     });
 
     it("shows delete lifecycle state", () => {

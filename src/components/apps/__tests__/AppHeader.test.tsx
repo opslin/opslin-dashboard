@@ -39,13 +39,19 @@ function renderHeader(overrides: Partial<React.ComponentProps<typeof AppHeader>>
     };
 }
 
+async function openMenu() {
+    const trigger = screen.getByRole("button", { name: "More app actions" });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: "mouse" });
+    await screen.findByRole("menu");
+}
+
 describe("AppHeader", () => {
     it("renders app name, server, status, and a deploy action when allowed", () => {
         const onDeploy = vi.fn();
         renderHeader({ onDeploy });
 
         expect(screen.getByRole("heading", { name: "Checkout API" })).toBeVisible();
-        expect(screen.getByText((_, el) => el?.textContent === "Deployed on Production VPS")).toBeVisible();
+        expect(screen.getByRole("link", { name: "Production VPS" })).toBeVisible();
         expect(screen.getByText("Stopped")).toBeVisible();
 
         const deployButton = screen.getByRole("button", { name: /Deploy/i });
@@ -54,15 +60,16 @@ describe("AppHeader", () => {
         expect(onDeploy).toHaveBeenCalledTimes(1);
     });
 
-    it("disables dangerous actions while deleting", () => {
+    it("disables dangerous actions while deleting", async () => {
         renderHeader({ app: app({ status: "deleting" }) });
 
         expect(screen.getByRole("button", { name: /Deleting/i })).toBeDisabled();
-        expect(screen.getByRole("button", { name: /Delete App/i })).toBeDisabled();
+        await openMenu();
+        expect(screen.getByRole("menuitem", { name: /Delete app/i })).toHaveAttribute("aria-disabled", "true");
         expect(screen.getByText("Deleting app")).toBeVisible();
     });
 
-    it("keeps the delete_failed retry surface available", () => {
+    it("keeps the delete_failed retry surface available", async () => {
         const onRetryDeleteCleanup = vi.fn();
         renderHeader({
             app: app({ status: "delete_failed", deployLogs: "cleanup failed" }),
@@ -75,6 +82,7 @@ describe("AppHeader", () => {
         expect(retryButton).toBeEnabled();
         fireEvent.click(retryButton);
         expect(onRetryDeleteCleanup).toHaveBeenCalledTimes(1);
-        expect(screen.getByRole("button", { name: /Delete App/i })).toBeDisabled();
+        await openMenu();
+        expect(screen.getByRole("menuitem", { name: /Delete app/i })).toHaveAttribute("aria-disabled", "true");
     });
 });

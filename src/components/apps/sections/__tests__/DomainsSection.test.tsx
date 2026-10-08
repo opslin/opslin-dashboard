@@ -1,9 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DomainsSection } from "../DomainsSection";
 import type { ComponentProps, ReactNode } from "react";
-import type { App, AppDomainRecord, AppDomainsResponse, Server } from "@/lib/api";
+import { api, type App, type AppDomainRecord, type AppDomainsResponse, type Server } from "@/lib/api";
+
+vi.mock("@/lib/api", async () => {
+    const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+    return { ...actual, api: { ...actual.api, addCustomDomain: vi.fn(), checkAppDomain: vi.fn(), createPreviewDomain: vi.fn() } };
+});
 
 vi.mock("next/link", () => ({
     default: ({ href, children, ...props }: { href: string; children: ReactNode }) => (
@@ -138,72 +143,74 @@ describe("DomainsSection", () => {
         });
     });
 
-    it("renders preview fallback and custom domains table", () => {
+    it("lists the Opslin address and custom domains with plain status pills", () => {
         renderDomains();
 
-        expect(screen.getByText("Temporary URL fallback")).toBeVisible();
-        expect(screen.getByText("Custom Domains")).toBeVisible();
-        expect(screen.getAllByText("checkout.example.com").length).toBeGreaterThan(0);
-        expect(screen.getByLabelText("Open checkout.example.com")).toHaveAttribute("href", "https://checkout.example.com");
+        expect(screen.getByRole("heading", { name: "Domains" })).toBeVisible();
+        expect(screen.getByText("checkout-preview.opslin.app")).toBeVisible();
+        expect(screen.getByText("Default")).toBeVisible();
+        expect(screen.getByText("checkout.example.com")).toBeVisible();
+        expect(screen.getByText("Active · HTTPS")).toBeVisible();
+        expect(screen.getByText("2 domains")).toBeVisible();
     });
 
     it("does not pretend SSL pending domains are HTTPS-ready", () => {
         renderDomains({
             domainData: {
-                domains: [
-                    domain({
-                        id: "preview-pending",
-                        domain: "checkout-preview.opslin.app",
-                        type: "preview",
-                        status: "connected",
-                        sslStatus: "pending",
-                        primary: true,
-                        preferredUrl: "http://checkout-preview.opslin.app",
-                    }),
-                ],
+                domains: [domain({ id: "pending", status: "connected", sslStatus: "pending", primary: true })],
                 primaryDomain: null,
-                previewDomain: "checkout-preview.opslin.app",
+                previewDomain: null,
             },
         });
 
-        expect(screen.getByRole("link", { name: "http://checkout-preview.opslin.app" })).toBeVisible();
-        expect(screen.getAllByText("Open HTTP").length).toBeGreaterThan(0);
-        expect(screen.queryByText("Open HTTPS")).not.toBeInTheDocument();
-        expect(screen.getByText("HTTP is available now. HTTPS will be used after SSL is active.")).toBeVisible();
+        expect(screen.getByText("Verifying…")).toBeVisible();
+        expect(screen.queryByText("Active · HTTPS")).not.toBeInTheDocument();
     });
 
-    it("shows HTTPS actions only for SSL-active domains", () => {
+    it("shows the DNS record from 'How to finish' for a domain still waiting on DNS", () => {
         renderDomains({
             domainData: {
-                domains: [
-                    domain({
-                        id: "preview-active",
-                        domain: "checkout-preview.opslin.app",
-                        type: "preview",
-                        status: "active",
-                        sslStatus: "active",
-                        primary: true,
-                        preferredUrl: "https://checkout-preview.opslin.app",
-                    }),
-                ],
+                domains: [domain({ id: "waiting", domain: "shop.example.com", status: "pending_dns", sslStatus: "not_started", primary: false })],
                 primaryDomain: null,
-                previewDomain: "checkout-preview.opslin.app",
+                previewDomain: null,
             },
         });
 
-        expect(screen.getByRole("link", { name: "https://checkout-preview.opslin.app" })).toBeVisible();
-        expect(screen.getAllByText("Open HTTPS").length).toBeGreaterThan(0);
+        fireEvent.click(screen.getByRole("button", { name: /How to finish/i }));
+        expect(screen.getByText("Finish shop.example.com")).toBeVisible();
+        expect(screen.getByText("shop")).toBeVisible();
+        expect(screen.getByText("13.201.44.55")).toBeVisible();
+        expect(screen.getByRole("button", { name: /Verify domain/i })).toBeVisible();
+    });
+
+    it("validates and adds a custom domain, then shows the record to create", async () => {
+        vi.mocked(api.addCustomDomain).mockResolvedValue({
+            domain: domain({ id: "new", domain: "shop.example.com", status: "pending_dns", sslStatus: "not_started", primary: false }),
+            dnsInstructions: { type: "A", name: "shop", value: "13.201.44.55", ttl: "Auto" },
+        });
+        renderDomains();
+
+        fireEvent.click(screen.getByRole("button", { name: /Add domain/i }));
+        const input = screen.getByLabelText("Your domain");
+        fireEvent.change(input, { target: { value: "nodots" } });
+        fireEvent.submit(input.closest("form")!);
+        expect(await screen.findByText(/doesn't look like a domain/i)).toBeVisible();
+        expect(api.addCustomDomain).not.toHaveBeenCalled();
+
+        fireEvent.change(input, { target: { value: "https://Shop.Example.com" } });
+        fireEvent.submit(input.closest("form")!);
+        await waitFor(() => expect(api.addCustomDomain).toHaveBeenCalledWith("app-1", "shop.example.com"));
+        expect(await screen.findByText("Finish shop.example.com")).toBeVisible();
     });
 
     it("disables domain mutation surfaces while deleting", () => {
         renderDomains({ deleteLocked: true });
 
         expect(screen.getByText("Domain changes paused")).toBeVisible();
-        expect(screen.queryByText("Add Custom Domain")).not.toBeInTheDocument();
-        expect(screen.queryByText("Check Connection")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /Add domain/i })).not.toBeInTheDocument();
     });
 
-    it("filters raw IP domain records from URL surfaces", () => {
+    it("filters raw IP domain records and offers to create the free address", () => {
         renderDomains({
             app: { ...app, domain: undefined },
             server: { ...server, publicIp: null },
@@ -227,6 +234,7 @@ describe("DomainsSection", () => {
         });
 
         expect(screen.queryByText(/13\.201\.44\.55/)).not.toBeInTheDocument();
-        expect(screen.getByText("Temporary URL not created yet.")).toBeVisible();
+        expect(screen.getByText("Free Opslin address")).toBeVisible();
+        expect(screen.getByRole("button", { name: /Create address/i })).toBeEnabled();
     });
 });

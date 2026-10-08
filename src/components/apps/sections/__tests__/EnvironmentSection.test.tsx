@@ -56,29 +56,47 @@ describe("EnvironmentSection", () => {
         stubApiForDialog();
     });
 
-    it("renders the env editor and masks secret-like keys", () => {
+    it("renders the variables table and masks secret-like values", () => {
         renderEnvironment();
 
-        expect(screen.getAllByText("Environment Variables").length).toBeGreaterThan(0);
-        expect(screen.getByText(/Frontend frameworks expose only public prefixes/i)).toBeVisible();
-        expect(screen.getByDisplayValue("API_TOKEN")).toBeVisible();
-        // Secret-like values render as a masked bullet span with a reveal toggle, not as a
-        // plain input carrying a literal masked placeholder — the real value never touches the
-        // DOM at all unless explicitly revealed.
-        expect(screen.getAllByTitle("Show value").length).toBeGreaterThan(0);
-        expect(screen.queryByDisplayValue("super-secret-token")).not.toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "Environment variables" })).toBeVisible();
+        expect(screen.getByText("API_TOKEN")).toBeVisible();
+        expect(screen.getByText("PUBLIC_URL")).toBeVisible();
+        // Secret-like values never reach the DOM until revealed.
         expect(screen.queryByText("super-secret-token")).not.toBeInTheDocument();
-        expect(screen.getByDisplayValue("PUBLIC_URL")).toBeVisible();
-        expect(screen.getByDisplayValue("https://example.com")).toBeVisible();
+        expect(screen.getByText("https://example.com")).toBeVisible();
+        fireEvent.click(screen.getByRole("button", { name: "Show API_TOKEN" }));
+        expect(screen.getByRole("button", { name: "Hide API_TOKEN" })).toBeVisible();
     });
 
-    it("calls the save mutation from the page boundary", () => {
+    it("adds a variable from the inline form", () => {
+        const onChange = vi.fn();
+        renderEnvironment({ onChange });
+
+        fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+        fireEvent.change(screen.getByLabelText("New variable name"), { target: { value: "stripe key" } });
+        fireEvent.change(screen.getByLabelText("New variable value"), { target: { value: "sk_live_1" } });
+        fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
+
+        expect(onChange).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ key: "STRIPE_KEY", value: "sk_live_1" })]));
+    });
+
+    it("shows the unapplied-changes bar and calls save from the page boundary", () => {
         const onSave = vi.fn();
-        renderEnvironment({ envVarsChanged: true, onSave });
+        const onDiscard = vi.fn();
+        renderEnvironment({ envVarsChanged: true, changeCount: 2, onSave, onDiscard });
 
-        fireEvent.click(screen.getByRole("button", { name: /Save Only/i }));
-
+        expect(screen.getByText("2 changes not applied yet")).toBeVisible();
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
         expect(onSave).toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+        expect(onDiscard).toHaveBeenCalledTimes(1);
+    });
+
+    it("hides the changes bar until something changed", () => {
+        renderEnvironment({ envVarsChanged: false });
+
+        expect(screen.queryByText(/not applied yet/i)).not.toBeInTheDocument();
     });
 
     it("calls save and redeploy after confirmation when running", () => {
@@ -86,7 +104,7 @@ describe("EnvironmentSection", () => {
         const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
         renderEnvironment({ envVarsChanged: true, onSaveAndRedeploy });
 
-        fireEvent.click(screen.getByRole("button", { name: /Save & Redeploy/i }));
+        fireEvent.click(screen.getByRole("button", { name: /Save and redeploy/i }));
 
         expect(confirmSpy).toHaveBeenCalledWith("Save environment changes and redeploy this app?");
         expect(onSaveAndRedeploy).toHaveBeenCalledTimes(1);
@@ -95,12 +113,10 @@ describe("EnvironmentSection", () => {
     it("disables env mutations while deleting", () => {
         renderEnvironment({ deleteLocked: true, envVarsChanged: true });
 
-        expect(screen.getByText("Environment changes are paused while cleanup is pending.")).toBeVisible();
-        expect(screen.getByRole("button", { name: /Save Only/i })).toBeDisabled();
-        expect(screen.getByRole("button", { name: /Save & Redeploy/i })).toBeDisabled();
-        // Exact, case-sensitive match — there's also an icon-only "Add variable" (lowercase)
-        // confirm button on the draft row whose accessible name would otherwise also match.
-        expect(screen.getByRole("button", { name: "Add Variable" })).toBeDisabled();
-        expect(screen.queryByDisplayValue("super-secret-token")).not.toBeInTheDocument();
+        expect(screen.getByText("Changes are paused while the app is being deleted.")).toBeVisible();
+        expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: /Save and redeploy/i })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Add variable" })).toBeDisabled();
+        expect(screen.queryByText("super-secret-token")).not.toBeInTheDocument();
     });
 });
