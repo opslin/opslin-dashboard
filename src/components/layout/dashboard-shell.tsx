@@ -474,7 +474,7 @@ export function DashboardShell({
               <Button type="button" variant="ghost" size="icon" className="sm:hidden" onClick={() => setCommandOpen(true)} aria-label="Open command palette">
                 <Search className="size-4" />
               </Button>
-              <Button type="button" variant="outline" className="hidden h-10 sm:inline-flex" onClick={() => router.push("/servers")}>
+              <Button type="button" variant="outline" className="hidden h-10 sm:inline-flex" onClick={() => router.push("/servers/connect")}>
                 <Plus aria-hidden="true" />
                 Add server
               </Button>

@@ -13,14 +13,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Copy, Cpu, HardDrive, MoreVertical, Plus, Search, Server,
-  Terminal as TerminalIcon, Wifi, Shield, Clock, FileText, Settings,
-  Rocket, Monitor, Apple,
+  Cpu, HardDrive, MoreVertical, Search, Server,
+  Terminal as TerminalIcon, Wifi, Clock, FileText, Settings,
+  Rocket, Monitor,
 } from "lucide-react";
 import Link from "next/link";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
 import { api, type Server as ServerType } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -316,147 +314,25 @@ export default function ServersPage() {
     return list;
   }, [servers, searchQuery, statusFilter]);
 
-  const linuxCommand = `curl -fsSL https://apis.hotops.sh/opslin/agent/install | sh`;
-  const macCommand = `curl -fsSL ${API_URL}/agent/install/macos | bash`;
-
-  const handleCopy = (cmd: string) => {
-    navigator.clipboard.writeText(cmd);
-    toast.success("Command copied to clipboard");
-  };
-
   return (
     <div className="space-y-6 px-4 sm:px-6 lg:px-8 py-6 max-w-[1200px] mx-auto">
       {/* Page Header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-info-muted">
-          <Server size={28} />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-info-muted">
+            <Server size={28} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Servers</h1>
+            <p className="text-sm text-muted-foreground">Manage and monitor your connected VPS instances</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Servers</h1>
-          <p className="text-sm text-muted-foreground">Manage and monitor your connected VPS instances</p>
-        </div>
+        <Button asChild>
+          <Link href="/servers/connect">Add server</Link>
+        </Button>
       </div>
 
       <StaggerGroup className="space-y-6">
-      <StaggerItem>
-      {/* Connect your server card */}
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
-        <div className="flex items-stretch">
-          {/* Left content */}
-          <div className="flex-1 p-6">
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-info-muted">
-                <TerminalIcon className="h-5 w-5 text-info-text" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-foreground">Connect your server in one command</h2>
-                <p className="text-sm text-muted-foreground">
-                  Run the command below on your server to install the Opslin agent and establish a secure connection.
-                </p>
-              </div>
-            </div>
-
-            <Tabs defaultValue="linux" className="mt-4">
-              <TabsList className="bg-muted h-9">
-                <TabsTrigger value="linux" className="text-xs gap-1.5 px-3">
-                  <Server className="h-3.5 w-3.5" />
-                  Linux VPS
-                </TabsTrigger>
-                <TabsTrigger value="macos" className="text-xs gap-1.5 px-3">
-                  <Apple className="h-3.5 w-3.5" />
-                  Local Machine
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="linux" className="mt-3">
-                <div className="flex items-center gap-2 rounded-lg bg-inverse px-4 py-3">
-                  <code className="text-sm text-text-on-inverse-muted font-mono flex-1 truncate">
-                    {linuxCommand}
-                  </code>
-                  <Button
-                    size="sm"
-                    onClick={() => handleCopy(linuxCommand)}
-                    className="h-7 text-xs flex-shrink-0"
-                  >
-                    <Copy className="h-3.5 w-3.5 mr-1" />
-                    Copy
-                  </Button>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="macos" className="mt-3">
-                <div className="flex items-center gap-2 rounded-lg bg-inverse px-4 py-3">
-                  <code className="text-sm text-text-on-inverse-muted font-mono flex-1 truncate">
-                    {macCommand}
-                  </code>
-                  <Button
-                    size="sm"
-                    onClick={() => handleCopy(macCommand)}
-                    className="h-7 text-xs flex-shrink-0"
-                  >
-                    <Copy className="h-3.5 w-3.5 mr-1" />
-                    Copy
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            {/* Feature pills */}
-            <div className="flex items-center gap-3 mt-4">
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <TerminalIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                SSH Required
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Wifi className="h-3.5 w-3.5 text-muted-foreground" />
-                Outbound 443
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-                Secure Tunnel
-              </span>
-            </div>
-          </div>
-
-          {/* Right illustration */}
-          <div className="hidden md:flex items-center justify-center w-[280px] bg-muted/40 p-6">
-            <div className="relative">
-              {/* Server rack illustration using stacked server icons — deliberately dark in both themes (bg-inverse), matching the always-dark sidebar/code-block treatment */}
-              <div className="flex flex-col items-center gap-1">
-                <div className="w-32 h-10 rounded-lg bg-inverse border border-border-inverse flex items-center px-3 gap-1.5 shadow-lg">
-                  <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                  <div className="h-2 w-2 rounded-full bg-success" />
-                  <div className="flex-1" />
-                  <div className="h-1 w-4 bg-border-inverse rounded" />
-                  <div className="h-1 w-4 bg-border-inverse rounded" />
-                </div>
-                <div className="w-32 h-10 rounded-lg bg-inverse-2 border border-border-inverse flex items-center px-3 gap-1.5 shadow-lg">
-                  <div className="h-2 w-2 rounded-full bg-info animate-pulse" />
-                  <div className="h-2 w-2 rounded-full bg-info" />
-                  <div className="flex-1" />
-                  <div className="h-1 w-4 bg-border-inverse rounded" />
-                  <div className="h-1 w-4 bg-border-inverse rounded" />
-                </div>
-                <div className="w-32 h-10 rounded-lg bg-inverse border border-border-inverse flex items-center px-3 gap-1.5 shadow-lg">
-                  <div className="h-2 w-2 rounded-full bg-success" />
-                  <div className="h-2 w-2 rounded-full bg-warning" />
-                  <div className="flex-1" />
-                  <div className="h-1 w-4 bg-border-inverse rounded" />
-                  <div className="h-1 w-4 bg-border-inverse rounded" />
-                </div>
-              </div>
-              {/* Connection lines */}
-              <div className="absolute -right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2">
-                <div className="h-px w-8 bg-border-inverse" />
-                <div className="h-px w-6 bg-border-inverse" />
-                <div className="h-px w-8 bg-border-inverse" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      </StaggerItem>
-
       <StaggerItem>
       {/* Your Servers section */}
       <div className="rounded-2xl border border-border bg-card">
@@ -518,8 +394,13 @@ export default function ServersPage() {
               <p className="mt-1 text-xs text-muted-foreground">
                 {searchQuery || statusFilter !== "all"
                   ? "Try adjusting your filters"
-                  : "Add your first server using the command above"}
+                  : "Connect your first server to start deploying"}
               </p>
+              {!searchQuery && statusFilter === "all" ? (
+                <Button asChild className="mt-4">
+                  <Link href="/servers/connect">Connect your server</Link>
+                </Button>
+              ) : null}
             </div>
           ) : (
             filteredServers.map((server) => (

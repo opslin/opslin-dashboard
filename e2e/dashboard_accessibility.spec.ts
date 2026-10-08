@@ -7,6 +7,7 @@ const routes = [
   { path: "/overview", heading: /^overview$/i },
   { path: "/apps/new", heading: /let.s deploy your project/i },
   { path: "/apps/mock-app-1", heading: /observability api/i },
+  { path: "/servers/connect", heading: /^connect your server$/i },
   { path: "/servers/mock-server-1", heading: /prod vps 01/i },
   { path: "/deployments", heading: /deployments/i },
   { path: "/monitoring", heading: /system monitor/i },
