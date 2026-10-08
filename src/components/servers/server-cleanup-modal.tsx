@@ -2,23 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Clock3, Loader2, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { AlertTriangle, Check, Clock3, Loader2, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { api, ApiRequestError, type ServerCleanupResult, type ServerJobStatus } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 type ServerCleanupModalProps = {
     serverId: string;
+    serverName?: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 };
@@ -27,8 +20,14 @@ const cleanupStages = [
     { key: "pre_check", label: "Checking current app health" },
     { key: "cleanup", label: "Pruning stale Docker artifacts" },
     { key: "security", label: "Scanning and applying security fixes" },
-    { key: "post_check", label: "Verifying app health after cleanup and security fixes" },
+    { key: "post_check", label: "Verifying app health" },
     { key: "done", label: "Done" },
+];
+
+const TASKS = [
+    { title: "Remove unused Docker images and logs", detail: "Stale images, stopped containers and old build cache" },
+    { title: "Apply security updates", detail: "Safe OS patches and hardening checks" },
+    { title: "Set up a safe firewall", detail: "Allow SSH, 80 and 443 with automatic rollback" },
 ];
 
 const hardeningKindLabels: Record<string, string> = {
@@ -61,183 +60,87 @@ function parseResult(job?: ServerJobStatus | null): ServerCleanupResult | null {
     return job.result as ServerCleanupResult;
 }
 
-function HardeningSummary({ result }: { result: ServerCleanupResult["hardening"] }) {
-    const findings = [
-        ...result.immediate.map((f) => ({ ...f, connectivityRisk: false as const })),
-        ...result.connectivityRisk.map((f) => ({ ...f, connectivityRisk: true as const })),
-    ];
+function summarize(result: ServerCleanupResult) {
+    const reclaimed = result.prunes.filter((p) => !p.error && p.reclaimedSpace && p.reclaimedSpace !== "0B").map((p) => p.reclaimedSpace);
+    const findings = [...result.hardening.immediate, ...result.hardening.connectivityRisk];
+    const applied = findings.filter((f) => f.applied && !f.error);
     const failed = findings.filter((f) => f.error);
-
-    return (
-        <section className="rounded-xl border border-border/70 bg-secondary/25 p-4">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <ShieldCheck className="size-4 text-chart-5" />
-                Security checks
-            </h3>
-            <div className="mt-2 space-y-2">
-                {findings.map((finding) => (
-                    <div
-                        key={finding.kind}
-                        className="flex items-start justify-between gap-3 rounded-lg border border-border/70 bg-background p-3 text-sm"
-                    >
-                        <div>
-                            <p className="text-foreground">{hardeningKindLabel(finding.kind)}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{finding.description}</p>
-                        </div>
-                        <Badge variant={finding.error ? "destructive" : finding.applied ? "secondary" : "outline"}>
-                            {finding.error ? "Error" : finding.applied ? "Fixed" : "OK"}
-                            {finding.connectivityRisk && finding.applied ? " · auto-confirming" : ""}
-                        </Badge>
-                    </div>
-                ))}
-            </div>
-            {failed.length > 0 && (
-                <Alert variant="destructive" className="mt-4">
-                    <AlertTriangle className="size-4" />
-                    <AlertTitle>Some security checks failed</AlertTitle>
-                    <AlertDescription>
-                        {failed.map((f) => `${hardeningKindLabel(f.kind)}: ${f.error}`).join(" · ")}
-                    </AlertDescription>
-                </Alert>
-            )}
-        </section>
-    );
+    const unhealthy = result.apps.filter((app) => app.restartAttempted && !app.healthyAfterRestart);
+    const rows = [
+        reclaimed.length > 0 ? `Reclaimed ${reclaimed.join(" + ")} of disk space` : "No stale Docker data to remove",
+        applied.length > 0 ? `${applied.length} security ${applied.length === 1 ? "fix" : "fixes"} applied (${applied.map((f) => hardeningKindLabel(f.kind)).join(", ")})` : "Security checks passed, nothing to fix",
+        result.apps.length > 0 ? `${result.apps.length} ${result.apps.length === 1 ? "app" : "apps"} checked after cleanup` : "No apps needed a health check",
+    ];
+    return { rows, failed, unhealthy };
 }
 
-function CleanupSummary({ result }: { result: ServerCleanupResult }) {
-    const anyRestarted = result.apps.some((app) => app.restartAttempted);
-    const stillUnhealthy = result.apps.filter(
-        (app) => app.restartAttempted && !app.healthyAfterRestart
-    );
-
-    return (
-        <section className="rounded-xl border border-border/70 bg-secondary/25 p-4">
-            <h3 className="text-sm font-semibold text-foreground">Reclaimed</h3>
-            <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                {result.prunes.map((prune) => (
-                    <div key={prune.step} className="rounded-lg border border-border/70 bg-background p-3">
-                        <p className="dashboard-section-label">{prune.step.replace("_", " ")}</p>
-                        <p className="mt-1 text-sm text-foreground">
-                            {prune.error ? "Failed" : prune.reclaimedSpace || "0B"}
-                        </p>
-                    </div>
-                ))}
-            </div>
-
-            <div className="mt-4">
-                <HardeningSummary result={result.hardening} />
-            </div>
-
-            {result.apps.length > 0 && (
-                <>
-                    <h3 className="mt-4 text-sm font-semibold text-foreground">App health</h3>
-                    <div className="mt-2 space-y-2">
-                        {result.apps.map((app) => (
-                            <div
-                                key={app.appId}
-                                className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background p-3 text-sm"
-                            >
-                                <span className="text-foreground">{app.appName}</span>
-                                <div className="flex items-center gap-2">
-                                    {app.restartAttempted && (
-                                        <Badge variant={app.healthyAfterRestart ? "secondary" : "destructive"}>
-                                            {app.healthyAfterRestart ? "Restarted, healthy" : "Restarted, still unhealthy"}
-                                        </Badge>
-                                    )}
-                                    {!app.restartAttempted && (
-                                        <Badge variant={app.healthyAfter ? "secondary" : "outline"}>
-                                            {app.healthyAfter ? "Healthy" : "Unchanged (was already unhealthy)"}
-                                        </Badge>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </>
-            )}
-
-            {anyRestarted && stillUnhealthy.length > 0 && (
-                <Alert variant="destructive" className="mt-4">
-                    <AlertTriangle className="size-4" />
-                    <AlertTitle>Some apps need attention</AlertTitle>
-                    <AlertDescription>
-                        {stillUnhealthy.map((app) => app.appName).join(", ")} did not come back healthy after a
-                        restart. Cleanup only restarts once — check logs or deploy history for the real cause.
-                    </AlertDescription>
-                </Alert>
-            )}
-        </section>
-    );
-}
-
-function CleanupTracker({ job }: { job: ServerJobStatus }) {
+function CleanupProgress({ job, serverName }: { job: ServerJobStatus; serverName?: string }) {
     const index = stageIndex(job);
     const failed = job.status === "FAILED";
-    const percent = job.progress?.percent ?? (job.status === "PENDING" ? 5 : job.status === "COMPLETED" ? 100 : 30);
     const result = parseResult(job);
+    const percent = job.status === "COMPLETED" ? 100 : (job.progress?.percent ?? (job.status === "PENDING" ? 5 : 30));
+
+    if (result) {
+        const { rows, failed: failedChecks, unhealthy } = summarize(result);
+        return (
+            <div className="space-y-5 text-center">
+                <span className="mx-auto flex size-16 items-center justify-center rounded-full bg-success-muted text-success-text"><Check className="size-8" aria-hidden="true" /></span>
+                <div>
+                    <h2 className="text-2xl font-bold tracking-tight text-foreground">Server clean and secure</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Maintenance completed successfully{serverName ? ` on ${serverName}` : ""}.</p>
+                </div>
+                <ul className="space-y-3 rounded-xl border p-4 text-left">
+                    {rows.map((row) => (
+                        <li key={row} className="flex items-start gap-3 text-sm text-foreground"><Check className="mt-0.5 size-4 shrink-0 text-success-text" aria-hidden="true" />{row}</li>
+                    ))}
+                </ul>
+                {failedChecks.length > 0 || unhealthy.length > 0 ? (
+                    <div role="alert" className="flex gap-2 rounded-xl border border-warning/30 bg-warning-muted px-4 py-3 text-left text-sm text-warning-text">
+                        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                        <span>
+                            {failedChecks.length > 0 ? `${failedChecks.map((f) => `${hardeningKindLabel(f.kind)}: ${f.error}`).join(" · ")}. ` : ""}
+                            {unhealthy.length > 0 ? `${unhealthy.map((a) => a.appName).join(", ")} did not come back healthy after a restart. Check logs or deploy history.` : ""}
+                        </span>
+                    </div>
+                ) : null}
+            </div>
+        );
+    }
 
     return (
-        <section className="rounded-xl border border-border/70 bg-secondary/25 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <h3 className="text-sm font-semibold text-foreground">
-                        {failed ? "Cleanup failed" : job.status === "COMPLETED" ? "Cleanup complete" : "Cleanup running"}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        {job.progress?.message || "Waiting for the agent to start."}
-                    </p>
-                </div>
-                <Badge variant={failed ? "destructive" : "secondary"}>{job.status}</Badge>
+        <div className="space-y-5">
+            <div>
+                <h2 className="text-2xl font-bold tracking-tight text-foreground">{failed ? "Clean-up failed" : "Cleaning up…"}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{job.progress?.message || "Waiting for the agent to start."}</p>
             </div>
-            <div className="mt-4 h-2 rounded-full bg-background">
-                <div
-                    className="h-2 rounded-full bg-primary transition-all"
-                    style={{ width: `${Math.max(5, Math.min(100, percent))}%` }}
-                />
+            <div className="h-2 overflow-hidden rounded-full bg-primary/15" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)} aria-label="Clean-up progress">
+                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.max(5, Math.min(100, percent))}%` }} />
             </div>
-            <div className="mt-4 space-y-2">
-                {cleanupStages.map((stage, i) => {
-                    const done = i < index || (stage.key === "done" && job.status === "COMPLETED");
+            <ul className="divide-y rounded-xl border">
+                {cleanupStages.slice(0, 4).map((stage, i) => {
+                    const done = i < index;
                     const active = i === index && !failed;
                     return (
-                        <div key={stage.key} className="flex items-center gap-3 text-sm">
-                            <span
-                                className={`flex size-6 items-center justify-center rounded-full border ${
-                                    done
-                                        ? "border-chart-5 bg-chart-5/15 text-chart-5"
-                                        : active
-                                            ? "border-primary bg-primary/10 text-primary"
-                                            : "border-border text-muted-foreground"
-                                }`}
-                            >
-                                {done ? (
-                                    <CheckCircle2 className="size-4" />
-                                ) : active ? (
-                                    <Loader2 className="size-4 animate-spin" />
-                                ) : (
-                                    <Clock3 className="size-3.5" />
-                                )}
+                        <li key={stage.key} className="flex items-center gap-3 px-4 py-3 text-sm">
+                            <span className="flex size-5 items-center justify-center">
+                                {done ? <span className="size-2.5 rounded-full bg-success" aria-hidden="true" /> : active ? <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" /> : i === index && failed ? <AlertTriangle className="size-4 text-danger-text" aria-hidden="true" /> : <Clock3 className="size-3.5 text-muted-foreground/60" aria-hidden="true" />}
                             </span>
-                            <span className={done || active ? "text-foreground" : "text-muted-foreground"}>
-                                {stage.label}
-                            </span>
-                        </div>
+                            <span className={cn(done || active ? "text-foreground" : "text-muted-foreground")}>{stage.label}</span>
+                        </li>
                     );
                 })}
-            </div>
-            {failed && job.error && (
-                <Alert variant="destructive" className="mt-4">
-                    <AlertTriangle className="size-4" />
-                    <AlertTitle>Error</AlertTitle>
-                    <AlertDescription>{job.error}</AlertDescription>
-                </Alert>
-            )}
-            {result && <div className="mt-4"><CleanupSummary result={result} /></div>}
-        </section>
+            </ul>
+            {failed && job.error ? (
+                <div role="alert" className="flex gap-2 rounded-xl border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger-text">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    {job.error}
+                </div>
+            ) : null}
+        </div>
     );
 }
 
-export function ServerCleanupModal({ serverId, open, onOpenChange }: ServerCleanupModalProps) {
+export function ServerCleanupModal({ serverId, serverName, open, onOpenChange }: ServerCleanupModalProps) {
     const queryClient = useQueryClient();
     const [trackingJobId, setTrackingJobId] = useState<string | null>(null);
     const confirmedJobRef = useRef<string | null>(null);
@@ -302,6 +205,8 @@ export function ServerCleanupModal({ serverId, open, onOpenChange }: ServerClean
     const job = jobQuery.data || null;
     const running = job ? job.status === "PENDING" || job.status === "RUNNING" : false;
 
+    const done = job?.status === "COMPLETED";
+
     return (
         <Dialog
             open={open}
@@ -312,52 +217,53 @@ export function ServerCleanupModal({ serverId, open, onOpenChange }: ServerClean
                 onOpenChange(next);
             }}
         >
-            <DialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Sparkles className="size-5 text-primary" />
-                        Clean &amp; Secure Server
-                    </DialogTitle>
-                    <DialogDescription>
-                        Prunes stale Docker images, stopped containers, and aged build cache left over from past
-                        deploys, then checks every app on this server is still healthy — restarting only the one
-                        cleanup itself disrupted.
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogContent showCloseButton={false} className="max-h-[90vh] max-w-[480px] gap-0 overflow-y-auto rounded-2xl border bg-card p-7 shadow-2xl backdrop-blur-none">
+                <DialogTitle className="sr-only">Clean and secure this server</DialogTitle>
+                <DialogDescription className="sr-only">Prune stale Docker data, apply security fixes and verify app health.</DialogDescription>
 
-                {!job && (
-                    <Alert className="border-chart-4/40 bg-chart-4/10">
-                        <AlertTriangle className="size-4 text-chart-4" />
-                        <AlertTitle>Before you start</AlertTitle>
-                        <AlertDescription>
-                            The agent must be online. This never touches the currently running image or container
-                            for any app, and never deletes tagged images your rollback history depends on.
-                        </AlertDescription>
-                    </Alert>
+                {job ? (
+                    <CleanupProgress job={job} serverName={serverName} />
+                ) : (
+                    <div className="space-y-5">
+                        <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><ShieldCheck className="size-5" aria-hidden="true" /></span>
+                        <div>
+                            <h2 className="text-2xl font-bold tracking-tight text-foreground">Clean and secure this server</h2>
+                            <p className="mt-1 text-sm text-muted-foreground">These maintenance tasks will run{serverName ? ` on ${serverName}` : ""}.</p>
+                        </div>
+                        <ul className="divide-y rounded-xl border">
+                            {TASKS.map((task) => (
+                                <li key={task.title} className="flex items-start gap-3.5 px-4 py-3.5">
+                                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground" aria-hidden="true"><Check className="size-3.5" strokeWidth={3} /></span>
+                                    <div>
+                                        <p className="text-sm font-semibold text-foreground">{task.title}</p>
+                                        <p className="text-xs text-muted-foreground">{task.detail}</p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                        <div className="flex items-center gap-2.5 rounded-xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">
+                            <Clock3 className="size-4 shrink-0" aria-hidden="true" />
+                            Takes a few minutes. The agent must be online. Running apps are only restarted if clean-up disrupts them.
+                        </div>
+                    </div>
                 )}
 
-                {job && <CleanupTracker job={job} />}
-
-                <DialogFooter>
-                    <Button
-                        id="server-cleanup-close"
-                        type="button"
-                        variant="outline"
-                        onClick={() => onOpenChange(false)}
-                    >
-                        Close
-                    </Button>
-                    <Button
-                        id="server-cleanup-run"
-                        type="button"
-                        disabled={cleanupMutation.isPending || running}
-                        onClick={() => cleanupMutation.mutate()}
-                    >
-                        {(cleanupMutation.isPending || running) && <Loader2 className="mr-2 size-4 animate-spin" />}
-                        {!job && !cleanupMutation.isPending && <RefreshCw className="mr-2 size-4" />}
-                        {running ? "Running..." : job ? "Run Again" : "Run Cleanup"}
-                    </Button>
+                <DialogFooter className="mt-6 flex-row justify-end gap-3 sm:justify-end">
+                    {done ? (
+                        <Button id="server-cleanup-close" type="button" variant="dark" size="lg" className="w-full" onClick={() => onOpenChange(false)}>Done</Button>
+                    ) : (
+                        <>
+                            <Button id="server-cleanup-close" type="button" variant="outline" size="lg" onClick={() => onOpenChange(false)}>{job ? "Close" : "Cancel"}</Button>
+                            <Button id="server-cleanup-run" type="button" size="lg" disabled={cleanupMutation.isPending || running} onClick={() => cleanupMutation.mutate()}>
+                                {cleanupMutation.isPending || running ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+                                {running ? "Running…" : job ? "Run again" : "Run clean-up"}
+                            </Button>
+                        </>
+                    )}
                 </DialogFooter>
+                <button type="button" aria-label="Close" onClick={() => onOpenChange(false)} className="absolute right-5 top-5 rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                    <X className="size-5" aria-hidden="true" />
+                </button>
             </DialogContent>
         </Dialog>
     );

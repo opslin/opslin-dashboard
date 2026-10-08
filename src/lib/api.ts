@@ -454,6 +454,10 @@ class ApiClient {
         return this.post<Server>("/servers", data);
     }
 
+    async renameServer(id: string, name: string) {
+        return this.patch<Server>(`/servers/${id}`, { name });
+    }
+
     async deleteServer(id: string) {
         return this.delete<void>(`/servers/${id}`);
     }
