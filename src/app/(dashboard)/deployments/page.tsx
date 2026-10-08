@@ -1,267 +1,306 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { ArrowUpRight, RotateCcw, Rocket, ChevronDown, MoreVertical, ExternalLink, FileText, ArrowRight, FileCode, FlaskConical, CheckCircle2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Check, ChevronDown, Clock, Filter, Loader2, Rocket, Search, X } from "lucide-react";
+import { toast } from "sonner";
+import { RollbackConfirmDialog } from "@/components/apps/RollbackConfirmDialog";
+import { deployActor, deployTitle, durationLabel, plainReason, progressPercent, progressPhase } from "@/components/apps/deploy-ui";
+import { shortSha } from "@/components/apps/app-helpers";
+import { DeploymentDrawer } from "@/components/deployments/drawer";
+import { buildItems, computeStats, filterItems, isFailed, isRunning, latestFailure, statusLabel, type DeploymentItem, type StatusFilter } from "@/components/deployments/lib";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { api, type DeploymentRecord } from "@/lib/api";
-import { formatRelativeTime } from "@/lib/utils";
-import { LivePulse } from "@/components/patterns/live-pulse";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { api, type AppWithServer, type DeploymentRecord } from "@/lib/api";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
-type DeploymentItem = DeploymentRecord & { appId: string; appName: string; serverName: string; serverIp: string };
+const PAGE_SIZE = 6;
+const FILTERS: Array<{ id: StatusFilter; label: string }> = [
+    { id: "all", label: "All" },
+    { id: "running", label: "Running" },
+    { id: "failed", label: "Failed" },
+    { id: "succeeded", label: "Succeeded" },
+];
 
-function MiniSparkline({ data, color, width = 60, height = 24 }: { data: number[]; color: string; width?: number; height?: number }) {
-    if (!data || data.length < 2) return <div style={{ width, height }} />;
-    const max = Math.max(...data, 1);
-    const points = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - (v / max) * (height - 4) - 2}`).join(" ");
+function Skeleton({ className }: { className?: string }) {
+    return <div className={cn("animate-pulse rounded-md bg-muted motion-reduce:animate-none", className)} aria-hidden="true" />;
+}
+
+function LoadingState() {
     return (
-        <svg width={width} height={height} className="inline-block">
-            <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <div role="status" aria-label="Loading deployments" className="space-y-5">
+            <div className="grid gap-4 lg:grid-cols-3">
+                {[0, 1, 2].map((i) => (
+                    <Card key={i} className="gap-3 rounded-2xl p-5 shadow-xs"><Skeleton className="h-4 w-24" /><Skeleton className="h-8 w-12" /><Skeleton className="h-3 w-32" /></Card>
+                ))}
+            </div>
+            <Card className="gap-0 rounded-2xl p-5 shadow-xs">
+                {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center gap-4 border-t py-4 first:border-t-0"><Skeleton className="size-8 rounded-full" /><div className="flex-1 space-y-2"><Skeleton className="h-4 w-48" /><Skeleton className="h-3 w-72" /></div><Skeleton className="h-6 w-20 rounded-full" /></div>
+                ))}
+            </Card>
+        </div>
     );
 }
 
-function SuccessRing({ percent, size = 52 }: { percent: number; size?: number }) {
-    const r = (size - 8) / 2;
-    const circ = 2 * Math.PI * r;
-    const offset = circ - (percent / 100) * circ;
+function StatusPill({ item }: { item: DeploymentItem }) {
+    const status = statusLabel(item);
+    const tone = {
+        live: "bg-success-muted text-success-text",
+        success: "bg-success-muted text-success-text",
+        danger: "bg-danger-muted text-danger-text",
+        info: "bg-info-muted text-info-text",
+        neutral: "bg-secondary text-muted-foreground",
+    }[status.tone];
+    const dot = { live: "bg-success", success: "bg-success", danger: "bg-danger", info: "bg-info", neutral: "bg-muted-foreground" }[status.tone];
+    return <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", tone)}><span className={cn("size-1.5 rounded-full", dot)} aria-hidden="true" />{status.label}</span>;
+}
+
+function StatusIcon({ item }: { item: DeploymentItem }) {
+    const d = item.deployment;
+    if (isRunning(d)) return <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-info-muted text-info-text"><Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /></span>;
+    if (isFailed(d)) return <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-danger-muted text-danger-text"><X className="size-4" aria-hidden="true" /></span>;
+    return <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-muted text-success-text"><Check className="size-4" aria-hidden="true" /></span>;
+}
+
+function Row({ item, onDetails, onRollback }: { item: DeploymentItem; onDetails: (item: DeploymentItem) => void; onRollback: (item: DeploymentItem) => void }) {
+    const { deployment, app } = item;
+    const running = isRunning(deployment);
+    const failed = isFailed(deployment);
+    const percent = progressPercent(deployment);
+    const phase = progressPhase(deployment);
+    const duration = durationLabel(deployment);
+    const target = item.live ? item.rollbackTo : deployment.status === "succeeded" ? deployment : null;
+    const meta = [app.server.name, deployActor(deployment), running ? "in progress" : duration, formatRelativeTime(deployment.startedAt)].filter(Boolean);
     return (
-        <svg width={size} height={size} className="inline-block">
-            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--border)" strokeWidth="5" />
-            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--opslin-success-default)" strokeWidth="5" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-        </svg>
+        <li className="flex flex-wrap items-center gap-4 border-t py-4 first:border-t-0">
+            <StatusIcon item={item} />
+            <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <Link href={`/apps/${app.id}`} className="font-semibold text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring">{app.name}</Link>
+                    <code className="rounded-md border bg-muted/60 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{shortSha(deployment.sha)}</code>
+                    <span className="truncate text-sm text-foreground">{deployTitle(deployment)}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{meta.join(" · ")}</p>
+                {running ? (
+                    <div className="mt-2 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${app.name} deploy progress`} aria-valuenow={percent ?? undefined}>
+                        <div className={cn("h-full rounded-full bg-primary", percent === null && "w-1/3 animate-pulse motion-reduce:animate-none")} style={percent !== null ? { width: `${percent}%` } : undefined} />
+                    </div>
+                ) : null}
+            </div>
+            <div className="w-28"><StatusPill item={item} /></div>
+            <div className="flex w-56 items-center justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={() => onDetails(item)} aria-label={`View details for ${app.name} ${shortSha(deployment.sha)}`}>View details</Button>
+                {running ? (
+                    <span className="w-16 whitespace-nowrap text-xs capitalize text-muted-foreground">{phase && /build/.test(phase) ? "Building" : phase || "Working"}</span>
+                ) : failed ? (
+                    <button type="button" onClick={() => onDetails(item)} className="w-16 whitespace-nowrap text-left text-xs font-semibold text-danger-text hover:underline focus-visible:ring-2 focus-visible:ring-ring">View logs</button>
+                ) : target ? (
+                    <button type="button" onClick={() => onRollback({ ...item, rollbackTo: target })} className="w-16 whitespace-nowrap text-left text-xs font-semibold text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">Roll back</button>
+                ) : (
+                    <span className="w-16" />
+                )}
+            </div>
+        </li>
     );
 }
 
 export default function DeploymentsPage() {
-    const [visibleCount, setVisibleCount] = useState(10);
+    const queryClient = useQueryClient();
+    const [query, setQuery] = useState("");
+    const [status, setStatus] = useState<StatusFilter>("all");
+    const [appId, setAppId] = useState("all");
+    const [visible, setVisible] = useState(PAGE_SIZE);
+    const [details, setDetails] = useState<DeploymentItem | null>(null);
+    const [rollback, setRollback] = useState<{ item: DeploymentItem; target: DeploymentRecord } | null>(null);
+    const [bannerHidden, setBannerHidden] = useState(false);
 
-    const { data: apps = [], isLoading } = useQuery({
-        queryKey: ["deployments", "apps"],
-        queryFn: () => api.getAllApps(),
-    });
+    const appsQuery = useQuery({ queryKey: ["deployments", "apps"], queryFn: () => api.getAllApps() });
+    const apps = useMemo<AppWithServer[]>(() => appsQuery.data ?? [], [appsQuery.data]);
 
-    const { data: deployments = [] } = useQuery({
-        queryKey: ["deployments", "all", apps.map(a => a.id)],
+    const deploymentsQuery = useQuery({
+        queryKey: ["deployments", "all", apps.map((app) => app.id)],
         enabled: apps.length > 0,
+        refetchInterval: 15_000,
         queryFn: async () => {
-            const records = await Promise.all(
+            const perApp = await Promise.all(
                 apps.map(async (app) => {
                     try {
-                        const items = await api.getAppDeployments(app.id);
-                        return items.map(d => ({ ...d, appId: app.id, appName: app.name, serverName: app.server.name, serverIp: app.server.ip || "" }));
-                    } catch { return [] as DeploymentItem[]; }
-                })
+                        return { app, deployments: await api.getAppDeployments(app.id) };
+                    } catch {
+                        return { app, deployments: [] as DeploymentRecord[] };
+                    }
+                }),
             );
-            return records.flat().sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()).slice(0, 50);
+            return buildItems(perApp);
         },
     });
+    const items = useMemo(() => deploymentsQuery.data ?? [], [deploymentsQuery.data]);
+    const stats = useMemo(() => computeStats(items), [items]);
+    const failure = useMemo(() => latestFailure(items), [items]);
+    const filtered = useMemo(() => filterItems(items, { query, status, appId }), [items, query, status, appId]);
+    const shown = filtered.slice(0, visible);
+    const loading = appsQuery.isLoading || (apps.length > 0 && deploymentsQuery.isLoading);
+    const filtering = query.trim() !== "" || status !== "all" || appId !== "all";
 
-    const recentCount = deployments.length;
-    const runningCount = deployments.filter(d => d.status === "running").length;
-    const failedCount = deployments.filter(d => d.status === "failed").length;
-    const succeededCount = deployments.filter(d => d.status === "succeeded").length;
-    const successRate = recentCount > 0 ? ((succeededCount / recentCount) * 100) : 0;
+    const rollbackMutation = useMutation({
+        mutationFn: ({ item, target }: { item: DeploymentItem; target: DeploymentRecord }) => api.rollbackApp(item.app.id, target.sha),
+        onSuccess: () => {
+            toast.success("Rolling back. Your app stays available.");
+            setRollback(null);
+            setDetails(null);
+            void queryClient.invalidateQueries({ queryKey: ["deployments"] });
+        },
+        onError: (error) => toast.error(error instanceof Error ? error.message : "Could not roll back"),
+    });
 
-    const recentSparkline = useMemo(() => {
-        const buckets = Array(7).fill(0);
-        const now = Date.now();
-        deployments.forEach(d => {
-            const daysAgo = Math.floor((now - new Date(d.startedAt).getTime()) / 86400000);
-            if (daysAgo < 7) buckets[6 - daysAgo]++;
-        });
-        return buckets;
-    }, [deployments]);
+    const retryMutation = useMutation({
+        mutationFn: (item: DeploymentItem) => api.deployApp(item.app.server.id, item.app.id, {}),
+        onSuccess: () => {
+            toast.success("Deploying again");
+            void queryClient.invalidateQueries({ queryKey: ["deployments"] });
+        },
+        onError: () => toast.error("Could not start the deploy. Open the app to see why."),
+    });
 
-    const failedSparkline = useMemo(() => {
-        const buckets = Array(7).fill(0);
-        const now = Date.now();
-        deployments.filter(d => d.status === "failed").forEach(d => {
-            const daysAgo = Math.floor((now - new Date(d.startedAt).getTime()) / 86400000);
-            if (daysAgo < 7) buckets[6 - daysAgo]++;
-        });
-        return buckets;
-    }, [deployments]);
+    const startRollback = (item: DeploymentItem) => {
+        const target = item.live ? item.rollbackTo : item.deployment;
+        if (target) setRollback({ item, target });
+    };
 
-    const visibleDeployments = deployments.slice(0, visibleCount);
+    const clearFilters = () => {
+        setQuery("");
+        setStatus("all");
+        setAppId("all");
+    };
+
+    const failureReason = failure ? plainReason(failure.deployment.errorClassification, failure.deployment.healthLog) : null;
+    const showFailureBanner = failure && !bannerHidden;
 
     return (
         <div className="dashboard-page">
-            {/* Header */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                    <Rocket size={36} />
-                    <div>
-                        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Deployments</h1>
-                        <p className="text-sm text-muted-foreground">Track active releases, rollback history, and recent deployment outcomes across every app.</p>
-                    </div>
+            <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Workspace / Deployments</p>
+                    <h1 className="mt-1 text-4xl font-bold tracking-tight text-foreground">Deployments</h1>
+                    <p className="mt-1 text-muted-foreground">Everything that was released across your apps.</p>
                 </div>
-                <Button size="sm" className="h-9 gap-2 text-sm font-medium px-4" asChild>
-                    <Link href="/apps/new">
-                        <Rocket className="h-4 w-4" /> Deploy new
-                        <ChevronDown className="h-3.5 w-3.5 ml-1" />
-                    </Link>
-                </Button>
+                <Button asChild size="lg"><Link href="/apps/new"><Rocket aria-hidden="true" />Deploy new</Link></Button>
             </div>
 
-            {/* Stats Cards - with solid visible borders */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="rounded-xl border border-border bg-card p-5">
-                    <div className="text-xs text-muted-foreground mb-2">Recent deployments</div>
-                    <div className="flex items-end justify-between">
-                        <span className="text-4xl font-mono font-bold text-foreground">{recentCount}</span>
-                        <MiniSparkline data={recentSparkline} color="var(--opslin-info-default)" width={70} height={28} />
+            {loading ? (
+                <LoadingState />
+            ) : apps.length === 0 || (!deploymentsQuery.isLoading && items.length === 0) ? (
+                <div className="flex min-h-[45vh] items-center justify-center">
+                    <div className="max-w-sm rounded-2xl border bg-card p-10 text-center shadow-xs">
+                        <span className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Rocket className="size-7" aria-hidden="true" /></span>
+                        <h2 className="text-xl font-bold text-foreground">Nothing deployed yet</h2>
+                        <p className="mt-1.5 text-sm text-muted-foreground">Deploy your first app and it will show up here.</p>
+                        <Button asChild className="mt-5"><Link href="/apps/new"><Rocket aria-hidden="true" />Deploy your first app</Link></Button>
                     </div>
-                    <div className="text-[11px] text-muted-foreground mt-2">Last 7 days</div>
                 </div>
-                <div className="rounded-xl border border-border bg-card p-5">
-                    <div className="text-xs text-muted-foreground mb-2">Running now</div>
-                    <div className="flex items-end justify-between">
-                        <span className="text-4xl font-mono font-bold text-foreground">{runningCount}</span>
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-2">{runningCount > 0 ? `${runningCount} active now` : "No active deployments"}</div>
-                </div>
-                <div className="rounded-xl border border-border bg-card p-5">
-                    <div className="text-xs text-muted-foreground mb-2">Failed recently</div>
-                    <div className="flex items-end justify-between">
-                        <span className="text-4xl font-mono font-bold text-foreground">{failedCount}</span>
-                        <MiniSparkline data={failedSparkline} color="var(--opslin-danger-default)" width={70} height={28} />
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-2">Last 7 days</div>
-                </div>
-                <div className="rounded-xl border border-border bg-card p-5">
-                    <div className="text-xs text-muted-foreground mb-2">Success rate</div>
-                    <div className="flex items-end justify-between">
-                        <span className="text-4xl font-mono font-bold text-foreground">{successRate.toFixed(1)}%</span>
-                        <SuccessRing percent={successRate} size={48} />
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-2">Last 30 days</div>
-                </div>
-            </div>
-
-            {/* Release Timeline - with solid border */}
-            <div className="rounded-xl border border-border bg-card">
-                <div className="px-6 pt-6 pb-4">
-                    <h2 className="text-lg font-semibold text-foreground">Release timeline</h2>
-                    <p className="text-sm text-muted-foreground mt-0.5">Latest deployments across all applications.</p>
-                </div>
-
-                {isLoading ? (
-                    <div className="px-6 pb-6 py-8 text-center text-sm text-muted-foreground">Loading deployments…</div>
-                ) : deployments.length === 0 ? (
-                    <div className="px-6 pb-6">
-                        <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No deployments recorded yet.</div>
-                    </div>
-                ) : (
-                    <div className="px-4 pb-4">
-                        {visibleDeployments.map((d) => {
-                            const isSuccess = d.status === "succeeded";
-                            const isFailed = d.status === "failed";
-                            const isRunning = d.status === "running" || d.status === "pending";
-                            // RUNNING/PENDING rows link straight into the Deployments tab, where
-                            // DeploymentsSection mounts the real DeployLiveView inline for the
-                            // truth deployment (doc 03 Group B) — same real event source as the
-                            // apps/[id] overlay, not a second progress UI.
-                            const appLink = isRunning ? `/apps/${d.appId}?section=deployments` : `/apps/${d.appId}`;
-                            const duration = d.finishedAt ? (() => {
-                                const diff = new Date(d.finishedAt).getTime() - new Date(d.startedAt).getTime();
-                                const secs = Math.floor(diff / 1000);
-                                return secs >= 60 ? `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s` : `${secs}s`;
-                            })() : "—";
-                            const finishedAgo = d.finishedAt ? formatRelativeTime(d.finishedAt) : (d.status === "running" ? "in progress" : "—");
-
-                            return (
-                                <div key={d.id} className="flex items-center gap-4 border-b border-border/50 last:border-b-0 px-2 py-4">
-                                    {/* Status indicator */}
-                                    <div className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${isSuccess ? "bg-success-muted" : isFailed ? "bg-danger-muted" : "bg-info-muted"}`}>
-                                        <span className={`h-3 w-3 rounded-full ${isSuccess ? "bg-success" : isFailed ? "bg-danger" : "bg-info"}`} />
-                                    </div>
-
-                                    {/* App info */}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2.5 flex-wrap">
-                                            <Link href={appLink} className="text-sm font-semibold text-foreground hover:text-brand transition-colors">{d.appName}</Link>
-                                            <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${isSuccess ? "bg-success-muted text-success-text" : isFailed ? "bg-danger-muted text-danger-text" : "bg-info-muted text-info-text"}`}>
-                                                {isRunning ? <LivePulse label="Deployment in progress" /> : null}
-                                                {d.status === "succeeded" ? "SUCCESS" : d.status === "failed" ? "FAILED" : d.status.toUpperCase()}
-                                            </span>
-                                            <span className="text-xs font-mono text-muted-foreground">{d.sha.slice(0, 7)}</span>
-                                        </div>
-                                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
-                                            <span>ip-{d.serverIp ? d.serverIp.replace(/\./g, "-") : "unknown"}</span>
-                                            <span>•</span>
-                                            <span>{duration}</span>
-                                            <span>•</span>
-                                            <span>{isFailed ? "failed" : "finished"} {finishedAgo}</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Actions - ALWAYS visible like reference */}
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border" asChild>
-                                            <Link href={appLink}>
-                                                {isFailed ? <><FileText className="h-3.5 w-3.5" /> Open logs</> : <><ArrowUpRight className="h-3.5 w-3.5" /> Open app</>}
-                                            </Link>
-                                        </Button>
-                                        {["succeeded", "rolled_back"].includes(d.status) && (
-                                            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border" asChild>
-                                                <Link href={`/apps/${d.appId}?section=deployments`}><RotateCcw className="h-3.5 w-3.5" /> Rollback</Link>
-                                            </Button>
-                                        )}
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Deployment actions"><MoreVertical className="h-4 w-4" /></Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuItem asChild><Link href={`/apps/${d.appId}`}>View app details</Link></DropdownMenuItem>
-                                                <DropdownMenuItem asChild><Link href={`/apps/${d.appId}?section=deployments`}>Deployment history</Link></DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* Load more */}
-                {deployments.length > visibleCount && (
-                    <div className="flex justify-center border-t border-border/50 py-4">
-                        <Button variant="outline" size="sm" className="h-9 text-sm gap-2 border-border px-5" onClick={() => setVisibleCount(v => v + 10)}>
-                            Load more deployments <ChevronDown className="h-3.5 w-3.5" />
-                        </Button>
-                    </div>
-                )}
-            </div>
-
-            {/* Understanding deployments - with solid border */}
-            <div className="rounded-xl border border-border bg-card p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-1">Understanding deployments</h3>
-                <p className="text-sm text-muted-foreground mb-6">Every deployment goes through a safe and automated process.</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-                    {[
-                        { icon: FileCode, title: "1. Code pushed", desc: "You push code to repository" },
-                        { icon: FlaskConical, title: "2. Build & test", desc: "We build and test your code" },
-                        { icon: Rocket, title: "3. Deploy", desc: "Your app is deployed to server" },
-                        { icon: CheckCircle2, title: "4. Live & monitored", desc: "We monitor health & performance" },
-                    ].map((step, i) => (
-                        <div key={step.title} className="flex items-start gap-3">
-                            <step.icon size={32} />
-                            <div className="flex-1">
-                                <div className="text-sm font-medium text-foreground">{step.title}</div>
-                                <div className="text-xs text-muted-foreground mt-0.5">{step.desc}</div>
+            ) : (
+                <>
+                    {showFailureBanner ? (
+                        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-2xl border border-danger/30 bg-danger-muted px-5 py-4 text-danger-text">
+                            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/70"><AlertTriangle className="size-5" aria-hidden="true" /></span>
+                            <div className="min-w-0 flex-1">
+                                <p className="font-semibold">{failure.app.name} failed to deploy {formatRelativeTime(failure.deployment.finishedAt ?? failure.deployment.startedAt)}</p>
+                                <p className="text-sm">{failureReason?.description ?? "The latest build needs your attention."}</p>
                             </div>
-                            {i < 3 && <ArrowRight className="h-4 w-4 text-muted-foreground/50 mt-2 hidden sm:block" />}
+                            <Button size="sm" variant="outline" className="bg-background text-foreground" onClick={() => setDetails(failure)}>View logs</Button>
+                            <Button size="sm" variant="ghost" disabled={retryMutation.isPending} onClick={() => retryMutation.mutate(failure)}>{retryMutation.isPending ? "Starting" : "Try again"}</Button>
+                            <button type="button" onClick={() => setBannerHidden(true)} aria-label="Dismiss" className="rounded p-1 hover:bg-background/60 focus-visible:ring-2 focus-visible:ring-ring"><X className="size-4" aria-hidden="true" /></button>
                         </div>
-                    ))}
-                </div>
-                <div className="mt-6 pt-4 border-t border-border flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Need help? View our <a href="#" className="text-brand hover:text-brand-hover font-medium">deployment guide <ExternalLink className="h-3 w-3 inline" /></a></span>
-                    <a href="#" className="text-sm text-brand hover:text-brand-hover font-medium flex items-center gap-1">View all documentation <ExternalLink className="h-3 w-3" /></a>
-                </div>
-            </div>
+                    ) : null}
+
+                    <div className="grid gap-4 lg:grid-cols-3">
+                        <Card className="gap-1 rounded-2xl p-5 shadow-xs">
+                            <div className="flex items-center justify-between"><h2 className="text-sm font-semibold text-foreground">Running now</h2>{stats.runningCount > 0 ? <span className="inline-flex items-center gap-1.5 rounded-full bg-info-muted px-2 py-0.5 text-[11px] font-semibold text-info-text"><span className="size-1.5 rounded-full bg-info" aria-hidden="true" />In progress</span> : null}</div>
+                            <p className="text-4xl font-bold tabular-nums text-foreground">{stats.runningCount}</p>
+                            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">{stats.running ? <><Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /><b className="font-semibold text-foreground">{stats.running.app.name}</b> is deploying</> : "No active deployments"}</p>
+                        </Card>
+                        <Card className="gap-1 rounded-2xl p-5 shadow-xs">
+                            <div className="flex items-center justify-between"><h2 className="text-sm font-semibold text-foreground">Failed this week</h2>{stats.failedThisWeek > 0 ? <span className="inline-flex items-center gap-1.5 rounded-full bg-danger-muted px-2 py-0.5 text-[11px] font-semibold text-danger-text"><span className="size-1.5 rounded-full bg-danger" aria-hidden="true" />Needs review</span> : null}</div>
+                            <p className="text-4xl font-bold tabular-nums text-foreground">{stats.failedThisWeek}</p>
+                            <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><Clock className="size-3.5" aria-hidden="true" />{stats.lastFailedAt ? `Last one ${formatRelativeTime(stats.lastFailedAt)}` : "Nothing failed. Nice."}</p>
+                        </Card>
+                        <Card className="gap-1 rounded-2xl p-5 shadow-xs">
+                            <div className="flex items-center justify-between"><h2 className="text-sm font-semibold text-foreground">Success rate</h2><span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Last 7 days</span></div>
+                            <p className="text-4xl font-bold tabular-nums text-foreground">{stats.successRate === null ? "—" : <>{stats.successRate}<span className="text-2xl">%</span></>}</p>
+                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted" role="presentation"><div className="h-full rounded-full bg-success" style={{ width: `${stats.successRate ?? 0}%` }} /></div>
+                            <p className="text-sm text-muted-foreground">{stats.finishedThisWeek} {stats.finishedThisWeek === 1 ? "deployment" : "deployments"} in the last 7 days</p>
+                        </Card>
+                    </div>
+
+                    <Card className="gap-0 rounded-2xl py-0 shadow-xs">
+                        <div className="flex items-center justify-between px-6 pt-6">
+                            <h2 className="text-xl font-bold text-foreground">Recent deployments</h2>
+                            <p className="text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "deployment" : "deployments"} · {appId === "all" ? "All apps" : apps.find((app) => app.id === appId)?.name}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 px-6 py-4">
+                            <div className="relative min-w-56 flex-1">
+                                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search app or commit" aria-label="Search app or commit" className="h-10 pl-9" />
+                            </div>
+                            <div className="inline-flex rounded-lg border bg-muted/50 p-1" role="group" aria-label="Filter by status">
+                                {FILTERS.map((filter) => (
+                                    <button key={filter.id} type="button" aria-pressed={status === filter.id} onClick={() => setStatus(filter.id)} className={cn("rounded-md px-3.5 py-1.5 text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring", status === filter.id ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>{filter.label}</button>
+                                ))}
+                            </div>
+                            <Select value={appId} onValueChange={setAppId}>
+                                <SelectTrigger aria-label="App" className="h-10 w-40"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All apps</SelectItem>
+                                    {apps.map((app) => <SelectItem key={app.id} value={app.id}>{app.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {filtered.length === 0 ? (
+                            <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+                                <span className="flex size-12 items-center justify-center rounded-full bg-success-muted text-success-text"><Check className="size-6" aria-hidden="true" /></span>
+                                <h3 className="mt-2 text-lg font-bold text-foreground">{status === "failed" && !query && appId === "all" ? "No failed deployments this week. Nice." : "No deployments match"}</h3>
+                                <p className="max-w-sm text-sm text-muted-foreground">{status === "failed" && !query && appId === "all" ? "Everything you deployed completed successfully." : "Try a different search or filter."}</p>
+                                {filtering ? <Button variant="outline" onClick={clearFilters} className="mt-2"><Filter aria-hidden="true" />Clear filters</Button> : null}
+                            </div>
+                        ) : (
+                            <ul className="px-6">
+                                {shown.map((item) => (
+                                    <Row key={item.deployment.id} item={item} onDetails={setDetails} onRollback={startRollback} />
+                                ))}
+                            </ul>
+                        )}
+
+                        {filtered.length > visible ? (
+                            <div className="flex justify-center border-t py-4">
+                                <Button variant="outline" size="sm" onClick={() => setVisible((v) => v + PAGE_SIZE)}>Load more<ChevronDown aria-hidden="true" /></Button>
+                            </div>
+                        ) : null}
+                        {filtered.length > 0 && filtered.length <= visible ? <div className="h-4" /> : null}
+                    </Card>
+                </>
+            )}
+
+            <DeploymentDrawer
+                item={details}
+                open={Boolean(details)}
+                onOpenChange={(open) => !open && setDetails(null)}
+                rollbackPending={rollbackMutation.isPending}
+                onRollback={startRollback}
+            />
+            <RollbackConfirmDialog
+                open={Boolean(rollback)}
+                targetSha={rollback ? shortSha(rollback.target.sha) : null}
+                detail={rollback ? { message: deployTitle(rollback.target), ago: formatRelativeTime(rollback.target.startedAt), status: "Succeeded" } : null}
+                pending={rollbackMutation.isPending}
+                onOpenChange={(open) => !open && setRollback(null)}
+                onConfirm={() => rollback && rollbackMutation.mutate(rollback)}
+            />
         </div>
     );
 }
+

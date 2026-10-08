@@ -16,7 +16,7 @@ describe("RollbackConfirmDialog", () => {
         );
 
         expect(screen.getByText("Roll back to version abc1234?")).toBeVisible();
-        expect(screen.getByText(/deploy the previous version and re-apply your domain routes/i)).toBeVisible();
+        expect(screen.getByText(/deploy this version again and re-apply your domain routes/i)).toBeVisible();
         expect(screen.getByRole("button", { name: "Cancel" })).toBeVisible();
 
         fireEvent.click(screen.getByRole("button", { name: "Confirm Rollback" }));
