@@ -28,11 +28,11 @@ describe("monitoring helpers", () => {
         expect(normalizeSeverity(undefined)).toBe("INFO");
     });
 
-    it("averages percentages and adds up bytes across servers", () => {
+    it("shows the busiest server and adds up network across servers", () => {
         const total = aggregateCurrent([metrics(20, 40, 50), metrics(40, 60, 50)]);
-        expect(total?.cpu.percent).toBe(30);
-        expect(total?.cpu.cores).toBe(8);
-        expect(total?.memory.percent).toBeCloseTo(50);
+        expect(total?.cpu.percent).toBe(40);
+        expect(total?.cpu.cores).toBe(4);
+        expect(total?.memory.percent).toBe(60);
         expect(total?.network.bytesIn).toBe(200);
         expect(aggregateCurrent([])).toBeNull();
     });
@@ -53,7 +53,7 @@ describe("monitoring helpers", () => {
         const h = (value: number) => ({ range: "1h", series: { timestamps: ["2026-10-08T10:00:10.000Z"], cpu: [value], memoryPercent: [10], diskPercent: [20], netIn: [5], netOut: [1], loadAvg1m: [1] }, peak: { cpu: value, memory: 10, disk: 20 } });
         const points = buildPoints([h(20), h(40)]);
         expect(points).toHaveLength(1);
-        expect(points[0].cpu).toBe(30);
+        expect(points[0].cpu).toBe(40);
         expect(points[0].netIn).toBe(10);
     });
 

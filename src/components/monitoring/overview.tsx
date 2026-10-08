@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { AlertEventRecord, AppOverviewMetric } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { LEVEL_LABEL, RANGE_LABEL, formatBytes, formatRate, levelFor, normalizeSeverity, timeAgo, type ChartPoint, type Insight, type Level, type Range, type ServerMetrics } from "./lib";
+import { LEVEL_LABEL, RANGE_LABEL, formatBytes, formatRate, levelFor, normalizeSeverity, peakAt, timeAgo, type ChartPoint, type Insight, type Level, type Range, type ServerMetrics } from "./lib";
 
 const COLOR = {
     cpu: "var(--opslin-info-default)",
@@ -51,7 +51,7 @@ function Spark({ data, color, height = 44, empty = "Collecting data…" }: { dat
     );
 }
 
-function ResourceCard({ icon: Icon, iconClass, title, level, value, hint, sub, spark, color, peak, rangeLabel }: { icon: LucideIcon; iconClass: string; title: string; level: Level | null; value: string; hint?: string; sub?: React.ReactNode; spark: number[]; color: string; peak: string; rangeLabel: string }) {
+function ResourceCard({ icon: Icon, iconClass, title, level, value, hint, sub, spark, color, footerLeft, footerRight }: { icon: LucideIcon; iconClass: string; title: string; level: Level | null; value: string; hint?: string; sub?: React.ReactNode; spark: number[]; color: string; footerLeft: React.ReactNode; footerRight?: React.ReactNode }) {
     return (
         <Card className="gap-0 rounded-2xl py-0 shadow-xs">
             <div className="flex items-center justify-between px-5 pt-4">
@@ -70,8 +70,8 @@ function ResourceCard({ icon: Icon, iconClass, title, level, value, hint, sub, s
                 <Spark data={spark} color={color} empty={level ? "Collecting data…" : "No live data"} />
             </div>
             <div className="flex items-center justify-between px-5 pb-4 pt-2 text-xs text-muted-foreground">
-                <span>Peak: {peak}</span>
-                <span>{rangeLabel}</span>
+                <span>{footerLeft}</span>
+                {footerRight ? <span>{footerRight}</span> : null}
             </div>
         </Card>
     );
@@ -84,33 +84,33 @@ const INSIGHT_STYLE: Record<Insight["tone"], { icon: LucideIcon; box: string }> 
     success: { icon: CheckCircle2, box: "bg-success-muted text-success-text" },
 };
 
-function HealthRing({ score }: { score: number | null }) {
+function HealthRing({ score, compact }: { score: number | null; compact?: boolean }) {
     const radius = 56;
     const circumference = 2 * Math.PI * radius;
     const value = score ?? 0;
     const color = score === null ? "var(--border)" : score >= 85 ? "var(--opslin-success-default)" : score >= 60 ? "var(--opslin-warning-default)" : "var(--opslin-danger-default)";
     return (
-        <div className="relative size-36 shrink-0" role="img" aria-label={score === null ? "No health score yet" : `Health score ${score} out of 100`}>
+        <div className={cn("relative shrink-0", compact ? "size-28" : "size-36")} role="img" aria-label={score === null ? "No health score yet" : `Health score ${score} out of 100`}>
             <svg viewBox="0 0 140 140" className="size-full -rotate-90">
                 <circle cx="70" cy="70" r={radius} fill="none" stroke="var(--muted)" strokeWidth="10" />
                 <circle cx="70" cy="70" r={radius} fill="none" stroke={color} strokeWidth="10" strokeLinecap="round" strokeDasharray={`${(value / 100) * circumference} ${circumference}`} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-4xl font-bold tabular-nums text-foreground">{score ?? "—"}</span>
-                <span className="text-xs text-muted-foreground">Health score</span>
+                <span className={cn("font-bold tabular-nums text-foreground", compact ? "text-3xl" : "text-4xl")}>{score ?? "—"}</span>
+                <span className={cn("text-muted-foreground", compact ? "text-[10px]" : "text-xs")}>Health score</span>
             </div>
         </div>
     );
 }
 
-const CHART_TABS = [
+export const CHART_TABS = [
     { id: "cpu", label: "CPU" },
     { id: "memory", label: "Memory" },
     { id: "disk", label: "Disk" },
     { id: "network", label: "Network" },
     { id: "load", label: "Load" },
 ] as const;
-type ChartTab = (typeof CHART_TABS)[number]["id"];
+export type ChartTab = (typeof CHART_TABS)[number]["id"];
 
 function tickFormat(range: Range) {
     return (t: number) => {
@@ -121,9 +121,9 @@ function tickFormat(range: Range) {
 
 export type DeployMarker = { t: number; label: string };
 
-function UsageChart({ points, range, markers, serversLabel }: { points: ChartPoint[]; range: Range; markers: DeployMarker[]; serversLabel: string }) {
+function UsageChart({ points, range, markers, serversLabel, initialTab, onCreateAlert, className }: { points: ChartPoint[]; range: Range; markers: DeployMarker[]; serversLabel: string; initialTab: ChartTab; onCreateAlert: (tab: ChartTab) => void; className?: string }) {
     const recharts = useRecharts();
-    const [tab, setTab] = useState<ChartTab>("cpu");
+    const [tab, setTab] = useState<ChartTab>(initialTab);
     const percent = tab === "cpu" || tab === "memory" || tab === "disk";
     const color = tab === "cpu" ? COLOR.cpu : tab === "memory" ? COLOR.memory : tab === "disk" ? COLOR.disk : COLOR.network;
     const format = tickFormat(range);
@@ -132,12 +132,12 @@ function UsageChart({ points, range, markers, serversLabel }: { points: ChartPoi
     const visibleMarkers = markers.filter((m) => m.t >= first && m.t <= last);
     const legend = [
         { key: "series", label: tab === "network" ? "Inbound / outbound" : `${CHART_TABS.find((t) => t.id === tab)?.label} usage`, color },
-        ...(percent ? [{ key: "warn", label: "Warning threshold (70%)", color: COLOR.warn }, { key: "crit", label: "Critical threshold (90%)", color: COLOR.crit }] : []),
+        ...(percent ? [{ key: "warn", label: "Watch · 70%", color: COLOR.warn }, { key: "crit", label: "High · 90%", color: COLOR.crit }] : []),
         ...(visibleMarkers.length ? [{ key: "deploy", label: "Deploy", color: "var(--opslin-info-default)" }] : []),
     ];
 
     return (
-        <Card className="gap-0 rounded-2xl py-0 shadow-xs">
+        <Card className={cn("gap-0 rounded-2xl py-0 shadow-xs", className)}>
             <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5">
                 <div>
                     <h2 className="text-lg font-bold text-foreground">Resource usage</h2>
@@ -151,7 +151,7 @@ function UsageChart({ points, range, markers, serversLabel }: { points: ChartPoi
                             </button>
                         ))}
                     </div>
-                    <Button asChild variant="outline"><Link href="/alerts"><Bell aria-hidden="true" />Create alert</Link></Button>
+                    <Button variant="outline" onClick={() => onCreateAlert(tab)}><Bell aria-hidden="true" />Create alert</Button>
                 </div>
             </div>
             <div className="h-72 px-3 pb-2 pt-4">
@@ -175,7 +175,7 @@ function UsageChart({ points, range, markers, serversLabel }: { points: ChartPoi
                             <recharts.YAxis
                                 width={percent ? 44 : 64}
                                 domain={percent ? [0, 100] : [0, "auto"]}
-                                ticks={percent ? [0, 25, 50, 75, 100] : undefined}
+                                ticks={percent ? [0, 25, 50, 70, 90, 100] : undefined}
                                 tickFormatter={(v: number) => (percent ? `${v}%` : tab === "network" ? formatRate(v) : v.toFixed(1))}
                                 tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                                 tickLine={false}
@@ -184,7 +184,7 @@ function UsageChart({ points, range, markers, serversLabel }: { points: ChartPoi
                             {percent ? <recharts.ReferenceLine y={70} stroke={COLOR.warn} strokeDasharray="4 4" /> : null}
                             {percent ? <recharts.ReferenceLine y={90} stroke={COLOR.crit} strokeDasharray="4 4" /> : null}
                             {visibleMarkers.map((marker) => (
-                                <recharts.ReferenceLine key={`${marker.t}-${marker.label}`} x={marker.t} stroke="var(--opslin-info-default)" strokeWidth={1.2} label={{ value: marker.label, position: "top", fontSize: 11, fill: "var(--foreground)" }} />
+                                <recharts.ReferenceLine key={`${marker.t}-${marker.label}`} x={marker.t} stroke="var(--opslin-info-default)" strokeWidth={1.2} strokeDasharray="4 4" label={{ value: marker.label, position: "top", fontSize: 11, fill: "var(--foreground)" }} />
                             ))}
                             <recharts.Tooltip
                                 cursor={{ stroke: "var(--muted-foreground)", strokeDasharray: "3 3" }}
@@ -307,47 +307,284 @@ export type OverviewProps = {
     serversTotal: number;
     serversOnline: number;
     serversLabel: string;
-    isAll: boolean;
     apps: AppOverviewMetric[];
     alerts: AlertEventRecord[] | null;
     insights: Insight[];
     current: ServerMetrics | null;
     points: ChartPoint[];
     markers: DeployMarker[];
-    updatedAt: number | null;
+    diskDays: number | null;
+    tourStep: number;
+    onOpenGuide: () => void;
+    onCreateAlert: (tab: ChartTab) => void;
+    onSilence: (ruleId: string) => void;
+    silencing: boolean;
 };
 
-export function OverviewTab({ range, score, serversTotal, serversOnline, serversLabel, apps, alerts, insights, current, points, markers, updatedAt }: OverviewProps) {
+const TOUR_RING = "ring-2 ring-primary ring-offset-2 ring-offset-background";
+
+function ActiveAlerts({ alerts, compact, onSilence, silencing }: { alerts: AlertEventRecord[] | null; compact: boolean; onSilence: (ruleId: string) => void; silencing: boolean }) {
+    const list = alerts ?? [];
+    return (
+        <Card className="gap-0 rounded-2xl py-0 shadow-xs">
+            <div className="flex items-center justify-between px-5 pb-2 pt-5">
+                <h2 className="text-lg font-bold text-foreground">Active alerts</h2>
+                <Link href="/alerts" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">View all alerts<ArrowRight className="size-3.5" aria-hidden="true" /></Link>
+            </div>
+            {alerts === null ? (
+                <p className="px-5 py-10 text-center text-sm text-muted-foreground">Alerts are not available on your plan.</p>
+            ) : list.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 px-5 py-10 text-center text-sm text-muted-foreground">
+                    <CheckCircle2 className="size-6 text-success" aria-hidden="true" />
+                    No active alerts. Everything is quiet.
+                </div>
+            ) : compact ? (
+                <ul className="divide-y px-5">
+                    {list.slice(0, 4).map((event) => {
+                        const severity = SEVERITY[normalizeSeverity(event.rule?.severity)];
+                        const where = event.rule?.app?.name ?? event.rule?.server?.name ?? "";
+                        return (
+                            <li key={event.id} className="flex items-start gap-3 py-3.5">
+                                <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", severity.dot)} aria-hidden="true" />
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-semibold text-foreground">{event.rule?.metricLabel ?? "Alert"}</p>
+                                    <p className="text-xs text-muted-foreground">{where ? `${where} · ` : ""}{timeAgo(event.openedAt)}</p>
+                                </div>
+                                {event.rule?.id ? <Button size="sm" variant="outline" disabled={silencing} onClick={() => onSilence(event.rule!.id)} aria-label={`Silence ${event.rule?.metricLabel ?? "alert"}`}>Silence</Button> : null}
+                            </li>
+                        );
+                    })}
+                </ul>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="text-left text-xs font-medium text-muted-foreground">
+                                <th className="px-5 py-2 font-medium">Severity</th>
+                                <th className="px-3 py-2 font-medium">Message</th>
+                                <th className="px-3 py-2 font-medium">Server / App</th>
+                                <th className="px-5 py-2 text-right font-medium">Time</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                            {list.slice(0, 4).map((event) => {
+                                const severity = SEVERITY[normalizeSeverity(event.rule?.severity)];
+                                return (
+                                    <tr key={event.id}>
+                                        <td className="px-5 py-3"><span className="flex items-center gap-2"><span className={cn("size-2 rounded-full", severity.dot)} aria-hidden="true" />{severity.label}</span></td>
+                                        <td className="px-3 py-3 text-foreground">{event.rule?.metricLabel ?? "Alert"}</td>
+                                        <td className="px-3 py-3 text-muted-foreground">{event.rule?.app?.name ?? event.rule?.server?.name ?? "—"}</td>
+                                        <td className="px-5 py-3 text-right text-muted-foreground">{timeAgo(event.openedAt)}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            {compact ? <p className="mt-auto flex items-center gap-2 border-t px-5 py-3 text-xs text-muted-foreground"><Bell className="size-3.5" aria-hidden="true" />Alerts help you act before an app goes down.</p> : null}
+        </Card>
+    );
+}
+
+const INSIGHT_BORDER: Record<Insight["tone"], string> = {
+    danger: "border-l-danger",
+    warning: "border-l-warning",
+    info: "border-l-info",
+    success: "border-l-success",
+};
+
+export function OverviewTab({ range, score, serversTotal, serversOnline, serversLabel, apps, alerts, insights, current, points, markers, diskDays, tourStep, onOpenGuide, onCreateAlert, onSilence, silencing }: OverviewProps) {
     const [showAllInsights, setShowAllInsights] = useState(false);
     const rangeLabel = RANGE_LABEL[range];
     const healthyApps = apps.filter((app) => app.healthStatus === "healthy" && app.restartCount < 3).length;
     const needAttention = apps.length - healthyApps;
     const activeAlerts = alerts ?? [];
-    const tone = score === null ? "neutral" : score >= 85 ? "good" : score >= 60 ? "watch" : "high";
-    const headline = score === null ? "No data yet" : tone === "good" ? "Everything looks healthy" : tone === "watch" ? "A few things need attention" : "Needs attention now";
+    const problems = insights.filter((item) => item.tone === "danger" || item.tone === "warning");
+    const attention = problems.length > 0 || (score !== null && score < 85);
+    const tone = score === null ? "neutral" : score >= 85 && !attention ? "good" : score >= 60 ? "watch" : "high";
     const offline = serversTotal - serversOnline;
-    const subline =
-        serversTotal === 0
-            ? "Connect a server to start monitoring."
-            : offline === 0 && tone === "good"
-              ? `All ${serversTotal} ${serversTotal === 1 ? "server is" : "servers are"} online and running normally.`
-              : offline > 0
-                ? `${offline} of ${serversTotal} ${serversTotal === 1 ? "server is" : "servers are"} offline. See what we noticed on the right.`
-                : "Some numbers are higher than usual. See what we noticed on the right.";
 
     const series = (pick: (p: ChartPoint) => number) => points.map(pick);
-    const peak = (pick: (p: ChartPoint) => number) => points.reduce((m, p) => Math.max(m, pick(p)), 0);
+    const clock = (t?: number) => (t ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) : "");
+    const cpuPeak = peakAt(points, (p) => p.cpu);
+    const memPeak = peakAt(points, (p) => p.memory);
+    const diskPeak = peakAt(points, (p) => p.disk);
+    const netPeak = peakAt(points, (p) => p.netIn + p.netOut);
+    const worstTab: ChartTab = !current
+        ? "cpu"
+        : current.memory.percent >= current.cpu.percent && current.memory.percent >= current.disk.percent
+          ? "memory"
+          : current.disk.percent >= current.cpu.percent
+            ? "disk"
+            : "cpu";
+
+    const cards = (
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            <ResourceCard
+                icon={Cpu}
+                iconClass="bg-info-muted text-info-text"
+                title="CPU"
+                level={current ? levelFor(current.cpu.percent) : null}
+                value={current ? `${Math.round(current.cpu.percent)}%` : "—"}
+                hint={current ? `of ${current.cpu.cores} ${current.cpu.cores === 1 ? "core" : "cores"}` : undefined}
+                spark={series((p) => p.cpu)}
+                color={COLOR.cpu}
+                footerLeft={cpuPeak ? `Peak ${Math.round(cpuPeak.value)}%${attention ? ` · ${clock(cpuPeak.t)}` : ""}` : "Peak —"}
+                footerRight={attention ? undefined : rangeLabel}
+            />
+            <ResourceCard
+                icon={MemoryStick}
+                iconClass="bg-chart-violet/10 text-chart-violet-text"
+                title="Memory"
+                level={current ? levelFor(current.memory.percent) : null}
+                value={current ? (attention ? `${Math.round(current.memory.percent)}%` : formatBytes(current.memory.used)) : "—"}
+                hint={current ? (attention ? `${formatBytes(current.memory.used)} of ${formatBytes(current.memory.total)}` : `of ${formatBytes(current.memory.total)} (${Math.round(current.memory.percent)}%)`) : undefined}
+                spark={series((p) => p.memory)}
+                color={COLOR.memory}
+                footerLeft={memPeak && current ? (attention ? `Peak ${Math.round(memPeak.value)}% · ${clock(memPeak.t)}` : `Peak: ${formatBytes((memPeak.value / 100) * current.memory.total)}`) : "Peak —"}
+                footerRight={attention ? undefined : rangeLabel}
+            />
+            <ResourceCard
+                icon={HardDrive}
+                iconClass="bg-warning-muted text-warning-text"
+                title="Disk"
+                level={current ? levelFor(current.disk.percent) : null}
+                value={current ? (attention ? `${Math.round(current.disk.percent)}%` : formatBytes(current.disk.used)) : "—"}
+                hint={current ? (attention ? `${formatBytes(current.disk.used)} of ${formatBytes(current.disk.total)}` : `of ${formatBytes(current.disk.total)} (${Math.round(current.disk.percent)}%)`) : undefined}
+                spark={series((p) => p.disk)}
+                color={current && current.disk.percent >= 90 ? COLOR.crit : COLOR.disk}
+                footerLeft={diskDays && current && current.disk.percent >= 70 ? <span className="font-medium text-danger-text">Full in about {diskDays} {diskDays === 1 ? "day" : "days"}</span> : diskPeak ? `Peak ${Math.round(diskPeak.value)}%${attention ? ` · ${clock(diskPeak.t)}` : ""}` : "Peak —"}
+                footerRight={attention ? undefined : rangeLabel}
+            />
+            <ResourceCard
+                icon={Network}
+                iconClass="bg-success-muted text-success-text"
+                title="Network"
+                level={current ? "good" : null}
+                value={current ? formatRate(current.network.bytesIn + current.network.bytesOut) : "—"}
+                hint={attention && current ? `${formatRate(current.network.bytesOut)} out` : undefined}
+                sub={
+                    !attention && current ? (
+                        <span className="flex items-center gap-4">
+                            <span className="flex items-center gap-1 tabular-nums"><ArrowDown className="size-3.5 text-info-text" aria-hidden="true" />{formatRate(current.network.bytesIn)}</span>
+                            <span className="flex items-center gap-1 tabular-nums"><ArrowUp className="size-3.5 text-chart-violet-text" aria-hidden="true" />{formatRate(current.network.bytesOut)}</span>
+                        </span>
+                    ) : undefined
+                }
+                spark={series((p) => p.netIn + p.netOut)}
+                color={COLOR.network}
+                footerLeft={netPeak ? `Peak ${formatRate(netPeak.value)}${attention ? "" : ""}` : "Peak —"}
+                footerRight={attention ? undefined : rangeLabel}
+            />
+        </div>
+    );
+
+    const topApps = (
+        <Card className="gap-0 rounded-2xl py-0 shadow-xs">
+            <div className="flex items-center justify-between px-5 pb-2 pt-5">
+                <h2 className="text-lg font-bold text-foreground">Top apps by resource usage</h2>
+                <Link href="/apps" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">View all apps<ArrowRight className="size-3.5" aria-hidden="true" /></Link>
+            </div>
+            <AppsTable apps={apps} limit={4} />
+        </Card>
+    );
+
+    if (attention) {
+        const headlineCount = Math.max(1, problems.length);
+        const sentence = problems.slice(0, 2).map((item) => item.short).join(" ") || "Some numbers are higher than usual.";
+        const visibleInsights = showAllInsights ? insights : insights.slice(0, 3);
+        const stats = [
+            { label: "Servers online", value: `${serversOnline} / ${serversTotal}`, sub: offline === 0 ? "All connected" : `${offline} offline` },
+            { label: "Apps healthy", value: `${healthyApps} / ${apps.length}`, sub: needAttention > 0 ? `${needAttention} ${needAttention === 1 ? "app" : "apps"} affected` : "All healthy" },
+            { label: "Active alerts", value: alerts === null ? "—" : String(activeAlerts.length), sub: activeAlerts.length > 0 ? "Action needed" : "All quiet" },
+        ];
+        const high = tone === "high";
+        return (
+            <div className="space-y-5">
+                <Card className={cn("gap-0 rounded-2xl py-0 shadow-xs", high ? "border-danger/30 bg-danger-muted/30" : "border-warning/30 bg-warning-muted/40", tourStep === 0 && TOUR_RING)}>
+                    <div className="flex flex-col gap-6 p-5 lg:flex-row lg:items-center">
+                        <div className="flex flex-1 items-center gap-5">
+                            <HealthRing score={score} compact />
+                            <div className="min-w-0">
+                                <p className={cn("flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider", high ? "text-danger-text" : "text-warning-text")}><AlertTriangle className="size-3.5" aria-hidden="true" />Attention needed</p>
+                                <h2 className="mt-1 text-2xl font-bold tracking-tight text-foreground">{headlineCount} {headlineCount === 1 ? "thing needs" : "things need"} attention</h2>
+                                <p className="mt-1.5 text-sm text-muted-foreground">{sentence}</p>
+                            </div>
+                        </div>
+                        <dl className="grid grid-cols-3 divide-x border-t pt-4 lg:border-t-0 lg:pt-0">
+                            {stats.map((stat) => (
+                                <div key={stat.label} className="px-6 first:pl-0 last:pr-0">
+                                    <dt className="text-xs text-muted-foreground">{stat.label}</dt>
+                                    <dd className="mt-1 text-2xl font-bold tabular-nums text-foreground">{stat.value}</dd>
+                                    <p className="text-xs text-muted-foreground">{stat.sub}</p>
+                                </div>
+                            ))}
+                        </dl>
+                    </div>
+                </Card>
+
+                <section aria-label="What we noticed" className={cn("rounded-2xl", tourStep === 1 && TOUR_RING)}>
+                    <div className="mb-3 flex items-baseline justify-between gap-3">
+                        <h2 className="flex items-baseline gap-3 text-base font-bold text-foreground">What we noticed<span className="text-xs font-normal text-muted-foreground">Prioritized by impact</span></h2>
+                        {insights.length > 3 ? (
+                            <button type="button" onClick={() => setShowAllInsights((v) => !v)} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">{showAllInsights ? "Show less" : `View all insights (${insights.length})`}<ArrowRight className="size-3.5" aria-hidden="true" /></button>
+                        ) : null}
+                    </div>
+                    <ul className="grid gap-4 lg:grid-cols-3">
+                        {visibleInsights.map((insight) => {
+                            const style = INSIGHT_STYLE[insight.tone];
+                            const Icon = style.icon;
+                            return (
+                                <li key={insight.id} className={cn("flex gap-3 rounded-xl border border-l-4 bg-card p-4 shadow-xs", INSIGHT_BORDER[insight.tone])}>
+                                    <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", style.box)}><Icon className="size-4" aria-hidden="true" /></span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-bold text-foreground">{insight.title}</p>
+                                        <p className="mt-1 text-xs text-muted-foreground">{insight.body}</p>
+                                    </div>
+                                    <div className="flex shrink-0 flex-col items-end gap-2">
+                                        {insight.action ? <Button asChild size="sm" variant="outline"><Link href={insight.action.href}>{insight.action.label}</Link></Button> : null}
+                                        {insight.secondary ? (
+                                            insight.secondary.guide ? (
+                                                <button type="button" onClick={onOpenGuide} className="text-xs font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">{insight.secondary.label}</button>
+                                            ) : (
+                                                <Link href={insight.secondary.href ?? "#"} className="text-xs font-medium text-primary hover:underline">{insight.secondary.label}</Link>
+                                            )
+                                        ) : null}
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </section>
+
+                {cards}
+
+                <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,1.1fr)]">
+                    <div className={cn("rounded-2xl", tourStep === 2 && TOUR_RING)}>
+                        <UsageChart className="h-full" points={points} range={range} markers={markers} serversLabel={serversLabel} initialTab={worstTab} onCreateAlert={onCreateAlert} />
+                    </div>
+                    <ActiveAlerts alerts={alerts} compact onSilence={onSilence} silencing={silencing} />
+                </div>
+
+                {topApps}
+            </div>
+        );
+    }
+
+    const headline = score === null ? "No data yet" : "Everything looks healthy";
+    const subline = serversTotal === 0 ? "Connect a server to start monitoring." : `All ${serversTotal} ${serversTotal === 1 ? "server is" : "servers are"} online and running normally.`;
     const visibleInsights = showAllInsights ? insights : insights.slice(0, 2);
 
     return (
         <div className="space-y-5">
             <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-                <Card className="gap-0 rounded-2xl py-0 shadow-xs">
+                <Card className={cn("gap-0 rounded-2xl py-0 shadow-xs", tourStep === 0 && TOUR_RING)}>
                     <div className="flex flex-col gap-6 p-6 sm:flex-row sm:items-center">
                         <HealthRing score={score} />
                         <div className="min-w-0 flex-1">
                             <h2 className="flex items-center gap-2 text-xl font-bold tracking-tight text-foreground">
-                                {tone === "good" ? <CheckCircle2 className="size-5 text-success" aria-hidden="true" /> : tone === "neutral" ? null : <AlertTriangle className={cn("size-5", tone === "watch" ? "text-warning" : "text-danger")} aria-hidden="true" />}
+                                {tone === "good" ? <CheckCircle2 className="size-5 text-success" aria-hidden="true" /> : null}
                                 {headline}
                             </h2>
                             <p className="mt-1 text-sm text-muted-foreground">{subline}</p>
@@ -358,25 +595,22 @@ export function OverviewTab({ range, score, serversTotal, serversOnline, servers
                                 </div>
                                 <div className="flex items-start gap-3">
                                     <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-success-muted text-success-text"><Box className="size-4" aria-hidden="true" /></span>
-                                    <div><p className="text-xl font-bold tabular-nums text-foreground">{healthyApps}</p><p className="text-xs text-muted-foreground">Apps healthy</p><p className="text-xs text-muted-foreground">{apps.length} total{needAttention > 0 ? ` · ${needAttention} to check` : ""}</p></div>
+                                    <div><p className="text-xl font-bold tabular-nums text-foreground">{healthyApps}</p><p className="text-xs text-muted-foreground">Apps healthy</p><p className="text-xs text-muted-foreground">{apps.length} total</p></div>
                                 </div>
                                 <div className="flex items-start gap-3">
-                                    <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", activeAlerts.length > 0 ? "bg-danger-muted text-danger-text" : "bg-secondary text-muted-foreground")}><Bell className="size-4" aria-hidden="true" /></span>
+                                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground"><Bell className="size-4" aria-hidden="true" /></span>
                                     <div><p className="text-xl font-bold tabular-nums text-foreground">{alerts === null ? "—" : activeAlerts.length}</p><p className="text-xs text-muted-foreground">Active alerts</p><Link href="/alerts" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">View alerts<ArrowRight className="size-3" aria-hidden="true" /></Link></div>
                                 </div>
                             </div>
-                            {updatedAt ? <p className="mt-4 text-xs text-muted-foreground">Updated {timeAgo(new Date(updatedAt).toISOString())}</p> : null}
                         </div>
                     </div>
                 </Card>
 
-                <Card className="gap-0 rounded-2xl py-0 shadow-xs">
+                <Card className={cn("gap-0 rounded-2xl py-0 shadow-xs", tourStep === 1 && TOUR_RING)}>
                     <div className="flex items-center justify-between px-5 pt-5">
                         <h2 className="text-lg font-bold text-foreground">What we noticed</h2>
                         {insights.length > 2 ? (
-                            <button type="button" onClick={() => setShowAllInsights((v) => !v)} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">
-                                {showAllInsights ? "Show less" : `View all insights (${insights.length})`}<ArrowRight className="size-3.5" aria-hidden="true" />
-                            </button>
+                            <button type="button" onClick={() => setShowAllInsights((v) => !v)} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">{showAllInsights ? "Show less" : `View all insights (${insights.length})`}<ArrowRight className="size-3.5" aria-hidden="true" /></button>
                         ) : null}
                     </div>
                     <ul className="space-y-3 p-5">
@@ -398,115 +632,15 @@ export function OverviewTab({ range, score, serversTotal, serversOnline, servers
                 </Card>
             </div>
 
-            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-                <ResourceCard
-                    icon={Cpu}
-                    iconClass="bg-info-muted text-info-text"
-                    title="CPU Usage"
-                    level={current ? levelFor(current.cpu.percent) : null}
-                    value={current ? `${Math.round(current.cpu.percent)}%` : "—"}
-                    hint={current ? `of ${current.cpu.cores} ${current.cpu.cores === 1 ? "core" : "cores"}` : undefined}
-                    spark={series((p) => p.cpu)}
-                    color={COLOR.cpu}
-                    peak={points.length ? `${Math.round(peak((p) => p.cpu))}%` : "—"}
-                    rangeLabel={rangeLabel}
-                />
-                <ResourceCard
-                    icon={MemoryStick}
-                    iconClass="bg-chart-violet/10 text-chart-violet-text"
-                    title="Memory Usage"
-                    level={current ? levelFor(current.memory.percent) : null}
-                    value={current ? formatBytes(current.memory.used) : "—"}
-                    hint={current ? `of ${formatBytes(current.memory.total)} (${Math.round(current.memory.percent)}%)` : undefined}
-                    spark={series((p) => p.memory)}
-                    color={COLOR.memory}
-                    peak={current && points.length ? formatBytes((peak((p) => p.memory) / 100) * current.memory.total) : "—"}
-                    rangeLabel={rangeLabel}
-                />
-                <ResourceCard
-                    icon={HardDrive}
-                    iconClass="bg-warning-muted text-warning-text"
-                    title="Disk Usage"
-                    level={current ? levelFor(current.disk.percent) : null}
-                    value={current ? formatBytes(current.disk.used) : "—"}
-                    hint={current ? `of ${formatBytes(current.disk.total)} (${Math.round(current.disk.percent)}%)` : undefined}
-                    spark={series((p) => p.disk)}
-                    color={COLOR.disk}
-                    peak={points.length ? `${Math.round(peak((p) => p.disk))}%` : "—"}
-                    rangeLabel={rangeLabel}
-                />
-                <ResourceCard
-                    icon={Network}
-                    iconClass="bg-success-muted text-success-text"
-                    title="Network (Total)"
-                    level={current ? "good" : null}
-                    value={current ? formatRate(current.network.bytesIn + current.network.bytesOut) : "—"}
-                    sub={
-                        current ? (
-                            <span className="flex items-center gap-4">
-                                <span className="flex items-center gap-1 tabular-nums"><ArrowDown className="size-3.5 text-info-text" aria-hidden="true" />{formatRate(current.network.bytesIn)}</span>
-                                <span className="flex items-center gap-1 tabular-nums"><ArrowUp className="size-3.5 text-chart-violet-text" aria-hidden="true" />{formatRate(current.network.bytesOut)}</span>
-                            </span>
-                        ) : undefined
-                    }
-                    spark={series((p) => p.netIn + p.netOut)}
-                    color={COLOR.network}
-                    peak={points.length ? formatRate(peak((p) => p.netIn + p.netOut)) : "—"}
-                    rangeLabel={rangeLabel}
-                />
+            {cards}
+
+            <div className={cn("rounded-2xl", tourStep === 2 && TOUR_RING)}>
+                <UsageChart points={points} range={range} markers={markers} serversLabel={serversLabel} initialTab="cpu" onCreateAlert={onCreateAlert} />
             </div>
 
-            <UsageChart points={points} range={range} markers={markers} serversLabel={serversLabel} />
-
             <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-                <Card className="gap-0 rounded-2xl py-0 shadow-xs">
-                    <div className="flex items-center justify-between px-5 pb-2 pt-5">
-                        <h2 className="text-lg font-bold text-foreground">Top apps by resource usage</h2>
-                        <Link href="/apps" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">View all apps<ArrowRight className="size-3.5" aria-hidden="true" /></Link>
-                    </div>
-                    <AppsTable apps={apps} limit={4} />
-                </Card>
-
-                <Card className="gap-0 rounded-2xl py-0 shadow-xs">
-                    <div className="flex items-center justify-between px-5 pb-2 pt-5">
-                        <h2 className="text-lg font-bold text-foreground">Active alerts</h2>
-                        <Link href="/alerts" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">View all alerts<ArrowRight className="size-3.5" aria-hidden="true" /></Link>
-                    </div>
-                    {alerts === null ? (
-                        <p className="px-5 py-10 text-center text-sm text-muted-foreground">Alerts are not available on your plan.</p>
-                    ) : activeAlerts.length === 0 ? (
-                        <div className="flex flex-col items-center gap-2 px-5 py-10 text-center text-sm text-muted-foreground">
-                            <CheckCircle2 className="size-6 text-success" aria-hidden="true" />
-                            No active alerts. Everything is quiet.
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="text-left text-xs font-medium text-muted-foreground">
-                                        <th className="px-5 py-2 font-medium">Severity</th>
-                                        <th className="px-3 py-2 font-medium">Message</th>
-                                        <th className="px-3 py-2 font-medium">Server / App</th>
-                                        <th className="px-5 py-2 text-right font-medium">Time</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                    {activeAlerts.slice(0, 4).map((event) => {
-                                        const severity = SEVERITY[normalizeSeverity(event.rule?.severity)];
-                                        return (
-                                            <tr key={event.id}>
-                                                <td className="px-5 py-3"><span className="flex items-center gap-2"><span className={cn("size-2 rounded-full", severity.dot)} aria-hidden="true" />{severity.label}</span></td>
-                                                <td className="px-3 py-3 text-foreground">{event.rule?.metricLabel ?? "Alert"}</td>
-                                                <td className="px-3 py-3 text-muted-foreground">{event.rule?.app?.name ?? event.rule?.server?.name ?? "—"}</td>
-                                                <td className="px-5 py-3 text-right text-muted-foreground">{timeAgo(event.openedAt)}</td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </Card>
+                {topApps}
+                <ActiveAlerts alerts={alerts} compact={false} onSilence={onSilence} silencing={silencing} />
             </div>
         </div>
     );
