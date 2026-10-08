@@ -6,13 +6,12 @@ test("agent update modal switches to queued tracking after approval", async ({ p
 
   await page.goto("/servers/mock-server-1");
   await page.getByRole("button", { name: /update available|agent update/i }).click();
-  await expect(page.getByRole("heading", { name: "Why this update matters" })).toBeVisible();
+  await expect(page.getByText("What's new in v2.0.1")).toBeVisible();
 
-  await page.getByRole("button", { name: "Update Agent" }).click();
+  await page.getByRole("button", { name: "Update now" }).click();
 
-  await expect(page.getByText("Agent update queued")).toBeVisible();
-  await expect(page.getByText("Queue position 1")).toBeVisible();
-  await expect(page.getByText("About 5s", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Updating agent" })).toBeVisible();
+  await expect(page.getByText(/Queue position 1 · About 5s/)).toBeVisible();
 });
 
 test("new app flow shows secure deploy profile before first deploy", async ({ page }) => {

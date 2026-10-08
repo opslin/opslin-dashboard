@@ -2,42 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Clock3, Copy, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, Copy, Download, Info, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { api, ApiRequestError, type AgentUpdateInfo, type ServerJobStatus } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 type AgentUpdateModalProps = {
     serverId: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 };
-
-function ReleaseSection({ title, items }: { title: string; items: string[] }) {
-    return (
-        <section className="rounded-lg border border-border/70 bg-secondary/25 p-4">
-            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                {items.map((item) => (
-                    <li key={item} className="flex gap-2">
-                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-chart-5" />
-                        <span>{item}</span>
-                    </li>
-                ))}
-            </ul>
-        </section>
-    );
-}
 
 function updateBlockedReason(info: AgentUpdateInfo) {
     if (info.activeUpdateJob) {
@@ -123,88 +99,71 @@ function phaseIndex(job?: ServerJobStatus | null, connected?: boolean, latest?: 
     return index >= 0 ? index : 1;
 }
 
-function UpdateTracker({
-    info,
-    job,
-}: {
-    info: AgentUpdateInfo;
-    job: ServerJobStatus;
-}) {
+const stepGroups = [
+    { label: "Downloading", keys: ["queued", "dispatching", "downloading"] },
+    { label: "Installing", keys: ["verifying_sha256", "validating_version", "backing_up", "replacing_binary"] },
+    { label: "Restarting agent", keys: ["restarting_agent", "updated"] },
+];
+
+function UpdateTracker({ info, job, targetName }: { info: AgentUpdateInfo; job: ServerJobStatus; targetName?: string }) {
     const index = phaseIndex(job, info.connected, info.latestVersion, info.currentVersion);
-    const waitingReconnect = job.status === "COMPLETED" && (!info.connected || info.currentVersion !== info.latestVersion);
     const failed = job.status === "FAILED";
-    const percent = job.progress?.percent ?? (job.status === "PENDING" ? 5 : job.status === "COMPLETED" ? 95 : 35);
-    const headline = failed
-        ? "Agent update failed"
-        : waitingReconnect
-            ? "Update installed, waiting for agent reconnect"
-            : job.status === "COMPLETED"
-                ? "Agent updated"
-                : job.status === "PENDING"
-                    ? "Agent update queued"
-                    : "Agent update running";
+    const waitingReconnect = job.status === "COMPLETED" && (!info.connected || info.currentVersion !== info.latestVersion);
+    const finished = job.status === "COMPLETED" && !waitingReconnect;
+    const percent = finished ? 100 : (job.progress?.percent ?? (job.status === "PENDING" ? 5 : job.status === "COMPLETED" ? 95 : 35));
+    const activeKey = updateStages[index]?.key ?? "queued";
+    const activeGroup = Math.max(0, stepGroups.findIndex((group) => group.keys.includes(activeKey)));
 
     return (
-        <section className="rounded-xl border border-border/70 bg-secondary/25 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <h3 className="text-sm font-semibold text-foreground">{headline}</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        {job.progress?.message || (job.status === "PENDING"
-                            ? `Queue position ${job.queuePosition ?? 1}; ${formatEta(job.estimatedStartSeconds)}.`
-                            : "Opslin is tracking the update job.")}
+        <div className="space-y-5">
+            <div>
+                <h2 className="text-2xl font-bold tracking-tight text-foreground">{finished ? "Agent updated" : failed ? "Update failed" : "Updating agent"}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                    {finished ? `v${info.latestVersion} is running${targetName ? ` on ${targetName}` : ""}.` : `Installing v${info.latestVersion}${targetName ? ` on ${targetName}` : ""}`}
+                </p>
+            </div>
+            <div>
+                <div className="mb-2 flex items-center justify-between text-sm font-semibold">
+                    <span className="text-foreground">{finished ? "Done" : failed ? "Stopped" : waitingReconnect ? "Waiting for the agent to reconnect…" : "Updating…"}</span>
+                    <span className="text-primary">{Math.round(percent)}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-primary/15" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)} aria-label="Update progress">
+                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.max(4, Math.min(100, percent))}%` }} />
+                </div>
+                {job.status === "PENDING" ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                        Queue position {job.queuePosition ?? 1} · {formatEta(job.estimatedStartSeconds)}
                     </p>
-                </div>
-                <Badge variant={failed ? "destructive" : "secondary"}>{job.status}</Badge>
+                ) : null}
             </div>
-            <div className="mt-4 h-2 rounded-full bg-background">
-                <div
-                    className="h-2 rounded-full bg-primary transition-all"
-                    style={{ width: `${Math.max(5, Math.min(100, percent))}%` }}
-                />
-            </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                <div className="rounded-lg border border-border/70 bg-background p-3">
-                    <p className="dashboard-section-label">Queue</p>
-                    <p className="mt-1 text-sm text-foreground">
-                        {job.queueError
-                            ? job.queueError
-                            : job.jobsAhead === null || job.jobsAhead === undefined
-                            ? job.queueState || "tracking"
-                            : `${job.jobsAhead} job${job.jobsAhead === 1 ? "" : "s"} ahead`}
-                    </p>
-                </div>
-                <div className="rounded-lg border border-border/70 bg-background p-3">
-                    <p className="dashboard-section-label">ETA</p>
-                    <p className="mt-1 text-sm text-foreground">{formatEta(job.estimatedStartSeconds)}</p>
-                </div>
-                <div className="rounded-lg border border-border/70 bg-background p-3">
-                    <p className="dashboard-section-label">Target</p>
-                    <p className="mt-1 font-mono text-sm text-foreground">{info.latestVersion}</p>
-                </div>
-            </div>
-            <div className="mt-4 space-y-2">
-                {updateStages.map((stage, stageIndex) => {
-                    const done = stageIndex < index || (stage.key === "updated" && job.status === "COMPLETED" && info.connected && info.currentVersion === info.latestVersion);
-                    const active = stageIndex === index && !failed;
+            <ul className="divide-y rounded-xl border">
+                {stepGroups.map((group, i) => {
+                    const done = finished || i < activeGroup;
+                    const active = i === activeGroup && !finished && !failed;
+                    const bad = i === activeGroup && failed;
                     return (
-                        <div key={stage.key} className="flex items-center gap-3 text-sm">
-                            <span className={`flex size-6 items-center justify-center rounded-full border ${done ? "border-chart-5 bg-chart-5/15 text-chart-5" : active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>
-                                {done ? <CheckCircle2 className="size-4" /> : active ? <Loader2 className="size-4 animate-spin" /> : <Clock3 className="size-3.5" />}
+                        <li key={group.label} className="flex items-center gap-3 px-4 py-3.5 text-sm">
+                            <span className="flex size-5 items-center justify-center">
+                                {done ? <span className="size-2.5 rounded-full bg-success" aria-hidden="true" /> : active ? <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" /> : bad ? <AlertTriangle className="size-4 text-danger-text" aria-hidden="true" /> : <span className="size-2.5 rounded-full bg-muted-foreground/30" aria-hidden="true" />}
                             </span>
-                            <span className={done || active ? "text-foreground" : "text-muted-foreground"}>{stage.label}</span>
-                        </div>
+                            <span className={cn("font-medium", done || active ? "text-foreground" : "text-muted-foreground")}>{group.label}</span>
+                            <span className="ml-auto text-xs text-muted-foreground">{done ? "Complete" : active ? "In progress" : bad ? "Failed" : "Waiting"}</span>
+                        </li>
                     );
                 })}
-            </div>
-            {failed && job.error && (
-                <Alert variant="destructive" className="mt-4">
-                    <AlertTriangle className="size-4" />
-                    <AlertTitle>Update failed</AlertTitle>
-                    <AlertDescription>{job.error}</AlertDescription>
-                </Alert>
+            </ul>
+            {failed && job.error ? (
+                <div role="alert" className="flex gap-2 rounded-xl border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger-text">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    {job.error}
+                </div>
+            ) : (
+                <div className={cn("flex items-center gap-2 rounded-xl px-4 py-3 text-sm", finished ? "bg-success-muted text-success-text" : "bg-muted/60 text-muted-foreground")}>
+                    <Check className="size-4" aria-hidden="true" />
+                    {finished ? <strong>Agent updated</strong> : <span>After completion: <strong className="text-foreground">Agent updated</strong></span>}
+                </div>
             )}
-        </section>
+        </div>
     );
 }
 
@@ -298,103 +257,84 @@ export function AgentUpdateModal({ serverId, open, onOpenChange }: AgentUpdateMo
     }, [info?.activeUpdateJob, info?.lastUpdateJob, jobQuery.data, liveProgress]);
     const canRetry = trackedJob?.status === "FAILED" && info?.updateAvailable && info.connected && info.canSelfUpdate;
 
+    const latest = info?.release;
+    const highlights = latest ? [...latest.newFunctions, ...latest.bugFixes, ...latest.whyUpdate].slice(0, 3) : [];
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <RefreshCw className="size-5 text-primary" />
-                        Update Opslin Agent
-                    </DialogTitle>
-                    <DialogDescription>
-                        Review exactly what changes on this VPS before approving the update.
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogContent showCloseButton={false} className="max-h-[90vh] max-w-[480px] gap-0 overflow-y-auto rounded-2xl border bg-card p-7 shadow-2xl backdrop-blur-none">
+                <DialogTitle className="sr-only">Update agent</DialogTitle>
+                <DialogDescription className="sr-only">Review and approve the Opslin agent update.</DialogDescription>
 
                 {updateQuery.isLoading && (
-                    <div className="flex items-center gap-3 rounded-lg border border-border/70 bg-secondary/30 p-5 text-sm text-muted-foreground">
-                        <Loader2 className="size-4 animate-spin" />
-                        Loading agent release details...
+                    <div className="flex items-center gap-3 py-10 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" /> Loading agent release details…
                     </div>
                 )}
 
                 {updateQuery.error && (
-                    <Alert variant="destructive">
-                        <AlertTriangle className="size-4" />
-                        <AlertTitle>Unable to load update details</AlertTitle>
-                        <AlertDescription>
-                            {updateQuery.error instanceof Error ? updateQuery.error.message : "Try again after the server reconnects."}
-                        </AlertDescription>
-                    </Alert>
+                    <div role="alert" className="flex gap-2 rounded-xl border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger-text">
+                        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                        {updateQuery.error instanceof Error ? updateQuery.error.message : "Unable to load update details. Try again after the server reconnects."}
+                    </div>
                 )}
 
-                {info && (
-                    <div className="space-y-4">
-                        <div className="grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-lg border border-border/70 bg-secondary/25 p-4">
-                                <p className="dashboard-section-label">Installed</p>
-                                <p className="mt-2 font-mono text-sm text-foreground">{info.currentVersion || "Unknown"}</p>
-                            </div>
-                            <div className="rounded-lg border border-border/70 bg-secondary/25 p-4">
-                                <p className="dashboard-section-label">Latest Stable</p>
-                                <p className="mt-2 font-mono text-sm text-foreground">{info.latestVersion}</p>
-                            </div>
-                            <div className="rounded-lg border border-border/70 bg-secondary/25 p-4">
-                                <p className="dashboard-section-label">Secure Control</p>
-                                <p className="mt-2 font-mono text-sm text-foreground">
-                                    {info.isSecureControlCapable ? info.helperStatus : `Needs ${info.minimumSecureControlVersion}`}
-                                </p>
-                            </div>
-                        </div>
+                {info && trackedJob ? (
+                    <>
+                        <span className="mb-5 flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><Download className="size-5" aria-hidden="true" /></span>
+                        <UpdateTracker info={info} job={trackedJob} />
+                    </>
+                ) : null}
 
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="secondary">{info.release.channel.toUpperCase()}</Badge>
-                            <Badge variant={info.updateAvailable ? "default" : "secondary"}>
-                                {info.updateAvailable ? "Update available" : "Current"}
-                            </Badge>
-                            <Badge variant={info.connected ? "secondary" : "destructive"}>
-                                {info.connected ? "Agent online" : "Agent offline"}
-                            </Badge>
-                            <Badge variant="outline">{info.release.criticality}</Badge>
-                            <Badge variant={info.isSecureControlCapable ? "secondary" : "outline"}>
-                                Agent 2.0 Secure Control
-                            </Badge>
-                        </div>
-
-                        {trackedJob && (
-                            <UpdateTracker info={info} job={trackedJob} />
-                        )}
-
-                        {blockedReason && !trackedJob && (
-                            <Alert className="border-chart-4/40 bg-chart-4/10">
-                                <AlertTriangle className="size-4 text-chart-4" />
-                                <AlertTitle>Action needed</AlertTitle>
-                                <AlertDescription>{blockedReason}</AlertDescription>
-                            </Alert>
-                        )}
-
-                        <ReleaseSection title="Why this update matters" items={info.release.whyUpdate} />
-                        <ReleaseSection title="Bug fixes" items={info.release.bugFixes} />
-                        <ReleaseSection title="New agent functions" items={info.release.newFunctions} />
-                        <ReleaseSection title="What changes on your VPS" items={info.release.vpsChanges} />
-
-                        <section className="rounded-lg border border-border/70 bg-secondary/25 p-4">
-                            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                                <ShieldCheck className="size-4 text-chart-5" />
-                                Security verification
-                            </h3>
-                            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                                {info.release.securityNotes.map((item) => (
-                                    <li key={item}>{item}</li>
-                                ))}
-                            </ul>
-                            <p className="mt-3 break-all font-mono text-xs text-muted-foreground">
-                                SHA-256: {info.artifact.sha256}
+                {info && !trackedJob ? (
+                    <div className="space-y-5">
+                        <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><Download className="size-5" aria-hidden="true" /></span>
+                        <div>
+                            <h2 className="text-2xl font-bold tracking-tight text-foreground">Update agent</h2>
+                            <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                                <span>v{info.currentVersion || "?"}</span>
+                                <ArrowRight className="size-3.5" aria-hidden="true" />
+                                <span className="font-medium text-foreground">v{info.latestVersion}</span>
                             </p>
-                        </section>
-
-                        {info.manualUpdateRequired && (
-                            <section className="rounded-lg border border-border/70 bg-background p-4">
+                        </div>
+                        {highlights.length > 0 ? (
+                            <section className="rounded-xl border bg-muted/30 p-4">
+                                <h3 className="text-sm font-semibold text-foreground">What&apos;s new in v{info.latestVersion}</h3>
+                                <ul className="mt-2.5 space-y-1.5 text-sm text-muted-foreground">
+                                    {highlights.map((item) => (
+                                        <li key={item} className="flex gap-2.5"><span className="mt-2 size-1 shrink-0 rounded-full bg-muted-foreground/60" aria-hidden="true" />{item}</li>
+                                    ))}
+                                </ul>
+                            </section>
+                        ) : null}
+                        {blockedReason ? (
+                            <div role="alert" className="flex gap-2 rounded-xl border border-warning/30 bg-warning-muted px-4 py-3 text-sm text-warning-text">
+                                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                                {blockedReason}
+                            </div>
+                        ) : (
+                            <div className="flex items-start gap-2.5 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
+                                <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                                Opslin checks the download&apos;s SHA-256, then restarts only the agent. Your apps keep running.
+                            </div>
+                        )}
+                        <details className="group rounded-xl border px-4 py-3 text-sm">
+                            <summary className="flex cursor-pointer list-none items-center justify-between font-medium text-foreground">
+                                Release details
+                                <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+                            </summary>
+                            <div className="mt-3 space-y-3 text-muted-foreground">
+                                {[["Why this update matters", info.release.whyUpdate], ["Bug fixes", info.release.bugFixes], ["New agent functions", info.release.newFunctions], ["What changes on your VPS", info.release.vpsChanges], ["Security verification", info.release.securityNotes]].map(([title, items]) => (
+                                    <div key={title as string}>
+                                        <h4 className="font-semibold text-foreground">{title as string}</h4>
+                                        <ul className="mt-1 list-disc space-y-1 pl-5">{(items as string[]).map((item) => <li key={item}>{item}</li>)}</ul>
+                                    </div>
+                                ))}
+                                <p className="break-all font-mono text-xs">SHA-256: {info.artifact.sha256}</p>
+                            </div>
+                        </details>
+                        {info.manualUpdateRequired ? (
+                            <div className="rounded-xl border p-4">
                                 <div className="flex items-center justify-between gap-3">
                                     <h3 className="text-sm font-semibold text-foreground">Manual fallback</h3>
                                     <Button
@@ -407,37 +347,29 @@ export function AgentUpdateModal({ serverId, open, onOpenChange }: AgentUpdateMo
                                             toast.success("Manual command copied");
                                         }}
                                     >
-                                        <Copy className="mr-2 size-4" />
-                                        Copy
+                                        <Copy aria-hidden="true" /> Copy
                                     </Button>
                                 </div>
-                                <pre className="mt-3 overflow-x-auto rounded-lg bg-secondary/60 p-3 text-xs text-foreground">
-                                    {info.manualFallbackCommand}
-                                </pre>
-                            </section>
-                        )}
+                                <pre className="mt-3 overflow-x-auto rounded-lg bg-muted p-3 text-xs text-foreground">{info.manualFallbackCommand}</pre>
+                            </div>
+                        ) : null}
                     </div>
-                )}
+                ) : null}
 
-                <DialogFooter>
-                    <Button
-                        id="agent-update-cancel"
-                        type="button"
-                        variant="outline"
-                        onClick={() => onOpenChange(false)}
-                    >
-                        Close
+                <DialogFooter className="mt-6 flex-row justify-end gap-3 sm:justify-end">
+                    <Button id="agent-update-cancel" type="button" variant="outline" size="lg" onClick={() => onOpenChange(false)}>
+                        {trackedJob ? "Close" : "Cancel"}
                     </Button>
-                    <Button
-                        id="agent-update-confirm"
-                        type="button"
-                        disabled={!info || Boolean(blockedReason) || updateMutation.isPending || Boolean(trackedJob && !canRetry)}
-                        onClick={() => updateMutation.mutate()}
-                    >
-                        {updateMutation.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
-                        {canRetry ? "Retry Update" : trackedJob ? "Update Queued" : "Update Agent"}
-                    </Button>
+                    {!trackedJob || canRetry ? (
+                        <Button id="agent-update-confirm" type="button" size="lg" disabled={!info || Boolean(blockedReason) || updateMutation.isPending} onClick={() => updateMutation.mutate()}>
+                            {updateMutation.isPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
+                            {canRetry ? "Retry update" : "Update now"}
+                        </Button>
+                    ) : null}
                 </DialogFooter>
+                <button type="button" aria-label="Close" onClick={() => onOpenChange(false)} className="absolute right-5 top-5 rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                    <X className="size-5" aria-hidden="true" />
+                </button>
             </DialogContent>
         </Dialog>
     );

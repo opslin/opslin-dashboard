@@ -3,21 +3,16 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  CheckCircle2, Clock, Container, FileText, HeartPulse, Info, Rocket, RotateCw,
-  Server, Terminal, Trash2, Shield, WifiOff, type LucideIcon,
-} from "lucide-react";
+import { Rocket, Server, Terminal } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Header } from "@/components/layout/header";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type App, type Database as DatabaseRecord } from "@/lib/api";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { ServerDriftPanel } from "@/components/servers/server-drift-panel";
-import { AgentInstallCommands } from "@/components/servers/agent-install-commands";
 import { AgentUpdateModal } from "@/components/servers/agent-update-modal";
 import { ServerCleanupModal } from "@/components/servers/server-cleanup-modal";
 import { AppsCard, DatabasesCard, DetailsCard, RecentActivityCard } from "@/components/servers/detail/overview-lists";
@@ -26,6 +21,9 @@ import { AppsDatabasesTab } from "@/components/servers/detail/apps-databases-tab
 import { MetricsTab } from "@/components/servers/detail/metrics-tab";
 import { SecurityTab } from "@/components/servers/detail/security-tab";
 import { ServerActionsMenu } from "@/components/servers/detail/server-actions-menu";
+import { ActivityTab } from "@/components/servers/detail/activity-tab";
+import { SettingsTab } from "@/components/servers/detail/settings-tab";
+import { OfflineOverview } from "@/components/servers/detail/offline-overview";
 import { KpiCards } from "@/components/servers/detail/kpi-cards";
 import { attentionIcons, NeedsAttention, type AttentionItem } from "@/components/servers/detail/needs-attention";
 
@@ -43,127 +41,6 @@ function fmtConnectedFor(connectedAt?: string | null) {
   const seconds = (Date.now() - new Date(connectedAt).getTime()) / 1000;
   return formatUptime(seconds);
 }
-
-const SECURE_CONTROL_ACTIONS: Array<{
-  action: string;
-  label: string;
-  description: string;
-  icon3d: LucideIcon;
-}> = [
-  { action: "agent_status", label: "Status", description: "Check agent and helper services", icon3d: Info },
-  { action: "agent_logs", label: "Logs", description: "Fetch recent agent logs", icon3d: FileText },
-  { action: "system_health", label: "Health", description: "Read uptime and disk state", icon3d: HeartPulse },
-  { action: "docker_ps", label: "Containers", description: "List Opslin-managed containers", icon3d: Container },
-  { action: "agent_restart", label: "Restart Agent", description: "Restart only the Opslin agent", icon3d: RotateCw },
-];
-
-function SecureControlCard({ serverId }: { serverId: string }) {
-  const queryClient = useQueryClient();
-  const { data: info } = useQuery({
-    queryKey: ["agent-control", serverId],
-    queryFn: () => api.getAgentControl(serverId),
-    enabled: Boolean(serverId),
-    refetchInterval: 15_000,
-  });
-
-  const actionMutation = useMutation({
-    mutationFn: (payload: { action: string; args?: Record<string, unknown> }) =>
-      api.runAgentControlAction(serverId, { action: payload.action as never, args: payload.args }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agent-control", serverId] });
-      toast.success("Action queued");
-    },
-    onError: (e: unknown) => {
-      toast.error(e instanceof Error ? e.message : "Action failed");
-    },
-  });
-
-  const helperReady = info?.helperStatus === "active" || info?.helperStatus === "available";
-  const disabled = !info?.connected || !info?.isSecureControlCapable || !info.secureControl || !helperReady;
-
-  return (
-    <Card className="border-border shadow-none">
-      <CardContent className="p-5 space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <Shield size={36} />
-            <div>
-              <h2 className="text-sm font-bold text-foreground">Agent 2.0 Secure Control</h2>
-              <p className="text-[11px] text-muted-foreground">Controlled VPS actions without exposing a root terminal.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground">Agent v{info?.currentVersion || "—"}</span>
-            <span className={cn(
-              "inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border",
-              helperReady
-                ? "text-success-text bg-success-muted border-success/30"
-                : "text-muted-foreground bg-muted/40 border-border"
-            )}>
-              <span className={cn("h-1.5 w-1.5 rounded-full", helperReady ? "bg-success" : "bg-muted-foreground/40")} />
-              Helper {helperReady ? "active" : info?.helperStatus || "inactive"}
-            </span>
-          </div>
-        </div>
-
-        {/* Action grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {SECURE_CONTROL_ACTIONS.map((item) => (
-            <button
-              key={item.action}
-              type="button"
-              disabled={disabled || actionMutation.isPending}
-              onClick={() => actionMutation.mutate({ action: item.action, args: item.action === "agent_logs" ? { lines: 120 } : undefined })}
-              className={cn(
-                "rounded-xl border border-border bg-card px-3 py-3 text-left",
-                "hover:border-border hover:bg-muted/40 transition-colors",
-                "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-card"
-              )}
-            >
-              <item.icon3d size={36} className="mb-2" />
-              <p className="text-sm font-semibold text-foreground">{item.label}</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{item.description}</p>
-            </button>
-          ))}
-        </div>
-
-        {/* Bottom status row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border/60">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Running Job</p>
-            <p className="text-xs font-medium text-foreground mt-1">
-              {info?.runningJob ? `${info.runningJob.type || "Action"}` : "No running agent job"}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Last Privileged Action</p>
-            <p className="text-xs font-medium text-foreground mt-1 flex items-center gap-1.5">
-              {info?.lastPrivilegedAction ? (
-                <>
-                  {info.lastPrivilegedAction.status === "COMPLETED" ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-success-text" />
-                  ) : (
-                    <Clock className="h-3.5 w-3.5 text-warning-text" />
-                  )}
-                  <span>{info.lastPrivilegedAction.status}</span>
-                  <span className="text-muted-foreground">
-                    {info.lastPrivilegedAction.endedAt
-                      ? formatRelativeTime(info.lastPrivilegedAction.endedAt)
-                      : ""}
-                  </span>
-                </>
-              ) : (
-                <span className="text-muted-foreground">No privileged action yet</span>
-              )}
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 
 // ---------------------------------------------------------------------------
 // Main page
@@ -273,8 +150,6 @@ export default function ServerDetailPage() {
 
   const lastSeen = server.lastSeenAt ? formatRelativeTime(server.lastSeenAt) : "Never";
   const isLive = server.isLiveConnected ?? server.status === "connected";
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-  const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || "http://localhost:3000";
   const displayAddress = server.publicIp || server.ip || server.hostname || "Unknown address";
   const updateAvailable = Boolean(agentUpdateInfo?.updateAvailable || agentUpdateInfo?.activeUpdateJob);
   const specs = [
@@ -316,20 +191,29 @@ export default function ServerDetailPage() {
                 {isLive ? "Online" : "Offline"}
               </span>
             </div>
-            <p className="mt-1 text-[15px] text-muted-foreground">{specs.join("  ·  ")}</p>
+            <p className="mt-1 text-[15px] text-muted-foreground">{(isLive ? specs : [displayAddress, server.os || "Linux", `Last seen ${lastSeen}`]).join("  ·  ")}</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button asChild size="lg">
-            <Link href={`/apps/new?server=${serverId}`}>
-              <Rocket aria-hidden="true" /> Deploy app
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="lg">
-            <Link href={`/terminal?server=${serverId}`}>
-              <Terminal aria-hidden="true" /> Terminal
-            </Link>
-          </Button>
+          {isLive ? (
+            <>
+              <Button asChild size="lg">
+                <Link href={`/apps/new?server=${serverId}`}>
+                  <Rocket aria-hidden="true" /> Deploy app
+                </Link>
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link href={`/terminal?server=${serverId}`}>
+                  <Terminal aria-hidden="true" /> Terminal
+                </Link>
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button size="lg" disabled title="Server is offline"><Rocket aria-hidden="true" /> Deploy app</Button>
+              <Button variant="outline" size="lg" disabled title="Server is offline"><Terminal aria-hidden="true" /> Terminal</Button>
+            </>
+          )}
           <ServerActionsMenu
             serverId={serverId}
             serverName={server.name}
@@ -344,18 +228,8 @@ export default function ServerDetailPage() {
       </div>
 
       <AgentUpdateModal serverId={serverId} open={agentUpdateOpen} onOpenChange={setAgentUpdateOpen} />
-      <ServerCleanupModal serverId={serverId} open={cleanupOpen} onOpenChange={setCleanupOpen} />
+      <ServerCleanupModal serverId={serverId} serverName={server.name} open={cleanupOpen} onOpenChange={setCleanupOpen} />
 
-      {!isLive && (
-        <Alert className="border-danger/30 bg-danger-muted text-danger-text">
-          <WifiOff className="h-4 w-4 text-danger-text" />
-          <AlertTitle className="text-sm font-semibold">{server.name} is offline</AlertTitle>
-          <AlertDescription className="space-y-2 text-xs">
-            <p>Monitoring and deploys are paused. Run this command on the server to reconnect.</p>
-            <AgentInstallCommands apiUrl={apiUrl} dashboardUrl={dashboardUrl} compact showEndpoints={false} />
-          </AlertDescription>
-        </Alert>
-      )}
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-5">
         <TabsList variant="line" className="w-full justify-start gap-8 overflow-x-auto">
@@ -365,6 +239,10 @@ export default function ServerDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-5">
+          {!isLive ? (
+            <OfflineOverview server={server} apps={apps} />
+          ) : (
+          <>
           <KpiCards metrics={metrics} isLive={isLive} lastSeen={lastSeen} fallbackUptime={fmtConnectedFor(server.connectedAt)} />
           <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="space-y-5">
@@ -383,6 +261,8 @@ export default function ServerDetailPage() {
               />
             </div>
           </div>
+          </>
+          )}
         </TabsContent>
 
         <TabsContent value="apps">
@@ -394,31 +274,26 @@ export default function ServerDetailPage() {
         </TabsContent>
 
         <TabsContent value="security">
-          <SecurityTab serverId={serverId} />
+          <div className="space-y-5">
+            <SecurityTab serverId={serverId} />
+            <ServerDriftPanel serverId={serverId} className="border-border shadow-none" />
+          </div>
         </TabsContent>
 
-        <TabsContent value="activity" className="space-y-5">
-          <ServerDriftPanel serverId={serverId} className="border-border shadow-none" />
+        <TabsContent value="activity">
+          <ActivityTab serverId={serverId} />
         </TabsContent>
 
-        <TabsContent value="settings" className="space-y-5">
-          <SecureControlCard serverId={serverId} />
-          <Card className="rounded-2xl border-danger/30 shadow-none">
-            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-foreground">Delete server</h2>
-                <p className="text-sm text-muted-foreground">Removes it from Opslin. Apps keep running on the machine but are no longer managed.</p>
-              </div>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  if (confirm("Delete this server? This cannot be undone.")) deleteMutation.mutate();
-                }}
-              >
-                <Trash2 aria-hidden="true" /> Delete server
-              </Button>
-            </CardContent>
-          </Card>
+        <TabsContent value="settings">
+          <SettingsTab
+            server={server}
+            isLive={isLive}
+            updateVersion={updateAvailable ? agentUpdateInfo?.latestVersion : null}
+            onUpdate={() => setAgentUpdateOpen(true)}
+            onDelete={() => {
+              if (confirm("Delete this server? This cannot be undone.")) deleteMutation.mutate();
+            }}
+          />
         </TabsContent>
       </Tabs>
     </div>
