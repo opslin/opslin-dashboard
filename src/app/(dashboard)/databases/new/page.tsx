@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { DatabaseBrandIcon } from "@/components/database/database-brand-icon";
 import { usePlan } from "@/hooks/usePlan";
+import { NoServerFlow } from "@/components/setup/setup-ui";
 import { api, type DatabaseEngineConfig } from "@/lib/api";
 
 // Phase 5 (Bakaloo-benchmark hardening plan) — same presets for every plan
@@ -75,7 +76,7 @@ export default function NewDatabasePage() {
     const remainingDatabases = plan?.maxDatabases === -1 ? Infinity : Math.max(0, (plan?.maxDatabases ?? 0) - (usage?.databases ?? 0));
     const databaseLimitReached = !planLoading && isAtLimit("database");
 
-    const { data: servers = [] } = useQuery({
+    const { data: servers = [], isLoading: serversLoading } = useQuery({
         queryKey: ["servers"],
         queryFn: () => api.getServers(),
     });
@@ -166,6 +167,8 @@ export default function NewDatabasePage() {
 
     const allComplete = databasesToCreate.length > 0 && databasesToCreate.every(db => db.status === "success" || db.status === "error");
     const anySuccess = databasesToCreate.some(db => db.status === "success");
+
+    if (!serversLoading && servers.length === 0) return <NoServerFlow kind="database" />;
 
     if (databaseLimitReached) {
         return (

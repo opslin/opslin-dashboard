@@ -21,6 +21,9 @@ import { EmptyState } from "@/components/patterns/empty-state";
 import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { cn, formatRelativeTime } from "@/lib/utils";
+import { SetupHub } from "@/components/setup/hub";
+import { useFlag } from "@/components/setup/setup-ui";
+import { useSetupState } from "@/components/setup/use-setup";
 
 type DeploymentItem = DeploymentRecord & { appId: string; appName: string };
 
@@ -128,6 +131,8 @@ function serverTone(status: string): StatusTone {
 
 export default function DashboardHomePage() {
     const { user } = useAuth();
+    const setup = useSetupState();
+    const [skipped, skip] = useFlag("skipped");
     const [range, setRange] = useState<string>("7");
     const { data: servers = [], isLoading: serversLoading } = useQuery({
         queryKey: ["home", "servers"],
@@ -179,6 +184,10 @@ export default function DashboardHomePage() {
     const weekChange = percentChange(thisWeek, lastWeek);
     const recentDeployments = deployments.slice(0, 5);
     const firstName = user?.name?.trim().split(/\s+/)[0];
+
+    if (!setup.loading && !setup.complete && !skipped) {
+        return <SetupHub state={setup} appCount={apps.length} onSkip={skip} />;
+    }
 
     return (
         <>
