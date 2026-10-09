@@ -19,7 +19,7 @@ import { api, type CreateDatabaseInput, type Database } from "@/lib/api";
 import type { EnvVar } from "@/components/ui/env-vars-editor";
 import {
     buildEnvVarsForDatabase, credentialFieldsForDatabase, dedupeEnvVarKeys,
-    deriveEnvVarNames, sanitizeEnvPrefix,
+    databaseHasNoPassword, deriveEnvVarNames, sanitizeEnvPrefix,
 } from "@/lib/db-connection";
 
 type Step = "select" | "create" | "review";
@@ -107,7 +107,7 @@ export function QuickDatabaseConnectDialog({
 
     useEffect(() => {
         if (step !== "review") return;
-        const toFetch = selectedDatabases.filter(db => db.type !== "redis" && !(db.id in passwords));
+        const toFetch = selectedDatabases.filter(db => !databaseHasNoPassword(db) && !(db.id in passwords));
         if (toFetch.length === 0) return;
         setPasswordsLoading(true);
         Promise.all(toFetch.map(async (db) => {
@@ -370,7 +370,7 @@ export function QuickDatabaseConnectDialog({
                                                 </div>
                                             );
                                         })}
-                                        {passwordsLoading && !(db.id in passwords) && db.type !== "redis" && (
+                                        {passwordsLoading && !(db.id in passwords) && !databaseHasNoPassword(db) && (
                                             <div className="col-span-2 flex items-center gap-1.5 text-muted-foreground">
                                                 <Loader2 className="h-3 w-3 animate-spin" /> Fetching password…
                                             </div>

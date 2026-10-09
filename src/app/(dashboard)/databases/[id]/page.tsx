@@ -22,7 +22,7 @@ import {
     DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api, ApiRequestError, type SeedScriptRun } from "@/lib/api";
-import { APP_CONTAINER_HOST, SERVER_LOCAL_HOST, buildConnectionString } from "@/lib/db-connection";
+import { APP_CONTAINER_HOST, SERVER_LOCAL_HOST, buildConnectionString, databaseHasNoPassword } from "@/lib/db-connection";
 import { DatabaseBrandIcon } from "@/components/database/database-brand-icon";
 
 function toastActionError(error: unknown, fallback: string) {
@@ -444,12 +444,12 @@ function DatabaseDetailPageContent() {
                         </div>
                         <div className="flex items-center gap-2">
                             <code className="text-sm font-mono text-foreground">
-                                {database.type.toLowerCase() === "redis" ? "Not required" : showPassword && password ? password : "••••••••••••••••"}
+                                {databaseHasNoPassword(database) ? "Not required (no password set)" : showPassword && password ? password : "••••••••••••••••"}
                             </code>
                             <button onClick={() => copyField("password", password || "")} className="p-1.5 rounded-md hover:bg-muted transition-colors">
                                 {copied === "password" ? <CheckCircle2 className="h-4 w-4 text-success-text" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
                             </button>
-                            {database.type.toLowerCase() !== "redis" && (
+                            {!databaseHasNoPassword(database) && (
                                 <button onClick={() => showPassword ? setShowPassword(false) : fetchPassword()} className="p-1.5 rounded-md hover:bg-muted transition-colors flex items-center gap-1 text-xs text-muted-foreground">
                                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                     <span>{showPassword ? "Hide" : "Show"}</span>

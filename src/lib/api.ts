@@ -2932,7 +2932,12 @@ export interface Database {
     port?: number | null;
     hostPort?: number | null;
     username?: string;
-    exposure?: "internal" | "public";
+    exposure?: "internal" | "restricted" | "public";
+    /**
+     * True when the database enforces a password. False for Redis created
+     * before 2026-10-09, which has none: do not send one to it.
+     */
+    authRequired?: boolean;
     readOnly?: boolean;
     cpuLimit?: number;
     memoryLimit?: number;

@@ -10,6 +10,11 @@ export function strictEncodeURIComponent(value: string) {
     );
 }
 
+/** Redis created before password support has none; every other engine always does. */
+export function databaseHasNoPassword(database: Pick<Database, "type" | "authRequired">) {
+    return database.type.toLowerCase() === "redis" && !database.authRequired;
+}
+
 export function buildConnectionString(
     database: Database,
     host: string,
@@ -19,7 +24,13 @@ export function buildConnectionString(
     if (!database.hostPort) return "";
     const dbType = database.type.toLowerCase();
     const encodedDbName = strictEncodeURIComponent(database.name);
-    if (dbType === "redis") return `redis://${host}:${database.hostPort}`;
+    if (dbType === "redis") {
+        // Redis created before 2026-10-09 has no password (authRequired is
+        // false/absent): sending one would make clients log auth errors.
+        if (!database.authRequired) return `redis://${host}:${database.hostPort}`;
+        const redisPw = options.mask ? "••••••••••••" : strictEncodeURIComponent(password || "");
+        return `redis://:${redisPw}@${host}:${database.hostPort}`;
+    }
 
     const pw = options.mask ? "••••••••••••" : strictEncodeURIComponent(password || "");
     const user = database.username ? strictEncodeURIComponent(database.username) : "";
@@ -78,7 +89,7 @@ export function credentialFieldsForDatabase(database: Database, password: string
         port: database.hostPort != null ? String(database.hostPort) : "",
         name: database.name,
         user: database.username || "",
-        password: database.type.toLowerCase() === "redis" ? "" : (password || ""),
+        password: databaseHasNoPassword(database) ? "" : (password || ""),
     };
 }
 
