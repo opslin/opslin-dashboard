@@ -9,6 +9,6 @@ test("open terminal websocket and render shell container", async ({ page }) => {
 
     await page.goto("/terminal");
     await expect(
-        page.getByText(/select a server|terminal unavailable|no servers online/i).first()
+        page.getByText(/open a secure shell|no servers connected|isn.t reachable|connecting|connected/i).first()
     ).toBeVisible();
 });

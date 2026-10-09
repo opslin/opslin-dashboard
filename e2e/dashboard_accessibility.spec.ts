@@ -10,7 +10,7 @@ const routes = [
   { path: "/servers/connect", heading: /^connect your server$/i },
   { path: "/servers/mock-server-1", heading: /prod vps 01/i },
   { path: "/deployments", heading: /deployments/i },
-  { path: "/monitoring", heading: /system monitor/i },
+  { path: "/monitoring", heading: /^monitoring$/i },
   { path: "/settings", heading: /settings/i },
 ];
 

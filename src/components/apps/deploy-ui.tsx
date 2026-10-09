@@ -152,7 +152,7 @@ export function DeployingCard({ deployment, onViewLogs }: { deployment?: Deploym
 
 // ── failed ──────────────────────────────────────────────────────────────
 
-function plainReason(classification?: DeployErrorClassification | null, raw?: string | null) {
+export function plainReason(classification?: DeployErrorClassification | null, raw?: string | null) {
     const title = classification?.title?.trim();
     const description = (classification?.description || classification?.summary || "").trim();
     const fix = (classification?.suggestedFix || classification?.suggestion || "").trim();
@@ -249,7 +249,7 @@ export function DeployFailedCard({
 
 type LogLevel = "ERROR" | "WARN" | "INFO";
 
-function parseLog(raw: string) {
+export function parseLog(raw: string) {
     return raw.split(/\r?\n/).filter((line) => line.trim().length > 0).map((text) => {
         const lower = text.toLowerCase();
         const level = /\b(error|fatal|failed|exception)\b/.test(lower) ? "ERROR" : /\b(warn|warning)\b/.test(lower) ? "WARN" : "INFO";

@@ -48,7 +48,7 @@ test("dashboard v2 supports keyboard-only navigation and command palette flow", 
     await expect(page.getByRole("option", { name: /Go to Monitoring/i })).toBeVisible();
     await page.getByRole("option", { name: /Go to Monitoring/i }).press("Enter");
     await expect(page).toHaveURL(/\/monitoring$/, { timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: /system monitor/i, level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^monitoring$/i, level: 1 })).toBeVisible();
 
     await page.keyboard.press(`${modKey}+K`);
     await paletteInput.fill("Go to Overview");
