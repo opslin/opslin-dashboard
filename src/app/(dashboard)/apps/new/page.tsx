@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EnvVarsEditor, EnvVar } from "@/components/ui/env-vars-editor";
 import { UpgradePrompt } from "@/components/pricing/upgrade-prompt";
+import { NoServerFlow } from "@/components/setup/setup-ui";
 import { ApiRequestError, api, type AutoDeployResult, type BuildpackName, type HealthCheckMode, type ManifestEntryRecord, type ServerJobStatus } from "@/lib/api";
 import { generateAppNameFromGitUrl } from "@/lib/onboarding";
 import { cn, formatRelativeTime } from "@/lib/utils";
@@ -236,7 +237,7 @@ function NewAppPageContent() {
     const [changingServer, setChangingServer] = useState(false);
     const [dragOver, setDragOver] = useState(false);
 
-    const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: () => api.getServers() });
+    const { data: servers = [], isLoading: serversLoading } = useQuery({ queryKey: ["servers"], queryFn: () => api.getServers() });
     const { data: reposData } = useQuery({ queryKey: ["github", "repos"], queryFn: () => api.getGitHubRepositories(), retry: false });
     const repositories = useMemo(() => reposData?.repositories ?? [], [reposData]);
 
@@ -818,6 +819,8 @@ function NewAppPageContent() {
             </CardContent>
         </Card>
     );
+
+    if (!serversLoading && servers.length === 0) return <NoServerFlow kind="app" />;
 
     return (
         <div className="mx-auto w-full max-w-[820px] px-4 py-10 sm:px-6">

@@ -11,6 +11,8 @@ import { shortSha } from "@/components/apps/app-helpers";
 import { DeploymentDrawer } from "@/components/deployments/drawer";
 import { buildItems, computeStats, filterItems, isFailed, isRunning, latestFailure, statusLabel, type DeploymentItem, type StatusFilter } from "@/components/deployments/lib";
 import { Button } from "@/components/ui/button";
+import { NoServerPage } from "@/components/setup/setup-ui";
+import { ExampleDeployments } from "@/components/setup/examples";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -118,6 +120,7 @@ export default function DeploymentsPage() {
     const [rollback, setRollback] = useState<{ item: DeploymentItem; target: DeploymentRecord } | null>(null);
     const [bannerHidden, setBannerHidden] = useState(false);
 
+    const serversQuery = useQuery({ queryKey: ["servers"], queryFn: () => api.getServers() });
     const appsQuery = useQuery({ queryKey: ["deployments", "apps"], queryFn: () => api.getAllApps() });
     const apps = useMemo<AppWithServer[]>(() => appsQuery.data ?? [], [appsQuery.data]);
 
@@ -176,6 +179,19 @@ export default function DeploymentsPage() {
         setStatus("all");
         setAppId("all");
     };
+
+    if (!serversQuery.isLoading && (serversQuery.data ?? []).length === 0) {
+        return (
+            <NoServerPage
+                id="deployments"
+                title="Deployments"
+                subtitle="Everything that was released across your apps. Connect a server to see your own data."
+                action={<Button size="lg"><Rocket aria-hidden="true" />Deploy new</Button>}
+            >
+                <ExampleDeployments />
+            </NoServerPage>
+        );
+    }
 
     const failureReason = failure ? plainReason(failure.deployment.errorClassification, failure.deployment.healthLog) : null;
     const showFailureBanner = failure && !bannerHidden;

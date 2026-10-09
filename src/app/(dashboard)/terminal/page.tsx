@@ -16,6 +16,8 @@ import { GuideSheet } from "@/components/terminal/guide-sheet";
 import { AskBar, ConnectingOverlay, ConnectionBanner, ErrorExplainer, OfflineState, RunConfirm } from "@/components/terminal/terminal-parts";
 import type { TerminalStatus, XTermTerminalHandle } from "@/components/terminal/xterm-terminal";
 import { api } from "@/lib/api";
+import { NoServerPage } from "@/components/setup/setup-ui";
+import { ExampleTerminal } from "@/components/setup/examples";
 import type { Server } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -75,7 +77,7 @@ function TerminalLoader() {
     const requestedServer = params.get("server") ?? params.get("serverId") ?? "";
     const [chosen, setChosen] = useState("");
 
-    const { data: servers = [], refetch } = useQuery({
+    const { data: servers = [], refetch, isLoading } = useQuery({
         queryKey: ["servers"],
         queryFn: () => api.getServers(),
         refetchInterval: 30_000,
@@ -87,6 +89,14 @@ function TerminalLoader() {
         return (servers.find(isServerLive) ?? servers[0])?.id ?? "";
     }, [chosen, requestedServer, servers]);
     const live = isServerLive(servers.find((item) => item.id === serverId));
+
+    if (!isLoading && servers.length === 0) {
+        return (
+            <NoServerPage id="terminal" title="Terminal" subtitle="A secure shell on your server. Connect a server to see your own data.">
+                <ExampleTerminal />
+            </NoServerPage>
+        );
+    }
 
     // A new key gives every server (and every offline-to-online change) a fresh shell.
     return <TerminalWorkspace key={`${serverId}:${live}`} servers={servers} selectedServer={serverId} onSelectServer={setChosen} onRefresh={() => void refetch()} />;

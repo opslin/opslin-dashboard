@@ -21,8 +21,10 @@ import {
     type ServerMetrics,
 } from "@/components/monitoring/lib";
 import { OverviewTab, type DeployMarker } from "@/components/monitoring/overview";
-import { NoServersState, OfflineState, StaleBanner, WaitingState, type LastKnown } from "@/components/monitoring/states";
+import { OfflineState, StaleBanner, WaitingState, type LastKnown } from "@/components/monitoring/states";
 import { AppsTab, ServersTab, type ServerRow } from "@/components/monitoring/tabs";
+import { NoServerPage } from "@/components/setup/setup-ui";
+import { ExampleMonitoring } from "@/components/setup/examples";
 import { Button } from "@/components/ui/button";
 import { CardSkeleton } from "@/components/ui/card-skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -210,10 +212,14 @@ export default function MonitoringPage() {
 
     if (!serversQuery.isLoading && servers.length === 0) {
         return (
-            <div className="dashboard-page">
-                <NoServersState onHelp={() => setGuideOpen(true)} />
-                <GuideSheet open={guideOpen} onOpenChange={setGuideOpen} />
-            </div>
+            <NoServerPage
+                id="monitoring"
+                title="Monitoring"
+                subtitle="Real-time performance and system metrics. Connect a server to see your own data."
+                action={<Button variant="outline" className="h-10">Last 24 hours</Button>}
+            >
+                <ExampleMonitoring />
+            </NoServerPage>
         );
     }
 

@@ -14,6 +14,8 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Box, Eye, ExternalLink, Layers, MoreVertical, Pause, Play, Rocket, Search, Trash2, Package } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { NoServerPage } from "@/components/setup/setup-ui";
+import { ExampleApps } from "@/components/setup/examples";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -201,7 +203,7 @@ export default function AppsPage() {
   // card is a <Link>, so the eye-icon dialog can't be nested inside it.
   const [progressApp, setProgressApp] = useState<AppWithServer | null>(null);
 
-  const { data: servers = [] } = useQuery({
+  const { data: servers = [], isLoading: serversLoading } = useQuery({
     queryKey: ["servers"],
     queryFn: () => api.getServers(),
   });
@@ -276,6 +278,19 @@ export default function AppsPage() {
   const runningApps = allApps.filter((a) => a.status === "running").length;
   const stoppedApps = allApps.filter((a) => a.status === "stopped").length;
   const deletingApps = allApps.filter((a) => a.status === "deleting" || a.status === "delete_failed").length;
+
+  if (!serversLoading && servers.length === 0) {
+    return (
+      <NoServerPage
+        id="apps"
+        title="Apps"
+        subtitle="Manage and deploy your apps. Connect a server to see your own data."
+        action={<Button><Rocket className="size-4" />Deploy new</Button>}
+      >
+        <ExampleApps />
+      </NoServerPage>
+    );
+  }
 
   return (
     <>

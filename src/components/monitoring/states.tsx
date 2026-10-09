@@ -1,26 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check, CheckCircle2, HelpCircle, Loader2, RefreshCw, Server as ServerIcon, TriangleAlert } from "lucide-react";
+import { Check, CheckCircle2, HelpCircle, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-
-export function NoServersState({ onHelp }: { onHelp: () => void }) {
-    return (
-        <div className="flex min-h-[55vh] items-center justify-center">
-            <div className="max-w-md rounded-2xl border bg-card p-10 text-center shadow-xs">
-                <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary"><ServerIcon className="size-8" aria-hidden="true" /></span>
-                <h1 className="text-xl font-bold text-foreground">Connect a server to start monitoring</h1>
-                <p className="mt-2 text-sm text-muted-foreground">Opslin shows CPU, memory, disk and network as soon as your server connects.</p>
-                <Button asChild className="mt-6"><Link href="/servers/connect">Connect a server</Link></Button>
-                <div className="mt-3">
-                    <button type="button" onClick={onHelp} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">How does this work?<ArrowRight className="size-3.5" aria-hidden="true" /></button>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 const STEPS = [
     { label: "Agent connected", state: "Done" },
