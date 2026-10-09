@@ -6,12 +6,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { LegacyDashboardShell } from "@/components/layout/legacy-dashboard-shell";
-import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { TrialBadge } from "@/components/pricing/trial-badge";
 import { TrialBanner } from "@/components/pricing/trial-banner";
 import { api } from "@/lib/api";
 import { getVerifyEmailRedirectTarget } from "@/lib/auth-redirect";
-import { shouldBypassEmailVerification, shouldBypassOnboarding } from "@/lib/onboarding-routes";
+import { shouldBypassEmailVerification } from "@/lib/onboarding-routes";
 import { trackEvent } from "@/lib/user-activity";
 
 export default function DashboardLayout({
@@ -29,11 +28,6 @@ export default function DashboardLayout({
         user?.emailVerified === false &&
         !bypassEmailVerification
     );
-    const { data: servers = [], isLoading: serversLoading } = useQuery({
-        queryKey: ["servers"],
-        queryFn: () => api.getServers(),
-        enabled: Boolean(user && !requiresEmailVerification),
-    });
     const { data: currentPlan } = useQuery({
         queryKey: ["plans", "current"],
         queryFn: () => api.getCurrentPlan(),
@@ -86,12 +80,11 @@ export default function DashboardLayout({
         );
     }
 
-    const bypassOnboarding = shouldBypassOnboarding(pathname);
-    const showOnboarding = user?.onboardingCompleted === false && !serversLoading && servers.length === 0 && !bypassOnboarding;
+    // First-run setup lives in the Overview "Get started" hub, not in a full-screen takeover.
     const content = (
         <>
-            {!showOnboarding ? <TrialBanner trial={currentPlan?.trial} /> : null}
-            {showOnboarding ? <OnboardingWizard /> : children}
+            <TrialBanner trial={currentPlan?.trial} />
+            {children}
         </>
     );
 
