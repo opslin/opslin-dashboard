@@ -182,10 +182,10 @@ export function MetricsSection({ appId, active }: MetricsSectionProps) {
             )}
 
             <Card className="rounded-2xl shadow-xs">
-                <div className="flex flex-wrap items-center gap-3 px-5">
-                    <span className={cn("flex size-8 items-center justify-center rounded-full", restarts === 0 ? "bg-success-muted text-success-text" : "bg-warning-muted text-warning-text")}><Check className="size-4" aria-hidden="true" /></span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 sm:px-5">
+                    <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-full", restarts === 0 ? "bg-success-muted text-success-text" : "bg-warning-muted text-warning-text")}><Check className="size-4" aria-hidden="true" /></span>
                     <p className="font-semibold text-foreground">Restarts: {restarts} in the last {rangeText}</p>
-                    <p className="ml-auto text-sm text-muted-foreground">{restarts === 0 ? "Your app has been running smoothly." : "Your app restarted. Check the Logs tab to see why."}</p>
+                    <p className="basis-full text-sm text-muted-foreground sm:ml-auto sm:basis-auto">{restarts === 0 ? "Your app has been running smoothly." : "Your app restarted. Check the Logs tab to see why."}</p>
                 </div>
             </Card>
         </section>

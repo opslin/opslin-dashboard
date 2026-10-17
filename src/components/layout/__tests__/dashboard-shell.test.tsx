@@ -29,6 +29,12 @@ vi.mock("framer-motion", () => ({
 
 const mediaEnabledMock = vi.hoisted(() => vi.fn(() => false));
 
+const migrationsEnabledMock = vi.hoisted(() => vi.fn(() => false));
+
+vi.mock("@/hooks/use-migrations", () => ({
+  useMigrationsEnabled: () => migrationsEnabledMock(),
+}));
+
 vi.mock("@/hooks/use-media", () => ({
   useMediaEnabled: () => mediaEnabledMock(),
 }));
@@ -111,5 +117,25 @@ describe("DashboardShell Media navigation (feature-gated)", () => {
     const platformLinks = screen.getAllByRole("link").map((link) => link.textContent?.trim());
     expect(platformLinks.indexOf("Media")).toBe(platformLinks.indexOf("Storage") + 1);
     mediaEnabledMock.mockReturnValue(false);
+  });
+});
+
+describe("DashboardShell Migrate navigation (feature-gated)", () => {
+  it("hides Migrate unless the API has confirmed it for the organization", () => {
+    migrationsEnabledMock.mockReturnValue(false);
+    renderShell(baseUser);
+
+    expect(screen.queryByRole("link", { name: "Migrate" })).not.toBeInTheDocument();
+  });
+
+  it("shows Migrate right after Backups once enabled", () => {
+    migrationsEnabledMock.mockReturnValue(true);
+    renderShell(baseUser);
+
+    const migrate = screen.getByRole("link", { name: "Migrate" });
+    expect(migrate).toHaveAttribute("href", "/migrations");
+    const links = screen.getAllByRole("link").map((link) => link.textContent?.trim());
+    expect(links.indexOf("Migrate")).toBe(links.indexOf("Backups") + 1);
+    migrationsEnabledMock.mockReturnValue(false);
   });
 });

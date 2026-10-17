@@ -1,3 +1,5 @@
+import type { Diagnosis, MigrationDomains, MigrationListItem, MigrationView } from "./migration-types";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 interface ApiError {
@@ -8,6 +10,192 @@ interface ApiError {
     details?: Record<string, unknown>;
     [key: string]: unknown;
 }
+
+// Domain security check (docs/audit/36): an outside-in scan of a domain the organization has proved it controls.
+export type SecurityCheckUsage = { used: number; limit: number; resetsAt: string };
+
+export type SecurityCheckChallenge = {
+    token: string;
+    dns: { type: "TXT"; name: string; value: string };
+    http: { url: string; path: string; body: string };
+};
+
+export type SecurityCheckScanStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
+
+export type SecurityCheckScanSummary = {
+    id: string;
+    targetId: string;
+    hostname: string;
+    status: SecurityCheckScanStatus;
+    progress: { phase: string; done: number; total: number; includeStress?: boolean; stress?: { started: boolean; id?: string; reason?: string } } | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    score: number | null;
+    grade: string | null;
+    graded: boolean;
+    coverage: number | null;
+    counts: { critical: number; high: number; medium: number; low: number; review: number } | null;
+    requestCount: number;
+    errorMessage: string | null;
+    createdAt: string;
+};
+
+export type SecurityCheckTarget = {
+    id: string;
+    hostname: string;
+    verified: boolean;
+    verifyMethod: string | null;
+    verifiedUntil: string | null;
+    lastVerifyError: string | null;
+    challenge: SecurityCheckChallenge | null;
+    createdAt: string;
+    latest: SecurityCheckScanSummary | null;
+};
+
+export type StressTestSummary = {
+    id: string;
+    targetId: string;
+    hostname: string;
+    status: SecurityCheckScanStatus;
+    progress: { phase: string; done: number; total: number } | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    requestCount: number;
+    errorMessage: string | null;
+    createdAt: string;
+    outcome: "handled" | "slowed" | "failed" | "protected" | "refused" | null;
+    headline: string | null;
+};
+
+export type StressStageResult = {
+    label: "baseline" | "step" | "recovery";
+    rps: number;
+    seconds: number;
+    sent: number;
+    ok: number;
+    errors: number;
+    limited: number;
+    dropped: number;
+    achievedRps: number;
+    p50: number | null;
+    p95: number | null;
+    p99: number | null;
+    unstable: boolean;
+    statuses: Record<string, number>;
+    state: "pass" | "degraded" | "fail" | "limited" | "skipped";
+    note?: string;
+};
+
+export type StressTestResult = {
+    schema: string;
+    generatedAt: string;
+    target: { hostname: string; scheme: "http" | "https"; path: string };
+    stages: StressStageResult[];
+    baseline: { p50: number | null; p95: number | null };
+    verdict: { outcome: "handled" | "slowed" | "failed" | "protected" | "refused"; highestPassingRps: number | null; firstProblemRps: number | null; recovered: boolean | null; headline: string; details: string[] };
+    scope: { requests: number; cachedShare: number | null; stoppedEarly: string | null; ms: number };
+    limitations: string[];
+};
+
+export type SecurityCheckOverview = {
+    usage: SecurityCheckUsage;
+    stressUsage?: SecurityCheckUsage;
+    targets: Array<SecurityCheckTarget & { latestStress?: StressTestSummary | null }>;
+};
+
+export type SecurityCheckSeverity = "critical" | "high" | "medium" | "low" | "info";
+
+export type SecurityCheckFinding = {
+    ruleId: string;
+    fingerprint: string;
+    rootCause: string;
+    asset: string;
+    area: string;
+    state: "fail" | "warn" | "pass" | "unknown" | "na";
+    severity: SecurityCheckSeverity;
+    confidence: "high" | "medium" | "low";
+    title: string;
+    observation: string;
+    why: string;
+    fix: string;
+    verify: string;
+    untested?: string;
+};
+
+export type SecurityCheckOutcome = {
+    ruleId: string;
+    state: "fail" | "warn" | "pass" | "unknown" | "na";
+    reason?: string;
+    detail?: string;
+    findings?: SecurityCheckFinding[];
+};
+
+export type SecurityCheckReport = {
+    schema: string;
+    generatedAt: string;
+    target: { hostname: string; addresses: string[]; scheme: "http" | "https" | null };
+    manifest: Array<{ id: string; area: string; title: string; maxSeverity: SecurityCheckSeverity; advisoryOnly: boolean }>;
+    checks: SecurityCheckOutcome[];
+    summary: {
+        score: number | null;
+        grade: string | null;
+        graded: boolean;
+        incompleteReasons: string[];
+        deductions: number;
+        cap: number;
+        coverage: { weighted: number; byArea: Record<string, { applicable: boolean; weighted: number; checks: number; completed: number }> };
+        counts: { critical: number; high: number; medium: number; low: number; review: number };
+    };
+    scope: {
+        requests: number;
+        pagesCrawled: number;
+        crawlTruncated: boolean;
+        stoppedByBudget: boolean;
+        stoppedByDeadline: boolean;
+        portsChecked: boolean;
+        /** HTTP status of a block or error page the site returned instead of its home page, if any. */
+        blockedByTarget: number | null;
+    };
+    limitations: string[];
+};
+
+/** The parts of a report that domain and server checks share (the view and the helpers use only these). */
+export type SecurityCheckReportBase = Pick<SecurityCheckReport, "schema" | "generatedAt" | "manifest" | "checks" | "summary" | "limitations">;
+
+// Server security check (docs/audit/35): the agent scans its own server; the control plane validates and scores.
+export type HostCheckSummary = {
+    id: string;
+    serverId: string;
+    status: SecurityCheckScanStatus;
+    startedAt: string | null;
+    completedAt: string | null;
+    score: number | null;
+    grade: string | null;
+    graded: boolean;
+    coverage: number | null;
+    counts: { critical: number; high: number; medium: number; low: number; review: number } | null;
+    privilege: "root" | "non-root" | null;
+    agentVersion: string | null;
+    errorMessage: string | null;
+    createdAt: string;
+};
+
+export type HostCheckReport = SecurityCheckReportBase & {
+    profile: string;
+    scope: { privilege: "root" | "non-root"; os: string | null; arch: string | null; unknownRules: number; droppedRules: number };
+};
+
+export type SecurityCheckDiff = {
+    entries: Array<{ change: "new" | "persisting" | "resolved" | "not_rechecked"; fingerprint: string; ruleId: string; title: string; severity: SecurityCheckSeverity }>;
+    scoreBefore: number | null;
+    scoreAfter: number | null;
+    improvementClaimable: boolean;
+    notes: string[];
+};
+
+export type SecurityCheckVerifyResult =
+    | { verified: true; method: string; target: SecurityCheckTarget }
+    | { verified: false; dns: string; http: string; target: SecurityCheckTarget };
 
 export class ApiRequestError extends Error {
     status: number;
@@ -460,6 +648,79 @@ class ApiClient {
 
     async deleteServer(id: string) {
         return this.delete<void>(`/servers/${id}`);
+    }
+
+    // Server migration: move a running stack from one server to another.
+    async getMigrations() {
+        return this.get<{ migrations: MigrationListItem[] }>("/migrations");
+    }
+
+    async startMigration(data: { sourceServerId: string; targetServerId: string }) {
+        return this.post<{ id: string }>("/migrations", data);
+    }
+
+    async getMigration(id: string) {
+        return this.get<MigrationView>(`/migrations/${id}`);
+    }
+
+    async getMigrationDomains(id: string) {
+        return this.get<MigrationDomains>(`/migrations/${id}/domains`);
+    }
+
+    async updateMigrationOptions(id: string, data: { skip: string[] }) {
+        return this.patch<MigrationView>(`/migrations/${id}/options`, data);
+    }
+
+    async confirmMigrationPlan(id: string, data: { planHash: string; acknowledged: string[]; skip?: string[] }) {
+        return this.post<MigrationView>(`/migrations/${id}/confirm`, data);
+    }
+
+    async rescanMigration(id: string) {
+        return this.post<MigrationView>(`/migrations/${id}/rescan`);
+    }
+
+    async retryMigration(id: string) {
+        return this.post<MigrationView>(`/migrations/${id}/retry`);
+    }
+
+    async resumeMigration(id: string) {
+        return this.post<MigrationView>(`/migrations/${id}/resume`);
+    }
+
+    async startMigrationCutover(id: string, data: { planHash: string; confirm: true }) {
+        return this.post<MigrationView>(`/migrations/${id}/cutover`, data);
+    }
+
+    async acceptMigration(id: string) {
+        return this.post<MigrationView>(`/migrations/${id}/accept`);
+    }
+
+    async abortMigration(id: string) {
+        return this.post<MigrationView>(`/migrations/${id}/abort`);
+    }
+
+    async recoverMigration(id: string) {
+        return this.post<MigrationView>(`/migrations/${id}/recover`, { confirm: true });
+    }
+
+    async recheckMigrationFinal(id: string) {
+        return this.post<MigrationView>(`/migrations/${id}/recheck`, {});
+    }
+
+    async retryMigrationLinks(id: string) {
+        return this.post<MigrationView>(`/migrations/${id}/links/retry`, {});
+    }
+
+    async checkMigrationLinks(id: string, siteKey?: string) {
+        return this.post<MigrationView>(`/migrations/${id}/links/check`, siteKey ? { siteKey } : {});
+    }
+
+    async diagnoseMigration(id: string, since?: "15m" | "30m" | "1h" | "2h") {
+        return this.post<Diagnosis>(`/migrations/${id}/diagnose`, since ? { since } : {});
+    }
+
+    async clearMigrationCopy(id: string) {
+        return this.post<MigrationView>(`/migrations/${id}/clear-copy`, { confirm: true });
     }
 
     async updateServerPublicAccess(serverId: string, data: { publicIp: string | null }) {
@@ -1188,6 +1449,63 @@ class ApiClient {
 
     async setR2BucketCors(bucketId: string, allowedOrigins: string[]) {
         return this.post<{ success: boolean; allowedOrigins: string[] }>(`/r2-storage/buckets/${bucketId}/cors`, { allowedOrigins });
+    }
+
+    // Domain security check (docs/audit/36). Available to every plan; the API enforces the monthly allowance.
+    async getSecurityCheck() {
+        return this.get<SecurityCheckOverview>("/security-check");
+    }
+
+    async addSecurityCheckDomain(hostname: string) {
+        return this.post<{ target: SecurityCheckTarget }>("/security-check/targets", { hostname });
+    }
+
+    async getSecurityCheckTarget(id: string) {
+        return this.get<{ target: SecurityCheckTarget }>(`/security-check/targets/${encodeURIComponent(id)}`);
+    }
+
+    async verifySecurityCheckDomain(id: string) {
+        return this.post<SecurityCheckVerifyResult>(`/security-check/targets/${encodeURIComponent(id)}/verify`, {});
+    }
+
+    async removeSecurityCheckDomain(id: string) {
+        return this.delete<{ removed: boolean }>(`/security-check/targets/${encodeURIComponent(id)}`);
+    }
+
+    async startSecurityCheck(targetId: string, includeStress = false) {
+        return this.post<{ scan: SecurityCheckScanSummary; usage: SecurityCheckUsage }>(`/security-check/targets/${encodeURIComponent(targetId)}/scans`, includeStress ? { includeStress: true } : {});
+    }
+
+    async getSecurityCheckScans(targetId: string) {
+        return this.get<{ scans: SecurityCheckScanSummary[] }>(`/security-check/targets/${encodeURIComponent(targetId)}/scans`);
+    }
+
+    async getSecurityCheckScan(scanId: string) {
+        return this.get<{ scan: SecurityCheckScanSummary; report: SecurityCheckReport | null; diff: SecurityCheckDiff | null }>(`/security-check/scans/${encodeURIComponent(scanId)}`);
+    }
+
+    async getHostCheck(serverId: string) {
+        return this.get<{ check: HostCheckSummary | null; report: HostCheckReport | null; diff: SecurityCheckDiff | null }>(`/servers/${encodeURIComponent(serverId)}/security-check`);
+    }
+
+    async getHostCheckById(serverId: string, checkId: string) {
+        return this.get<{ check: HostCheckSummary; report: HostCheckReport | null; diff: SecurityCheckDiff | null }>(`/servers/${encodeURIComponent(serverId)}/security-check/${encodeURIComponent(checkId)}`);
+    }
+
+    async getHostCheckHistory(serverId: string) {
+        return this.get<{ checks: HostCheckSummary[] }>(`/servers/${encodeURIComponent(serverId)}/security-check/history`);
+    }
+
+    async startHostCheck(serverId: string) {
+        return this.post<{ check: HostCheckSummary; existing: boolean }>(`/servers/${encodeURIComponent(serverId)}/security-check`, {});
+    }
+
+    async startStressTest(targetId: string) {
+        return this.post<{ stress: StressTestSummary; stressUsage: SecurityCheckUsage }>(`/security-check/targets/${encodeURIComponent(targetId)}/stress`, { confirm: true });
+    }
+
+    async getStressTest(id: string) {
+        return this.get<{ stress: StressTestSummary; result: StressTestResult | null }>(`/security-check/stress/${encodeURIComponent(id)}`);
     }
 
     // Opslin Media (docs/audit/26-28). The whole /media surface is feature-gated
@@ -2046,11 +2364,18 @@ export interface McpConnectRequestPreview {
     scopes: string[];
 }
 
+export interface ServerProvider {
+    id: string;
+    name: string;
+}
+
 export interface Server {
     id: string;
     name: string;
     ip: string;
     publicIp?: string | null;
+    /** Hosting company, detected automatically; null when unknown. */
+    provider?: ServerProvider | null;
     hostname?: string;
     os?: string;
     arch?: string;
@@ -2491,6 +2816,9 @@ export type HealthCheckMode = "auto" | "strict_http" | "port" | "process";
 export interface App {
     id: string;
     name: string;
+    /** "DOCKER" for an app made from a site moved by a server migration; absent on older responses. */
+    type?: string;
+    adoptedFromMigrationId?: string | null;
     domain?: string;
     publicStatus?: boolean;
     status: "deploying" | "running" | "stopping" | "stopped" | "deleting" | "delete_failed" | "error" | "pending";

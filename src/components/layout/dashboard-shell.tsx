@@ -29,9 +29,9 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  ScanSearch,
   SquareTerminal,
-  Users,
-} from "lucide-react";
+  Users, ArrowRightLeft } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,6 +48,7 @@ import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { cn, initialsFor } from "@/lib/utils";
 import { useMediaEnabled } from "@/hooks/use-media";
+import { useMigrationsEnabled } from "@/hooks/use-migrations";
 import { siteLinks } from "@/lib/site-links";
 import type { User } from "@/lib/api";
 
@@ -72,6 +73,7 @@ const secondaryNavigation: NavItem[] = [
   { label: "Storage", href: "/storage", icon: Archive },
   { label: "Teams", href: "/teams", icon: Users },
   { label: "Transparency", href: "/transparency", icon: ShieldCheck },
+  { label: "Security check", href: "/security-check", icon: ScanSearch },
   { label: "Terminal", href: "/terminal", icon: SquareTerminal },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
@@ -79,6 +81,8 @@ const secondaryNavigation: NavItem[] = [
 // Opslin Media is feature-gated (media.enabled). The entry is only added once the API has
 // confirmed it for this organization, so organizations without access never see it.
 const mediaNavigationItem: NavItem = { label: "Media", href: "/media", icon: Play };
+// Server migration is feature-gated (smi.enabled). The entry only appears once the API says it is available.
+const migrationNavigationItem: NavItem = { label: "Migrate", href: "/migrations", icon: ArrowRightLeft };
 
 const adminNavigation: NavItem[] = [
   { label: "Super Admin", href: siteLinks.admin, icon: Crown },
@@ -296,14 +300,22 @@ export function DashboardShell({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const showAdminNavigation = user?.isPlatformAdmin === true;
   const mediaEnabled = useMediaEnabled();
+  const migrationsEnabled = useMigrationsEnabled();
   const platformNavigation = useMemo(() => {
-    if (!mediaEnabled) {
-      return secondaryNavigation;
+    let items = secondaryNavigation;
+    if (mediaEnabled) {
+      const storageIndex = items.findIndex((item) => item.href === "/storage");
+      const insertAt = storageIndex === -1 ? items.length : storageIndex + 1;
+      items = [...items.slice(0, insertAt), mediaNavigationItem, ...items.slice(insertAt)];
     }
-    const storageIndex = secondaryNavigation.findIndex((item) => item.href === "/storage");
-    const insertAt = storageIndex === -1 ? secondaryNavigation.length : storageIndex + 1;
-    return [...secondaryNavigation.slice(0, insertAt), mediaNavigationItem, ...secondaryNavigation.slice(insertAt)];
-  }, [mediaEnabled]);
+    if (migrationsEnabled) {
+      // Right after Servers' neighbours in the second group: next to Backups, where moving data belongs.
+      const backupsIndex = items.findIndex((item) => item.href === "/backups");
+      const insertAt = backupsIndex === -1 ? items.length : backupsIndex + 1;
+      items = [...items.slice(0, insertAt), migrationNavigationItem, ...items.slice(insertAt)];
+    }
+    return items;
+  }, [mediaEnabled, migrationsEnabled]);
 
   const routeMap = useMemo(
     () =>

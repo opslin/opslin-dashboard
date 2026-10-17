@@ -102,12 +102,12 @@ export function LogsSection({ appId, appName, server, active, buildLogs }: LogsS
                         <button key={s} type="button" aria-pressed={source === s} onClick={() => setSource(s)} className={cn("rounded-md px-3.5 py-1.5 text-sm font-medium capitalize focus-visible:ring-2 focus-visible:ring-ring", source === s ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>{s}</button>
                     ))}
                 </div>
-                <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
+                <div className="relative min-w-0 basis-full flex-1 sm:min-w-[220px] sm:basis-auto sm:max-w-sm">
                     <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                     <input aria-label="Search logs" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search logs" className="h-10 w-full rounded-lg border bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
                 </div>
                 <Select value={level} onValueChange={(v) => setLevel(v as "all" | Level)}>
-                    <SelectTrigger aria-label="Log level" className="h-10 w-40"><SelectValue /></SelectTrigger>
+                    <SelectTrigger aria-label="Log level" className="h-10 w-full sm:w-40"><SelectValue /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">All levels</SelectItem>
                         <SelectItem value="INFO">Info</SelectItem>
@@ -115,7 +115,7 @@ export function LogsSection({ appId, appName, server, active, buildLogs }: LogsS
                         <SelectItem value="ERROR">Errors</SelectItem>
                     </SelectContent>
                 </Select>
-                <div className="ml-auto flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
                     {live ? <span className="flex items-center gap-1.5 rounded-full bg-success-muted px-3 py-1 text-xs font-medium text-success-text"><Activity className="size-3.5" aria-hidden="true" />Live</span> : null}
                     <Button variant="outline" onClick={() => { if (!paused) setFrozen(liveLines); setPaused((p) => !p); }}>
                         {paused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />} {paused ? "Resume" : "Pause"}
@@ -132,9 +132,9 @@ export function LogsSection({ appId, appName, server, active, buildLogs }: LogsS
             ) : null}
 
             <div className="overflow-hidden rounded-2xl bg-foreground text-background shadow-xs">
-                <div className="flex items-center justify-between border-b border-background/10 px-5 py-3 font-mono text-xs">
-                    <span className="flex items-center gap-2 font-semibold"><span className={cn("size-2 rounded-full", live ? "bg-success" : "bg-background/40")} aria-hidden="true" />{source === "runtime" ? "Runtime output" : "Build output"}<span className="font-normal text-background/50">· {appName}</span></span>
-                    <span className="text-background/50">{paused ? "Paused" : "Auto-scroll enabled"}</span>
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-background/10 px-4 py-3 font-mono text-xs sm:px-5">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 font-semibold"><span className={cn("size-2 rounded-full", live ? "bg-success" : "bg-background/40")} aria-hidden="true" />{source === "runtime" ? "Runtime output" : "Build output"}<span className="min-w-0 break-all font-normal text-background/50">· {appName}</span></span>
+                    <span className="whitespace-nowrap text-background/50">{paused ? "Paused" : "Auto-scroll enabled"}</span>
                 </div>
                 <div ref={viewer} className="max-h-[520px] min-h-[320px] overflow-auto font-mono text-[13px]" role="log" aria-label={`${source} logs`}>
                     {logsQuery.isLoading && source === "runtime" ? (
@@ -145,17 +145,17 @@ export function LogsSection({ appId, appName, server, active, buildLogs }: LogsS
                         <p className="px-5 py-10 text-center text-background/60">{lines.length === 0 ? (source === "runtime" ? "No logs yet. Deploy the app to see output here." : "No build output was saved for the last deploy.") : "No lines match your filters."}</p>
                     ) : (
                         shown.map((l, i) => (
-                            <div key={i} className={cn("flex gap-5 border-b border-background/5 px-5 py-2.5 last:border-b-0", l.level === "ERROR" && "bg-red-500/15")}>
-                                <span className="w-16 shrink-0 text-background/45">{l.time}</span>
-                                <span className={cn("w-12 shrink-0 text-xs font-bold leading-5", l.level === "ERROR" ? "text-red-300" : l.level === "WARN" ? "text-amber-300" : "text-sky-300")}>{l.level}</span>
-                                <span className={cn("min-w-0 break-words", l.level === "ERROR" && "text-red-200")}>{l.message}</span>
+                            <div key={i} className={cn("flex flex-wrap gap-x-3 gap-y-0.5 border-b border-background/5 px-4 py-2.5 last:border-b-0 sm:flex-nowrap sm:gap-x-5 sm:px-5", l.level === "ERROR" && "bg-red-500/15")}>
+                                <span className="shrink-0 text-background/45 sm:w-16">{l.time}</span>
+                                <span className={cn("shrink-0 text-xs font-bold leading-5 sm:w-12", l.level === "ERROR" ? "text-red-300" : l.level === "WARN" ? "text-amber-300" : "text-sky-300")}>{l.level}</span>
+                                <span className={cn("min-w-0 basis-full break-words sm:basis-auto sm:flex-1", l.level === "ERROR" && "text-red-200")}>{l.message}</span>
                             </div>
                         ))
                     )}
                 </div>
             </div>
 
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
                 <span>Showing last {Math.min(lines.length, LOG_TAIL_LINE_LIMIT)} lines · auto-scroll {paused ? "off" : "on"}</span>
                 <Button variant="outline" size="sm" onClick={() => { setPaused(false); if (viewer.current) viewer.current.scrollTop = viewer.current.scrollHeight; }}>
                     <ChevronDown aria-hidden="true" /> Jump to latest

@@ -238,13 +238,13 @@ export function OverviewSection({
                         />
                     ) : (
                     <div className={cn("rounded-2xl border p-5", statusCardClass)}>
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div className="flex items-center gap-4">
+                        <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
                                 <span className={cn("flex size-12 shrink-0 items-center justify-center rounded-full", badgeClass)}>
                                     {failedStyle ? <AlertTriangle className="size-6" aria-hidden="true" /> : <Check className="size-6" strokeWidth={3} aria-hidden="true" />}
                                 </span>
-                                <div>
-                                    <h2 className="text-2xl font-bold tracking-tight text-foreground">{copy.title}</h2>
+                                <div className="min-w-0">
+                                    <h2 className="min-w-0 break-words text-xl font-bold tracking-tight text-foreground sm:text-2xl">{copy.title}</h2>
                                     <p className="text-[15px] text-muted-foreground">{copy.text}</p>
                                 </div>
                             </div>
@@ -315,8 +315,8 @@ export function OverviewSection({
                             <p className="border-t px-5 py-8 text-sm text-muted-foreground">No deployments yet. Press Deploy to publish your app.</p>
                         ) : (
                             <div className="overflow-x-auto">
-                                <table className="w-full min-w-[640px] border-collapse text-sm">
-                                    <thead>
+                                <table className="w-full border-collapse text-sm max-md:block">
+                                    <thead className="max-md:hidden">
                                         <tr className="border-y bg-muted/30 text-left text-xs font-medium text-muted-foreground">
                                             <th className="px-5 py-2.5">Status</th>
                                             <th className="px-3 py-2.5">Branch</th>
@@ -326,23 +326,23 @@ export function OverviewSection({
                                             <th className="px-5 py-2.5 text-right"><span className="sr-only">Actions</span></th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody className="max-md:block">
                                         {deployments.map((d) => {
                                             const s = DEPLOY_STATUS[d.status] ?? { label: d.status, tone: "neutral" as const };
                                             const canRollback = d.status === "succeeded" && d.sha !== currentSha;
                                             return (
-                                                <tr key={d.id} className="border-b last:border-0 hover:bg-muted/30">
-                                                    <td className="px-5 py-3.5">
+                                                <tr key={d.id} className="border-b last:border-0 hover:bg-muted/30 max-md:relative max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-4 max-md:gap-y-1 max-md:px-4 max-md:py-3 max-md:pr-12">
+                                                    <td className="px-5 py-3.5 max-md:p-0">
                                                         <span className={cn("flex items-center gap-2 font-medium", TONE_TEXT[s.tone])}>
                                                             <span className={cn("size-2 rounded-full", TONE_DOT[s.tone])} aria-hidden="true" />
                                                             {s.label}
                                                         </span>
                                                     </td>
-                                                    <td className="px-3 py-3.5"><span className="flex items-center gap-1.5 text-foreground"><GitBranch className="size-3.5 text-muted-foreground" aria-hidden="true" />{app.branch ?? "main"}</span></td>
-                                                    <td className="px-3 py-3.5 font-mono text-xs text-muted-foreground">{shortSha(d.sha)}</td>
-                                                    <td className="max-w-[180px] truncate px-3 py-3.5 text-foreground">{deployActor(d)}</td>
-                                                    <td className="whitespace-nowrap px-3 py-3.5 text-muted-foreground">{formatRelativeTime(d.startedAt)}</td>
-                                                    <td className="px-5 py-3.5 text-right">
+                                                    <td className="px-3 py-3.5 max-md:p-0"><span className="flex items-center gap-1.5 text-foreground"><GitBranch className="size-3.5 text-muted-foreground" aria-hidden="true" />{app.branch ?? "main"}</span></td>
+                                                    <td className="px-3 py-3.5 font-mono text-xs text-muted-foreground max-md:p-0">{shortSha(d.sha)}</td>
+                                                    <td className="max-w-[180px] truncate px-3 py-3.5 text-foreground max-md:max-w-full max-md:p-0">{deployActor(d)}</td>
+                                                    <td className="whitespace-nowrap px-3 py-3.5 text-muted-foreground max-md:p-0">{formatRelativeTime(d.startedAt)}</td>
+                                                    <td className="px-5 py-3.5 text-right max-md:absolute max-md:right-2 max-md:top-2 max-md:p-0">
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
                                                                 <Button variant="ghost" size="icon-sm" aria-label={`Options for deployment ${shortSha(d.sha)}`}><MoreHorizontal aria-hidden="true" /></Button>

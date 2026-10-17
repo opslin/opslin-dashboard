@@ -11,7 +11,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   Cpu, HardDrive, MoreVertical, Search, Server,
   Terminal as TerminalIcon, Wifi, Clock, FileText, Settings,
@@ -20,6 +20,7 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { StaggerGroup, StaggerItem } from "@/components/patterns/motion";
+import { ProviderBadge } from "@/components/servers/provider-badge";
 import { AgentUpdateModal } from "@/components/servers/agent-update-modal";
 import { api, type Server as ServerType } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -96,16 +97,16 @@ function ServerCard({
   const agentConnected = isLive;
 
   return (
-    <div className="hover-lift relative z-0 rounded-xl border border-border bg-card p-5">
+    <div className="hover-lift relative z-0 rounded-xl border border-border bg-card p-4 sm:p-5">
       {/* Top row: server info + badges + menu */}
-      <div className="flex items-start justify-between gap-4">
-        <Link href={`/servers/${server.id}`} className="flex items-center gap-3 min-w-0 group">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between xl:gap-4">
+        <Link href={`/servers/${server.id}`} className="flex min-w-0 items-center gap-3 group">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted flex-shrink-0">
             <Server size={32} />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-foreground truncate group-hover:text-info-text transition-colors">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h3 className="min-w-0 max-w-full break-all text-sm font-semibold text-foreground truncate group-hover:text-info-text transition-colors">
                 {server.name}
               </h3>
               <span className={cn(
@@ -128,7 +129,7 @@ function ServerCard({
           </div>
         </Link>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-2 xl:flex-shrink-0 xl:justify-end">
           {/* Status badges */}
           {agentConnected && (
             <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-success-text bg-success-muted border border-success/30 px-2.5 py-1 rounded-full">
@@ -136,6 +137,7 @@ function ServerCard({
               Agent Connected
             </span>
           )}
+          <ProviderBadge provider={server.provider} />
           {dockerReady && (
             <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-info-text bg-info-muted border border-info/30 px-2.5 py-1 rounded-full">
               <Monitor className="h-3 w-3" />
@@ -155,9 +157,9 @@ function ServerCard({
       </div>
 
       {/* Metrics row */}
-      <div className="grid grid-cols-4 gap-4 mt-4 pt-4 border-t border-border/60">
+      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 border-t border-border/60 pt-4 lg:grid-cols-4">
         {/* Uptime */}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Clock className="h-4 w-4 text-muted-foreground" />
           <div>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Uptime</p>
@@ -168,11 +170,11 @@ function ServerCard({
         </div>
 
         {/* CPU */}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Cpu className="h-4 w-4 text-muted-foreground" />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">CPU</p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <p className="text-sm font-semibold text-foreground tabular-nums">{cpuPct.toFixed(1)}%</p>
               <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden max-w-[60px]">
                 <div
@@ -188,11 +190,11 @@ function ServerCard({
         </div>
 
         {/* Memory */}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <HardDrive className="h-4 w-4 text-muted-foreground" />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Memory</p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <p className="text-sm font-semibold text-foreground tabular-nums">
                 {memTotal > 0 ? `${formatBytes(memUsed)} / ${formatBytes(memTotal)}` : "—"}
               </p>
@@ -212,11 +214,11 @@ function ServerCard({
         </div>
 
         {/* Disk */}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <HardDrive className="h-4 w-4 text-muted-foreground" />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Disk</p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <p className="text-sm font-semibold text-foreground tabular-nums">
                 {diskTotal > 0 ? `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}` : "—"}
               </p>
@@ -237,7 +239,7 @@ function ServerCard({
       </div>
 
       {/* Action buttons */}
-      <div className="flex items-center gap-2 mt-4 pt-3 border-t border-border/60">
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
         <Button asChild size="sm" className="h-8 text-xs">
           <Link href={`/apps/new?server=${server.id}`}>
             <Rocket className="h-3.5 w-3.5 mr-1.5" />
@@ -283,28 +285,33 @@ export default function ServersPage() {
     refetchInterval: 15000,
   });
 
-  // Pick the first online server for metrics
-  const primaryServer = useMemo(() => servers.find((s) => s.isLiveConnected) || servers[0], [servers]);
-
-  // Fetch live metrics for the primary server
-  const { data: primaryMetrics } = useQuery<{
+  // Live numbers for EVERY server, not just one: each card shows its own server's CPU, memory, disk and uptime.
+  type ServerMetricsNow = {
     cpu?: { percent?: number; cores?: number };
     memory?: { used?: number; total?: number; percent?: number };
     disk?: { used?: number; total?: number; percent?: number };
     uptime?: number;
-  }>({
-    queryKey: ["server-metrics", primaryServer?.id],
-    queryFn: async () => {
-      if (!primaryServer) return {};
-      const res = await fetch(`${API_URL}/metrics/${primaryServer.id}/current`, {
-        credentials: "include",
-      });
-      if (!res.ok) return {};
-      return res.json();
-    },
-    enabled: Boolean(primaryServer),
-    refetchInterval: 30000,
+  };
+  const metricsQueries = useQueries({
+    queries: servers.map((server) => ({
+      queryKey: ["server-metrics", server.id],
+      queryFn: async (): Promise<ServerMetricsNow> => {
+        const res = await fetch(`${API_URL}/metrics/${server.id}/current`, { credentials: "include" });
+        if (!res.ok) return {};
+        return res.json();
+      },
+      refetchInterval: 30000,
+    })),
   });
+  const metricsByServer = useMemo(() => {
+    const map = new Map<string, ServerMetricsNow>();
+    servers.forEach((server, index) => {
+      const data = metricsQueries[index]?.data;
+      if (data) map.set(server.id, data);
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servers, metricsQueries.map((q) => q.dataUpdatedAt).join(",")]);
 
   // Filtered servers
   const filteredServers = useMemo(() => {
@@ -346,23 +353,23 @@ export default function ServersPage() {
       {/* Your Servers section */}
       <div className="rounded-2xl border border-border bg-card">
         {/* Section header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+        <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-4 sm:px-5 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-foreground">Your Servers</h2>
+            <h2 className="whitespace-nowrap text-base font-bold text-foreground">Your Servers</h2>
             <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full bg-muted text-xs font-semibold text-foreground tabular-nums">
               {servers.length}
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* Search */}
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search servers..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 pl-8 pr-3 rounded-lg border border-border bg-muted/40 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 w-44"
+                className="h-8 pl-8 pr-3 rounded-lg border border-border bg-muted/40 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 w-full sm:w-44"
               />
             </div>
             {/* Status filter */}
@@ -412,25 +419,28 @@ export default function ServersPage() {
               ) : null}
             </div>
           ) : (
-            filteredServers.map((server) => (
-              <ServerCard
-                key={server.id}
-                server={server}
-                onUpdateAgent={setUpdateServerId}
-                metrics={
-                  server.id === primaryServer?.id && primaryMetrics
-                    ? {
-                        cpuPercent: primaryMetrics.cpu?.percent ?? 0,
-                        memUsed: primaryMetrics.memory?.used ?? 0,
-                        memTotal: primaryMetrics.memory?.total ?? 0,
-                        diskUsed: primaryMetrics.disk?.used ?? 0,
-                        diskTotal: primaryMetrics.disk?.total ?? 0,
-                      }
-                    : undefined
-                }
-                uptimeSec={server.id === primaryServer?.id ? primaryMetrics?.uptime : undefined}
-              />
-            ))
+            filteredServers.map((server) => {
+              const live = metricsByServer.get(server.id);
+              return (
+                <ServerCard
+                  key={server.id}
+                  server={server}
+                  onUpdateAgent={setUpdateServerId}
+                  metrics={
+                    live
+                      ? {
+                          cpuPercent: live.cpu?.percent ?? 0,
+                          memUsed: live.memory?.used ?? 0,
+                          memTotal: live.memory?.total ?? 0,
+                          diskUsed: live.disk?.used ?? 0,
+                          diskTotal: live.disk?.total ?? 0,
+                        }
+                      : undefined
+                  }
+                  uptimeSec={live?.uptime}
+                />
+              );
+            })
           )}
         </div>
       </div>

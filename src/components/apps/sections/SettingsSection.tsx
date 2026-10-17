@@ -97,14 +97,14 @@ const NAV = [
 function Section({ id, title, subtitle, action, children }: { id: string; title: string; subtitle: string; action?: React.ReactNode; children: React.ReactNode }) {
     return (
         <Card id={`settings-${id}`} className="scroll-mt-6 gap-0 rounded-2xl py-0 shadow-xs">
-            <div className="flex items-start justify-between gap-3 px-6 pt-5">
+            <div className="flex items-start justify-between gap-3 px-4 pt-5 sm:px-6">
                 <div>
                     <h2 className="text-xl font-bold tracking-tight text-foreground">{title}</h2>
                     <p className="text-sm text-muted-foreground">{subtitle}</p>
                 </div>
                 {action}
             </div>
-            <div className="space-y-5 p-6">{children}</div>
+            <div className="space-y-5 p-4 sm:p-6">{children}</div>
         </Card>
     );
 }
@@ -119,9 +119,9 @@ function Notice({ tone, children }: { tone: "danger" | "success" | "warning"; ch
 
 function InfoRow({ label, children, action }: { label: string; children: React.ReactNode; action?: React.ReactNode }) {
     return (
-        <div className="flex items-center gap-4 border-t py-3.5 text-sm first:border-t-0">
-            <span className="w-28 shrink-0 text-muted-foreground">{label}</span>
-            <span className="min-w-0 flex-1 truncate font-medium text-foreground">{children}</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t py-3.5 text-sm first:border-t-0">
+            <span className="w-full shrink-0 text-muted-foreground sm:w-28">{label}</span>
+            <span className="min-w-0 flex-1 [overflow-wrap:anywhere] font-medium text-foreground sm:truncate">{children}</span>
             {action}
         </div>
     );
@@ -197,11 +197,11 @@ export function SettingsSection({
 
     return (
         <section className={cn("grid items-start gap-6", active === "deploy-mode" ? "lg:grid-cols-[220px_minmax(0,1fr)_300px]" : "lg:grid-cols-[220px_minmax(0,1fr)]")}>
-            <nav aria-label="Settings sections" className="sticky top-4 rounded-2xl border bg-card p-2 shadow-xs">
-                <ul className="space-y-0.5">
+            <nav aria-label="Settings sections" className="rounded-2xl border bg-card p-2 shadow-xs max-lg:flex max-lg:items-center max-lg:gap-1 max-lg:overflow-x-auto lg:sticky lg:top-4 [&::-webkit-scrollbar]:hidden">
+                <ul className="space-y-0.5 max-lg:flex max-lg:gap-1 max-lg:space-y-0 max-lg:[&>li]:shrink-0">
                     {NAV.map((item) => {
                         const Icon = item.icon;
-                        const cls = cn("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring", active === item.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground");
+                        const cls = cn("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring max-lg:whitespace-nowrap", active === item.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground");
                         return (
                             <li key={item.id}>
                                 {"href" in item ? (
@@ -213,8 +213,8 @@ export function SettingsSection({
                         );
                     })}
                 </ul>
-                <div className="my-2 border-t" />
-                <button type="button" onClick={() => goTo("danger")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-danger-text hover:bg-danger-muted focus-visible:ring-2 focus-visible:ring-ring"><Trash2 className="size-4" aria-hidden="true" />Danger zone</button>
+                <div className="my-2 border-t max-lg:hidden" />
+                <button type="button" onClick={() => goTo("danger")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-danger-text hover:bg-danger-muted max-lg:w-auto max-lg:shrink-0 max-lg:whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring"><Trash2 className="size-4" aria-hidden="true" />Danger zone</button>
             </nav>
 
             {active === "deploy-mode" ? (

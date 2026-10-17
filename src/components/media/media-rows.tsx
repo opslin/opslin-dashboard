@@ -44,7 +44,7 @@ export function Row({
     return (
         <div className={cn("flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 px-5 py-2.5", className)}>
             {leading ? <span className="flex w-11 shrink-0 items-center">{leading}</span> : null}
-            <span className="min-w-0 flex-1 text-sm font-medium text-foreground">{label}</span>
+            <span className="min-w-32 flex-1 text-sm font-medium text-foreground [overflow-wrap:anywhere]">{label}</span>
             {state ? <span className="flex items-center gap-2 text-sm text-muted-foreground">{state}</span> : null}
             {action ? <span className="shrink-0">{action}</span> : null}
         </div>
@@ -76,9 +76,9 @@ export function CloudflareMark({ className }: { className?: string }) {
 }
 
 /** Collapsed detail (DESIGN.md P3/S3): label only, the chevron rotates 90 degrees when opened. */
-export function Disclosure({ label, children }: { label: string; children: React.ReactNode }) {
+export function Disclosure({ label, children, defaultOpen }: { label: string; children: React.ReactNode; defaultOpen?: boolean }) {
     return (
-        <details className="group border-t border-border/70">
+        <details className="group border-t border-border/70" open={defaultOpen}>
             <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-5 text-sm text-muted-foreground [&::-webkit-details-marker]:hidden">
                 <ChevronRight className="size-4 transition-transform duration-150 motion-reduce:transition-none group-open:rotate-90" aria-hidden="true" />
                 {label}

@@ -293,21 +293,21 @@ function DomainRow({ appId, domain, only, onFinish, previewBusy, onPreview }: { 
     const sub = subtitleFor(domain);
     const needsDns = domain.type === "custom" && ["pending_dns", "misconfigured"].includes(domain.status);
     return (
-        <li className="flex items-center gap-4 px-5 py-4">
+        <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-4 sm:flex-nowrap sm:gap-4 sm:px-5">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"><Globe className="size-5" aria-hidden="true" /></span>
-            <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-foreground">{domain.domain}</p>
+            <div className="min-w-0 basis-[calc(100%-3.25rem)] sm:flex-1 sm:basis-auto">
+                <p className="[overflow-wrap:anywhere] font-semibold text-foreground sm:truncate">{domain.domain}</p>
                 {needsDns ? (
                     <button type="button" onClick={onFinish} className="text-sm font-medium text-primary hover:underline">How to finish →</button>
                 ) : sub ? (
-                    <p className="truncate text-sm text-muted-foreground">{sub}</p>
+                    <p className="text-sm text-muted-foreground sm:truncate">{sub}</p>
                 ) : null}
             </div>
-            <span className={cn("flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium", PILL_CLASS[pill.tone])}>
+            <span className={cn("ml-[3.25rem] flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium sm:ml-0", PILL_CLASS[pill.tone])}>
                 <span className={cn("size-1.5 rounded-full", PILL_DOT[pill.tone])} aria-hidden="true" />{pill.label}
             </span>
             <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+                <DropdownMenuTrigger asChild className="max-sm:ml-auto">
                     <Button variant="ghost" size="icon-sm" aria-label={`Options for ${domain.domain}`}><MoreHorizontal aria-hidden="true" /></Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">

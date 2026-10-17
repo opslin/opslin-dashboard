@@ -216,8 +216,8 @@ export function EnvironmentSection({
             ) : null}
 
             <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
-                <table className="w-full min-w-[640px] text-sm">
-                    <thead>
+                <table className="w-full text-sm max-md:block">
+                    <thead className="max-md:hidden">
                         <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             <th className="w-[30%] px-5 py-3">Name</th>
                             <th className="px-3 py-3">Value</th>
@@ -225,16 +225,16 @@ export function EnvironmentSection({
                             <th className="w-16 px-3 py-3"><span className="sr-only">Actions</span></th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="max-md:block">
                         {adding ? (
-                            <tr className="border-b bg-primary/[0.03]">
-                                <td className="px-5 py-3">
+                            <tr className="border-b bg-primary/[0.03] max-md:relative max-md:block max-md:space-y-2 max-md:px-4 max-md:py-4">
+                                <td className="px-5 py-3 max-md:block max-md:p-0">
                                     <Input aria-label="New variable name" autoFocus value={draftKey} onChange={(e) => setDraftKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))} placeholder="DATABASE_URL" className="h-9 font-mono text-xs" />
                                 </td>
-                                <td className="px-3 py-3">
+                                <td className="px-3 py-3 max-md:block max-md:p-0">
                                     <Input aria-label="New variable value" value={draftValue} onChange={(e) => setDraftValue(e.target.value)} placeholder="postgres://user:pass@host:5432/db" className="h-9 font-mono text-xs" onKeyDown={(e) => { if (e.key === "Enter") addDraft(); }} />
                                 </td>
-                                <td className="px-3 py-3">
+                                <td className="px-3 py-3 max-md:block max-md:p-0">
                                     <Select value={draftScope} onValueChange={(v) => setDraftScope(v as Scope)}>
                                         <SelectTrigger aria-label="Used in" className="h-9 text-xs"><SelectValue /></SelectTrigger>
                                         <SelectContent>
@@ -244,7 +244,7 @@ export function EnvironmentSection({
                                         </SelectContent>
                                     </Select>
                                 </td>
-                                <td className="px-3 py-3">
+                                <td className="px-3 py-3 max-md:block max-md:p-0">
                                     <div className="flex justify-end gap-1">
                                         <Button size="sm" onClick={addDraft} disabled={!draftKey.trim()}>Add</Button>
                                         <Button size="icon-sm" variant="ghost" aria-label="Cancel" onClick={closeAdd}><X aria-hidden="true" /></Button>
@@ -260,9 +260,9 @@ export function EnvironmentSection({
                             const masked = isSecret && !isRevealed;
                             const dots = "•".repeat(Math.max(10, Math.min(envVar.value.length || 18, 22)));
                             return (
-                                <tr key={`${envVar.key}-${i}`} className="border-b last:border-b-0 transition-colors hover:bg-muted/30">
-                                    <td className="px-5 py-5 font-mono text-[13px] font-semibold text-foreground">{envVar.key}</td>
-                                    <td className="px-3 py-5">
+                                <tr key={`${envVar.key}-${i}`} className="border-b last:border-b-0 transition-colors hover:bg-muted/30 max-md:relative max-md:block max-md:px-4 max-md:py-3">
+                                    <td className="px-5 py-5 font-mono text-[13px] font-semibold text-foreground max-md:block max-md:break-all max-md:px-0 max-md:py-0 max-md:pr-10">{envVar.key}</td>
+                                    <td className="px-3 py-5 max-md:block max-md:px-0 max-md:py-1">
                                         <div className="flex items-center gap-3">
                                             {editing === i ? (
                                                 <Input aria-label={`Value for ${envVar.key}`} autoFocus value={envVar.value} onChange={(e) => updateValue(i, e.target.value)} onBlur={() => setEditing(null)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditing(null); }} className="h-8 font-mono text-xs" />
@@ -274,10 +274,10 @@ export function EnvironmentSection({
                                             </button>
                                         </div>
                                     </td>
-                                    <td className="px-3 py-5">
+                                    <td className="px-3 py-5 max-md:block max-md:px-0 max-md:py-0">
                                         <span className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">{SCOPE_LABEL[scope]}</span>
                                     </td>
-                                    <td className="px-3 py-5 text-right">
+                                    <td className="px-3 py-5 text-right max-md:absolute max-md:right-2 max-md:top-2 max-md:p-0">
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="ghost" size="icon-sm" aria-label={`Options for ${envVar.key}`}><MoreHorizontal aria-hidden="true" /></Button>
@@ -295,8 +295,8 @@ export function EnvironmentSection({
                         })}
 
                         {envVars.length === 0 && !adding ? (
-                            <tr>
-                                <td colSpan={4} className="px-5 py-12 text-center">
+                            <tr className="max-md:block">
+                                <td colSpan={4} className="px-5 py-12 text-center max-md:block">
                                     <p className="font-semibold text-foreground">No variables yet</p>
                                     <p className="mt-1 text-sm text-muted-foreground">Add one, import a .env file, or connect a database.</p>
                                 </td>
@@ -307,7 +307,7 @@ export function EnvironmentSection({
             </div>
 
             {envVarsChanged ? (
-                <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-4 rounded-2xl border bg-card px-5 py-3.5 shadow-lg">
+                <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-2xl border bg-card px-4 py-3.5 shadow-lg sm:gap-4 sm:px-5">
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Info className="size-4" aria-hidden="true" /></span>
                     <div className="min-w-0 flex-1">
                         <p className="font-semibold text-foreground">{count > 0 ? `${count} ${count === 1 ? "change" : "changes"} not applied yet` : "Changes not applied yet"}</p>

@@ -6,6 +6,7 @@ import { ArrowRight, Globe, RotateCw, Shield, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { FirewallAttackMap } from "@/components/servers/firewall-attack-map";
+import { ServerCheckRow } from "@/components/servers/security-check/server-check-row";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -83,6 +84,8 @@ export function SecurityTab({ serverId }: { serverId: string }) {
                     </div>
                 </div>
             </Card>
+
+            <ServerCheckRow serverId={serverId} />
 
             <Card className="gap-0 overflow-hidden rounded-2xl py-0 shadow-xs">
                 <div className="flex items-start justify-between gap-3 px-5 py-4">

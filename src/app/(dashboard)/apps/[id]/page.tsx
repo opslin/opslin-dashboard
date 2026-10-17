@@ -334,6 +334,20 @@ function AppDetailPageContent() {
         },
     });
 
+    const restartMutation = useMutation({
+        mutationFn: async () => {
+            if (!appData) throw new Error("App not found");
+            return api.startApp(appData.server.id, appId);
+        },
+        onSuccess: () => {
+            toast.success("Restarting the app");
+            window.setTimeout(() => void queryClient.invalidateQueries({ queryKey: ["app", appId] }), 4000);
+        },
+        onError: (restartError) => {
+            toast.error(restartError instanceof Error ? restartError.message : "Couldn't restart the app");
+        },
+    });
+
     const deployMutation = useMutation({
         mutationFn: async (overridePreflight?: string[]) => {
             if (!appData) throw new Error("App not found");
@@ -1287,6 +1301,8 @@ function AppDetailPageContent() {
                 deployPending={deployMutation.isPending}
                 stopPending={stopMutation.isPending}
                 deletePending={deleteMutation.isPending}
+                restartPending={restartMutation.isPending}
+                onRestart={() => restartMutation.mutate()}
                 onDeploy={() => deployMutation.mutate(undefined)}
                 onStop={() => stopMutation.mutate()}
                 onDelete={() => deleteMutation.mutate()}

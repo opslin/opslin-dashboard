@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { AlertTriangle, Eye, ExternalLink, GitBranch, Globe, Loader2, MoreHorizontal, Rocket, RotateCcw, ShieldCheck, StopCircle, Trash2, Server as ServerIcon } from "lucide-react";
+import { AlertTriangle, Eye, ExternalLink, GitBranch, Globe, Loader2, MoreHorizontal, RefreshCw, Rocket, RotateCcw, ShieldCheck, StopCircle, Trash2, Server as ServerIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -25,6 +25,9 @@ type AppHeaderProps = {
     deployPending: boolean;
     stopPending: boolean;
     deletePending: boolean;
+    /** Only for an app made from a moved site (type DOCKER), which is restarted instead of rebuilt. */
+    restartPending?: boolean;
+    onRestart?: () => void;
     onDeploy: () => void;
     onStop: () => void;
     onDelete: () => void;
@@ -39,11 +42,15 @@ export function AppHeader({
     deployPending,
     stopPending,
     deletePending,
+    restartPending,
+    onRestart,
     onDeploy,
     onStop,
     onDelete,
     onRetryDeleteCleanup,
 }: AppHeaderProps) {
+    // An app made from a site moved by a server migration has no source to build: it is restarted, not deployed.
+    const isMoved = app.type === "DOCKER" || Boolean(app.adoptedFromMigrationId);
     const isDeleting = app.status === "deleting";
     const isDeleteFailed = app.status === "delete_failed";
     const isStopping = app.status === "stopping";
@@ -86,23 +93,23 @@ export function AppHeader({
     return (
         <div className="px-4 pt-5 sm:px-6 lg:px-8">
             {menuOpen ? <div className="pointer-events-none fixed inset-0 z-40 bg-slate-900/20" aria-hidden="true" /> : null}
-            <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-muted-foreground">
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
                 <Link href="/apps" className="hover:text-foreground">Apps</Link>
                 <span aria-hidden="true">/</span>
-                <span className="text-foreground">{app.name}</span>
+                <span className="min-w-0 truncate text-foreground">{app.name}</span>
             </nav>
 
             <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 items-center gap-4">
-                    <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <Globe className="size-7" aria-hidden="true" />
+                <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
+                    <span className="flex size-11 shrink-0 sm:size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Globe className="size-5 sm:size-7" aria-hidden="true" />
                     </span>
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-3">
-                            <h1 className="truncate text-3xl font-bold tracking-tight text-foreground">{app.name}</h1>
+                            <h1 className="min-w-0 [overflow-wrap:anywhere] text-2xl font-bold tracking-tight text-foreground sm:truncate sm:text-3xl">{app.name}</h1>
                             <StatusBadge status={displayStatus} label={displayStatus === "running" ? "Live" : displayStatus === "deploying" ? "Building" : undefined} />
                         </div>
-                        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[15px] text-muted-foreground">
+                        <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground sm:text-[15px] [&_a]:[overflow-wrap:anywhere]">
                             {isBackgroundWorker ? (
                                 <span>Background worker, no public URL</span>
                             ) : headerDomain ? (
@@ -149,7 +156,14 @@ export function AppHeader({
                         </Button>
                     )}
 
-                    {!deleteLocked && (
+                    {!deleteLocked && isMoved && onRestart && (
+                        <Button size="lg" onClick={onRestart} disabled={restartPending || app.status === "deploying"}>
+                            {restartPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}
+                            {restartPending ? "Restarting..." : "Restart"}
+                        </Button>
+                    )}
+
+                    {!deleteLocked && !isMoved && (
                         <Button size="lg" onClick={onDeploy} disabled={deployPending}>
                             {deployPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Rocket aria-hidden="true" />}
                             {deployPending ? "Deploying..." : "Deploy"}

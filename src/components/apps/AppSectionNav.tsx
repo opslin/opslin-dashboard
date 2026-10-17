@@ -48,7 +48,7 @@ export function AppSectionNav({ value, onValueChange, className, children }: App
             onValueChange={(next) => onValueChange(next as AppSectionId)}
             className={cn("gap-0", className)}
         >
-            <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div className="overflow-x-auto max-sm:[mask-image:linear-gradient(to_right,black_88%,transparent)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 <TabsList variant="line" aria-label="App sections" className="min-w-max">
                     {APP_SECTIONS.map((section) => (
                         <TabsTrigger key={section.id} value={section.id}>
