@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DashboardShell } from "../dashboard-shell";
@@ -68,10 +69,14 @@ const baseUser: User = {
 };
 
 function renderShell(user: User | null) {
+  // The shell reads feature data with React Query, so it needs a provider (no retries: a failed read just hides the item).
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <DashboardShell user={user} onLogout={vi.fn()}>
-      <div>Dashboard content</div>
-    </DashboardShell>
+    <QueryClientProvider client={client}>
+      <DashboardShell user={user} onLogout={vi.fn()}>
+        <div>Dashboard content</div>
+      </DashboardShell>
+    </QueryClientProvider>
   );
 }
 
