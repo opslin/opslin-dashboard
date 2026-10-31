@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import Link from "next/link";
 import { api, type BackupStorageInput, type BackupStorageProvider } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -29,6 +30,12 @@ export default function BackupsPage() {
     const [accessKeyId, setAccessKeyId] = useState("");
     const [secretAccessKey, setSecretAccessKey] = useState("");
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+    const { data: storageBuckets } = useQuery({
+        queryKey: ["r2Buckets"],
+        queryFn: () => api.getR2Buckets(),
+    });
+    const bucketChoices = storageBuckets?.buckets ?? [];
 
     const providerMeta = providerOptions.find((option) => option.value === provider) || providerOptions[0];
 
@@ -96,6 +103,17 @@ export default function BackupsPage() {
         },
         onError: (error) => {
             toast.error(error instanceof Error ? error.message : "Unable to disconnect");
+        },
+    });
+
+    const useBucketMutation = useMutation({
+        mutationFn: (bucketId: string) => api.useStorageBucketForBackups(bucketId),
+        onSuccess: () => {
+            toast.success("Backups will use this bucket");
+            queryClient.invalidateQueries({ queryKey: ["backupStorage"] });
+        },
+        onError: (error) => {
+            toast.error(error instanceof Error ? error.message : "Unable to use this bucket");
         },
     });
 
@@ -168,6 +186,46 @@ export default function BackupsPage() {
                             </Button>
                         </CardContent>
                     )}
+                </Card>
+
+                <Card className="border-border/80 shadow-sm">
+                    <CardHeader>
+                        <CardTitle>Use a bucket from Storage</CardTitle>
+                        <CardDescription>
+                            Already signed in with Cloudflare? Pick a Storage bucket and backups start using it, with no keys to paste.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                        {bucketChoices.length === 0 ? (
+                            <div className="flex min-h-12 items-center justify-between gap-3 text-sm">
+                                <span className="text-muted-foreground">No Storage buckets yet</span>
+                                <Button asChild variant="outline"><Link href="/storage">Open Storage</Link></Button>
+                            </div>
+                        ) : (
+                            bucketChoices.map((item) => {
+                                const active = Boolean(status?.configured && status.provider === "cloudflare_r2" && status.bucket === item.bucketName);
+                                return (
+                                    <div key={item.id} className="flex min-h-12 items-center justify-between gap-3 border-b border-border/60 last:border-0">
+                                        <span className="truncate text-sm font-medium">{item.bucketName}</span>
+                                        {active ? (
+                                            <Badge>In use</Badge>
+                                        ) : (
+                                            <Button
+                                                variant="outline"
+                                                disabled={useBucketMutation.isPending}
+                                                onClick={() => useBucketMutation.mutate(item.id)}
+                                            >
+                                                {useBucketMutation.isPending && useBucketMutation.variables === item.id ? (
+                                                    <Loader2 className="mr-2 size-4 animate-spin" />
+                                                ) : null}
+                                                Use for backups
+                                            </Button>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
+                    </CardContent>
                 </Card>
 
                 <Card className="border-border/80 shadow-sm">

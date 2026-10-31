@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { AppHeader } from "../AppHeader";
 import type { App } from "@/lib/api";
 
+// The terminal itself needs a browser WebSocket and xterm; the header only decides whether to offer it.
+vi.mock("@/components/apps/app-terminal-sheet", () => ({
+    AppTerminalSheet: ({ open, appName }: { open: boolean; appName: string }) => (open ? <div role="dialog">Terminal in {appName}</div> : null),
+}));
+
 vi.mock("next/link", () => ({
     default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
         <a href={href} {...props}>{children}</a>
@@ -11,6 +16,8 @@ vi.mock("next/link", () => ({
 
 function app(overrides: Partial<Pick<App, "name" | "status" | "deployLogs">> = {}) {
     return {
+        id: "app-1",
+        createdAt: "2026-10-26T00:00:00.000Z",
         name: "Checkout API",
         status: "stopped" as App["status"],
         deployLogs: null,
@@ -84,5 +91,26 @@ describe("AppHeader", () => {
         expect(onRetryDeleteCleanup).toHaveBeenCalledTimes(1);
         await openMenu();
         expect(screen.getByRole("menuitem", { name: /Delete app/i })).toHaveAttribute("aria-disabled", "true");
+    });
+
+    describe("terminal inside the app", () => {
+        const marketplace = { slug: "open-webui", name: "Open WebUI", image: "ghcr.io/open-webui/open-webui:v0.12.4", pinnedImage: null, repository: "https://github.com/open-webui/open-webui" };
+
+        it("is offered for a running Marketplace app and opens the panel", async () => {
+            renderHeader({ app: { ...app({ status: "running" }), marketplace } as never });
+            await openMenu();
+            fireEvent.click(screen.getByRole("menuitem", { name: /Open terminal/i }));
+            expect(await screen.findByRole("dialog")).toHaveTextContent("Terminal in Checkout API");
+        });
+
+        it("is not offered for an app that is not from the Marketplace, or one that is not running", async () => {
+            const first = renderHeader({ app: app({ status: "running" }) });
+            await openMenu();
+            expect(screen.queryByRole("menuitem", { name: /Open terminal/i })).toBeNull();
+            first.unmount();
+            renderHeader({ app: { ...app({ status: "stopped" }), marketplace } as never });
+            await openMenu();
+            expect(screen.queryByRole("menuitem", { name: /Open terminal/i })).toBeNull();
+        });
     });
 });

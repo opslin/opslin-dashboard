@@ -11,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { QuickDatabaseConnectDialog } from "@/components/apps/sections/QuickDatabaseConnectDialog";
 import type { App } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { invalidWebAddressKeys, isSecretLikeKey } from "./env-helpers";
 
 type EnvironmentSectionProps = {
     appStatus: App["status"];
@@ -50,7 +51,7 @@ function inferScope(key: string): Scope {
 
 function isSecretKey(key: string) {
     const k = key.toLowerCase();
-    return k.includes("secret") || k.includes("password") || k.includes("token") || k.includes("dsn") || k.endsWith("_key") || k === "key";
+    return isSecretLikeKey(key) || k.includes("dsn");
 }
 
 async function copyText(text: string, label: string) {
@@ -184,6 +185,7 @@ export function EnvironmentSection({
 
     const count = changeCount ?? 0;
     const busy = savePending || saveAndRedeployPending;
+    const invalidAddresses = invalidWebAddressKeys(envVars);
 
     return (
         <section className="space-y-5 pb-24">
@@ -312,12 +314,13 @@ export function EnvironmentSection({
                     <div className="min-w-0 flex-1">
                         <p className="font-semibold text-foreground">{count > 0 ? `${count} ${count === 1 ? "change" : "changes"} not applied yet` : "Changes not applied yet"}</p>
                         <p className="text-sm text-muted-foreground">Your changes will go live after you redeploy.</p>
+                        {invalidAddresses.length > 0 ? <p role="alert" className="mt-1 text-sm text-danger-text">{invalidAddresses.join(", ")} must be a full web URL, for example https://your-domain.com.</p> : null}
                     </div>
                     {onDiscard ? <Button variant="outline" disabled={busy} onClick={onDiscard}>Discard</Button> : null}
-                    <Button variant="outline" onClick={onSave} disabled={busy || deleteLocked}>
+                    <Button variant="outline" onClick={onSave} disabled={busy || deleteLocked || invalidAddresses.length > 0}>
                         {savePending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null} Save
                     </Button>
-                    <Button onClick={handleSaveAndRedeploy} disabled={saveAndRedeployPending || savePending || deployPending || deleteLocked}>
+                    <Button onClick={handleSaveAndRedeploy} disabled={saveAndRedeployPending || savePending || deployPending || deleteLocked || invalidAddresses.length > 0}>
                         {saveAndRedeployPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Rocket aria-hidden="true" />} Save and redeploy
                     </Button>
                 </div>

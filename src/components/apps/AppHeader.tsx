@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { AlertTriangle, Eye, ExternalLink, GitBranch, Globe, Loader2, MoreHorizontal, RefreshCw, Rocket, RotateCcw, ShieldCheck, StopCircle, Trash2, Server as ServerIcon } from "lucide-react";
+import { AlertTriangle, Eye, ExternalLink, GitBranch, Globe, Loader2, MoreHorizontal, RefreshCw, Rocket, RotateCcw, ShieldCheck, StopCircle, Store, SquareTerminal, Trash2, Server as ServerIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { AppTerminalSheet } from "@/components/apps/app-terminal-sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { App, Server } from "@/lib/api";
 import { DeleteAppConfirmDialog } from "./DeleteAppConfirmDialog";
 import { DeleteLifecycleNotice } from "./DeleteLifecycleNotice";
+import { AppDeploymentCapabilities } from "./DeploymentCapabilities";
 import { PendingConfigDialog } from "./PendingConfigDialog";
 import { DeployProgressDialog } from "./DeployProgressDialog";
 import { formatRelativeTime } from "@/lib/utils";
@@ -84,6 +86,7 @@ export function AppHeader({
     const pendingConfigKeyCount = app.pendingConfig?.keys?.length ?? 0;
     const [configOpen, setConfigOpen] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
+    const [terminalOpen, setTerminalOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     // DIL Phase 25 — set only for an app created by an AI-assisted
     // auto-deploy; a normal wizard/CLI-created app has nothing to show here.
@@ -124,14 +127,31 @@ export function AppHeader({
                                 <ServerIcon className="size-4" aria-hidden="true" />
                                 {server.name}
                             </Link>
-                            {app.branch ? <span className="flex items-center gap-1.5"><GitBranch className="size-4" aria-hidden="true" />{app.branch}</span> : null}
+                            {app.branch && !app.marketplace ? <span className="flex items-center gap-1.5"><GitBranch className="size-4" aria-hidden="true" />{app.branch}</span> : null}
                             {deployedAgo ? <span className="sr-only">Deployed {deployedAgo}</span> : null}
                         </p>
+                        {app.marketplace ? (
+                            <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground" data-testid="marketplace-source">
+                                <Link href="/marketplace" className="inline-flex items-center gap-1.5 font-medium text-foreground hover:underline">
+                                    <Store className="size-4" aria-hidden="true" />
+                                    Opslin Marketplace
+                                </Link>
+                                <span aria-hidden="true">·</span>
+                                <span title={app.marketplace.pinnedImage ?? undefined}>Official image {app.marketplace.image}</span>
+                                <span aria-hidden="true">·</span>
+                                <a href={app.marketplace.repository} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
+                                    {app.marketplace.repository.replace(/^https:\/\//, "")}
+                                    <ExternalLink className="size-3" aria-hidden="true" />
+                                </a>
+                            </p>
+                        ) : null}
                     </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2.5">
-                    {/* DIL Phase 23: blocked on config Opslin refused to guess. First in the row so it outranks Deploy. */}
+                    {app.lastAutoDeployJobId && <div className="px-4 pb-4 sm:px-6 lg:px-8"><AppDeploymentCapabilities serverId={server.id} jobId={app.lastAutoDeployJobId} appId={app.id} /></div>}
+
+            {/* DIL Phase 23: blocked on config Opslin refused to guess. First in the row so it outranks Deploy. */}
                     {pendingConfigKeyCount > 0 && (
                         <Button variant="destructive" size="lg" onClick={() => setConfigOpen(true)}>
                             <AlertTriangle aria-hidden="true" />
@@ -198,6 +218,11 @@ export function AppHeader({
                             <DropdownMenuItem asChild className={MENU_ITEM}>
                                 <Link href={`/apps/${app.id}?section=security`}><ShieldCheck aria-hidden="true" /> Security</Link>
                             </DropdownMenuItem>
+                            {app.marketplace && app.status === "running" ? (
+                                <DropdownMenuItem className={MENU_ITEM} onSelect={() => setTerminalOpen(true)}>
+                                    <SquareTerminal aria-hidden="true" /> Open terminal
+                                </DropdownMenuItem>
+                            ) : null}
                             {app.status === "running" && !deleteLocked ? (
                                 <DropdownMenuItem className={MENU_ITEM} disabled={stopPending} onSelect={onStop}>
                                     <StopCircle aria-hidden="true" /> {stopPending ? "Stopping..." : "Stop app"}
@@ -213,6 +238,9 @@ export function AppHeader({
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    {app.marketplace ? (
+                        <AppTerminalSheet serverId={server.id} appId={app.id} appName={app.name} open={terminalOpen} onOpenChange={setTerminalOpen} />
+                    ) : null}
                     <DeleteAppConfirmDialog
                         appName={app.name}
                         open={deleteOpen}

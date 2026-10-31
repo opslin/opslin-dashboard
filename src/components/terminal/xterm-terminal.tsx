@@ -41,6 +41,8 @@ type SearchAddonInstance = {
 
 interface XTermTerminalProps {
     serverId: string;
+    /** Opens the terminal inside this app's container instead of on the server's host shell. */
+    appId?: string;
     autoReconnect?: boolean;
     fontSize?: number;
     onStatusChange?: (status: TerminalStatus) => void;
@@ -67,6 +69,7 @@ export interface XTermTerminalHandle {
 
 export const XTermTerminal = forwardRef<XTermTerminalHandle, XTermTerminalProps>(function XTermTerminal({
     serverId,
+    appId,
     autoReconnect = true,
     fontSize = 14,
     onStatusChange,
@@ -192,6 +195,7 @@ export const XTermTerminal = forwardRef<XTermTerminalHandle, XTermTerminalProps>
         const scheduleReconnect = (reason: string) => {
             if (disposed) return;
             if (!autoReconnectRef.current || attempts >= MAX_RECONNECT_ATTEMPTS) {
+                terminal?.writeln(`\r\n\x1b[33m${reason}.\x1b[0m`);
                 emit({ state: "disconnected" });
                 return;
             }
@@ -221,7 +225,7 @@ export const XTermTerminal = forwardRef<XTermTerminalHandle, XTermTerminalProps>
             }
             emit({ state: "connecting" });
 
-            const ws = new WebSocket(`${WS_URL}/terminal/${serverId}`);
+            const ws = new WebSocket(`${WS_URL}/terminal/${serverId}${appId ? `?appId=${encodeURIComponent(appId)}` : ""}`);
             wsRef.current = ws;
 
             ws.onopen = () => {
@@ -319,7 +323,7 @@ export const XTermTerminal = forwardRef<XTermTerminalHandle, XTermTerminalProps>
             searchAddonRef.current = null;
             terminal?.dispose();
         };
-    }, [serverId]);
+    }, [serverId, appId]);
 
     return <div ref={terminalRef} className="h-full w-full bg-inverse px-4 py-3" />;
 });

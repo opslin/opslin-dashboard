@@ -45,6 +45,7 @@ const STATUS_REGISTRY: Record<string, { tone: StatusTone; label: string }> = {
   disconnected: { tone: "neutral", label: "Disconnected" },
   pending_dns: { tone: "warning", label: "Waiting for DNS" },
   misconfigured: { tone: "warning", label: "Needs DNS fix" },
+  needs_setup: { tone: "warning", label: "Needs setup" },
   degraded: { tone: "warning", label: "Degraded" },
   warning: { tone: "warning", label: "Warning" },
   failed: { tone: "danger", label: "Failed" },

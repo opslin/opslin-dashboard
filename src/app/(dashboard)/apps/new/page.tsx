@@ -3,6 +3,12 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useDeployRoute, useServerFit } from "@/hooks/use-deploy-route";
+import { DeployRecommendation, type ChosenWay } from "@/components/apps/DeployRecommendation";
+import { AddressSettingsRow } from "@/components/apps/AddressSettingsRow";
+import { planBlocksDeploy } from "@/components/apps/PlanPreview";
+import { DeployAssurance } from "@/components/apps/DeployAssurance";
+import { APP_URL_PLACEHOLDER, findLocalAddressSettings } from "@/lib/local-address-settings";
 import {
     ArrowLeft, Check, ChevronDown, CircleDashed, CloudUpload, ExternalLink, Eye, EyeOff, File as FileIcon, FolderGit2, Github, Link2,
     Loader2, Rocket, Search, Settings2, Sparkles, X,
@@ -21,6 +27,7 @@ import { EnvVarsEditor, EnvVar } from "@/components/ui/env-vars-editor";
 import { UpgradePrompt } from "@/components/pricing/upgrade-prompt";
 import { NoServerFlow } from "@/components/setup/setup-ui";
 import { ApiRequestError, api, type AutoDeployResult, type BuildpackName, type HealthCheckMode, type ManifestEntryRecord, type ServerJobStatus } from "@/lib/api";
+import { aiStepIndex } from "@/lib/ai-deploy-steps";
 import { generateAppNameFromGitUrl } from "@/lib/onboarding";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
@@ -235,7 +242,11 @@ function NewAppPageContent() {
     const [repoSearchQuery, setRepoSearchQuery] = useState("");
     const [selectedRepoKey, setSelectedRepoKey] = useState<string | null>(null);
     const [changingServer, setChangingServer] = useState(false);
+    // Set when the person takes the front door's advice (or overrides the default way). Cleared whenever the source changes.
+    const [wayOverride, setWayOverride] = useState<ChosenWay | null>(null);
+    const [seedInitialData, setSeedInitialData] = useState(false);
     const [dragOver, setDragOver] = useState(false);
+    const [localAddressKeys, setLocalAddressKeys] = useState<string[]>([]);
 
     const { data: servers = [], isLoading: serversLoading } = useQuery({ queryKey: ["servers"], queryFn: () => api.getServers() });
     const { data: reposData } = useQuery({ queryKey: ["github", "repos"], queryFn: () => api.getGitHubRepositories(), retry: false });
@@ -261,6 +272,21 @@ function NewAppPageContent() {
     }, [repositories, repoSearchQuery]);
     const selectedRepo = repositories.find((r) => `${r.installationId}:${r.fullName}` === selectedRepoKey) ?? null;
 
+    // A compose file that still says http://localhost for its own address: offer to fill in the real one.
+    useEffect(() => {
+        if (sourceType !== "upload" || !files) { setLocalAddressKeys([]); return; }
+        const compose = Array.from(files).find((f) => /(^|\/)(docker-)?compose\.ya?ml$/i.test(f.webkitRelativePath || f.name) && f.size <= 200_000);
+        if (!compose) { setLocalAddressKeys([]); return; }
+        let cancelled = false;
+        void compose.text().then((text) => { if (!cancelled) setLocalAddressKeys(findLocalAddressSettings(text)); }).catch(() => { if (!cancelled) setLocalAddressKeys([]); });
+        return () => { cancelled = true; };
+    }, [files, sourceType]);
+    const addressApplied = localAddressKeys.length > 0 && localAddressKeys.every((k) => envVars.some((v) => v.key === k && v.value === APP_URL_PLACEHOLDER));
+    const useAppAddress = () => setEnvVars((current) => {
+        const kept = current.filter((v) => !localAddressKeys.includes(v.key));
+        return [...kept, ...localAddressKeys.map((key) => ({ key, value: APP_URL_PLACEHOLDER }))];
+    });
+
     const envVarsObject = () => envVars.reduce((acc, v) => { if (v.key) acc[v.key] = v.value; return acc; }, {} as Record<string, string>);
 
     const isPricingUpgradeError = (error: unknown) => {
@@ -277,8 +303,16 @@ function NewAppPageContent() {
 
     const registryCredentials = () => registry && registryUsername && registryPassword ? { registry, username: registryUsername, password: registryPassword } : undefined;
 
-    // GitHub deploys use Opslin's AI (it writes the Dockerfile and wires infrastructure); uploads and plain Git URLs use the classic buildpack path.
-    const usesAi = sourceType === "github";
+    // Both Git sources follow the repository recommendation; an explicit choice still wins.
+    const usesOfficialImage = sourceType !== "upload" && wayOverride === "image";
+
+    // The front door: which way suits this repository. Only asked on the second step, and only for Git sources.
+    const deployRoute = useDeployRoute({ gitUrl, branch, githubInstallationId }, step === "deploy" && sourceType !== "upload");
+    const recommendedRoute = deployRoute.data && !deployRoute.data.locked ? deployRoute.data.data.route : null;
+    const usesAi = sourceType === "upload" ? false : wayOverride ? wayOverride === "ai" || wayOverride === "image" : recommendedRoute ? recommendedRoute === "ai" : sourceType === "github";
+
+    // Is the chosen server big enough for it? Cheap, so it is asked again when the server changes.
+    const serverFit = useServerFit(deployRoute.data && !deployRoute.data.locked ? deployRoute.data.data : null, serverId);
 
     const uploadMutation = useMutation({
         mutationFn: async () => {
@@ -314,6 +348,7 @@ function NewAppPageContent() {
             setGitPhase("creating");
             const app = await api.createApp(serverId, {
                 name: finalName, gitUrl, branch,
+                githubInstallationId: githubInstallationId || undefined,
                 domain: domain || undefined,
                 envVars: Object.keys(envVarsObj).length > 0 ? envVarsObj : undefined,
                 buildpackOverride: buildpackOverride || undefined,
@@ -355,6 +390,8 @@ function NewAppPageContent() {
                 githubInstallationId: githubInstallationId || undefined,
                 appNamePrefix: finalName,
                 extraEnvVars: Object.keys(extraEnvVarsObj).length > 0 ? extraEnvVarsObj : undefined,
+                ...(seedInitialData ? { seedInitialData: true } : {}),
+                ...(usesOfficialImage ? { useOfficialImage: true } : {}),
             });
         },
         onSuccess: (data) => {
@@ -394,7 +431,12 @@ function NewAppPageContent() {
     const showInlineError = error && !isPricingUpgradeError(error);
 
     const sourceReady = sourceType === "upload" ? Boolean(files?.length) : Boolean(gitUrl.trim());
-    const canDeploy = Boolean(serverId && finalName && sourceReady);
+    // Deploy waits for the recommendation: pressed too early, the page deployed the repo the standard way (a dev compose
+    // file, the wrong service) before it had finished working out that the AI-assisted way was the right one.
+    const checkingProject = step === "deploy" && sourceType !== "upload" && deployRoute.isLoading;
+    // A plan Opslin cannot run keeps Deploy disabled; the reason is shown in the recommendation box (doc 64 S1.8).
+    const planBlocked = usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked ? planBlocksDeploy(deployRoute.data.data.plan) : false;
+    const canDeploy = Boolean(serverId && finalName && sourceReady && !checkingProject && !planBlocked);
 
     const resetSource = (next: SourceType) => {
         setSourceType(next);
@@ -405,6 +447,7 @@ function NewAppPageContent() {
         setFiles(null);
         setNameEdited(false);
         setName("");
+        setWayOverride(null); setSeedInitialData(false);
     };
 
     const chooseRepository = (repo: typeof repositories[0]) => {
@@ -413,6 +456,7 @@ function NewAppPageContent() {
         setBranch(repo.defaultBranch || "main");
         setGithubInstallationId(repo.installationId);
         setNameEdited(false);
+        setWayOverride(null); setSeedInitialData(false);
         setStep("deploy");
     };
 
@@ -434,7 +478,8 @@ function NewAppPageContent() {
     if (deploying) {
         if (usesAi) {
             const percent = Math.max(5, Math.min(100, Number(trackedAiJob?.progress?.percent ?? 5)));
-            const stage = aiDone ? 4 : percent < 15 ? 0 : percent < 45 ? 1 : percent < 85 ? 2 : 3;
+            // The server now says which stage it is in; the percent is only a fallback for an older run.
+            const stage = aiDone ? 4 : aiStepIndex(trackedAiJob?.progress?.phase ?? undefined, percent);
             const stateFor = (index: number): TimelineState => (index < stage ? "done" : index === stage ? "active" : "pending");
             const message = trackedAiJob?.progress?.message || null;
             progressView = aiDone ? (
@@ -456,6 +501,11 @@ function NewAppPageContent() {
                             </a>
                         ) : null}
                     </div>
+                    {aiResult?.assurance ? (
+                        <div className="mx-auto max-w-md">
+                            <DeployAssurance assurance={aiResult.assurance} />
+                        </div>
+                    ) : null}
                     <div className="flex flex-wrap justify-center gap-3">
                         <Button variant="dark" size="lg" onClick={() => router.push(`/apps/${aiResult!.primaryAppId}`)}>Open app</Button>
                         <Button variant="outline" size="lg" onClick={() => router.push(`/apps/${aiResult!.primaryAppId}?section=domains`)}>Add custom domain</Button>
@@ -466,10 +516,10 @@ function NewAppPageContent() {
                     name={finalName}
                     percent={percent}
                     items={[
-                        { label: "Cloning repository", state: stateFor(0), detail: message },
-                        { label: "Opslin AI is writing your Dockerfile", state: stateFor(1), detail: message },
-                        { label: "Building your app", state: stateFor(2), detail: message },
-                        { label: "Going live", state: stateFor(3), detail: message },
+                        { label: "Reading your repository and writing the Dockerfile", state: stateFor(0), detail: stateFor(0) === "active" ? message : null },
+                        { label: "Setting up databases", state: stateFor(1), detail: stateFor(1) === "active" ? message : null },
+                        { label: "Building your app", state: stateFor(2), detail: stateFor(2) === "active" ? message : null },
+                        { label: "Checking it is healthy and going live", state: stateFor(3), detail: stateFor(3) === "active" ? message : null },
                     ]}
                 />
             );
@@ -622,7 +672,7 @@ function NewAppPageContent() {
                                 <label htmlFor="git-url" className="mb-1.5 block text-sm font-medium text-foreground">Repository URL</label>
                                 <div className="relative">
                                     <Link2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                                    <Input id="git-url" data-testid="manual-git-url" value={gitUrl} onChange={(e) => { setGitUrl(e.target.value); setGithubInstallationId(null); setNameEdited(false); }} placeholder="https://github.com/user/app.git" className="h-11 pl-9" />
+                                    <Input id="git-url" data-testid="manual-git-url" value={gitUrl} onChange={(e) => { setGitUrl(e.target.value); setGithubInstallationId(null); setNameEdited(false); setWayOverride(null); setSeedInitialData(false); }} placeholder="https://github.com/user/app.git" className="h-11 pl-9" />
                                 </div>
                             </div>
                             <div>
@@ -669,7 +719,11 @@ function NewAppPageContent() {
 
     // ----- step 2 -------------------------------------------------------------------
     const sourceTitle = sourceType === "upload" ? (files && files.length === 1 ? files[0].name : `${files?.length ?? 0} files`) : repoSlug(gitUrl);
-    const detectedChips = usesAi
+    // Doc 64 S4: a project translated from its Kubernetes files runs its own images; no Dockerfile is written.
+    const fromKubernetes = Boolean(deployRoute.data && !deployRoute.data.locked && deployRoute.data.data.plan?.kubernetes && deployRoute.data.data.plan.kubernetes.refusals.length === 0);
+    const detectedChips = usesAi && fromKubernetes
+        ? ["Runs from its Kubernetes files", "Health checks & SSL set up for you"]
+        : usesAi
         ? [selectedRepo?.language, "Dockerfile written by Opslin AI", "Health checks & SSL set up for you"].filter(Boolean) as string[]
         : [buildpackOverride ? `Using ${buildpackOptions.find((o) => o.value === buildpackOverride)?.label ?? buildpackOverride}` : "Stack detected automatically", "Health checks & SSL set up for you"];
 
@@ -685,9 +739,10 @@ function NewAppPageContent() {
                     <button type="button" className="ml-auto text-sm font-medium text-primary hover:underline" onClick={() => setStep("import")}>Change</button>
                 </div>
 
+                {!planBlocked ? (
                 <div className="rounded-xl border border-primary/15 bg-primary/[0.04] p-4">
                     <p className="flex items-center gap-2 text-[15px] font-semibold text-primary">
-                        <Sparkles className="size-4" aria-hidden="true" /> {usesAi ? "Opslin AI will set this up" : "Opslin will set this up"}
+                        <Sparkles className="size-4" aria-hidden="true" /> {usesAi && !fromKubernetes ? "Opslin AI will set this up" : "Opslin will set this up"}
                     </p>
                     <ul className="mt-3 flex flex-wrap gap-2">
                         {detectedChips.map((chip) => (
@@ -695,6 +750,31 @@ function NewAppPageContent() {
                         ))}
                     </ul>
                 </div>
+                ) : null}
+
+                {sourceType !== "upload" && !(deployRoute.data?.locked) ? (
+                    <DeployRecommendation
+                        state={deployRoute.isLoading ? { status: "loading" } : deployRoute.isError || !deployRoute.data || deployRoute.data.locked ? { status: "error" } : { status: "ready", data: deployRoute.data.data }}
+                        fit={serverFit.data ?? null}
+                        chosen={usesOfficialImage ? "image" : usesAi ? "ai" : "standard"}
+                        onChoose={setWayOverride}
+                        disabled={isLoading}
+                    />
+                ) : null}
+
+                {!planBlocked ? (<>
+                <AddressSettingsRow keys={localAddressKeys} applied={addressApplied} onApply={useAppAddress} disabled={isLoading} />
+
+                {usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked && deployRoute.data.data.units.some(unit => unit.seedCommand) ? (
+                    <div className="rounded-xl border p-4">
+                        <label className="flex items-center gap-2 text-sm font-medium">
+                            <input type="checkbox" checked={seedInitialData} onChange={event => setSeedInitialData(event.target.checked)} disabled={isLoading} />
+                            Load repository sample data on first deploy
+                        </label>
+                        <p className="mt-2 text-sm text-muted-foreground">Runs the declared seed command after schema setup on a new database. Review it before enabling; seeds can add sample accounts or records.</p>
+                        {deployRoute.data.data.units.filter(unit => unit.seedCommand).map(unit => <code key={unit.path} className="mt-1 block text-xs">{unit.seedCommand}</code>)}
+                    </div>
+                ) : null}
 
                 <div>
                     <label htmlFor="app-name" className="mb-1.5 block text-sm font-semibold text-foreground">Project name</label>
@@ -812,10 +892,11 @@ function NewAppPageContent() {
 
                 <div className="space-y-2">
                     <Button size="lg" variant="dark" className="h-12 w-full text-base" data-testid="deploy-button" disabled={!canDeploy || isLoading} onClick={handleSubmit}>
-                        {isLoading ? <><Loader2 className="animate-spin" aria-hidden="true" /> Deploying</> : <><Rocket aria-hidden="true" /> Deploy</>}
+                        {isLoading ? <><Loader2 className="animate-spin" aria-hidden="true" /> Deploying</> : checkingProject ? <><Loader2 className="animate-spin" aria-hidden="true" /> Checking your project</> : <><Rocket aria-hidden="true" /> Deploy</>}
                     </Button>
-                    <p className="text-center text-sm text-muted-foreground">Takes about 1-2 minutes</p>
+                    <p className="text-center text-sm text-muted-foreground">{usesAi ? "Can take 10 minutes or more for a large project" : "Takes about 1-2 minutes"}</p>
                 </div>
+                </>) : null}
             </CardContent>
         </Card>
     );
@@ -831,10 +912,10 @@ function NewAppPageContent() {
                     <>
                         <div className="space-y-3 text-center">
                             <h1 className="text-4xl font-bold tracking-tight text-foreground">
-                                {step === "import" ? "Let's deploy your project" : "Looks good. Ready to go live?"}
+                                {step === "import" ? "Let's deploy your project" : planBlocked ? "We checked your project" : "Looks good. Ready to go live?"}
                             </h1>
                             <p className="text-lg text-muted-foreground">
-                                {step === "import" ? "Pick your code. Opslin's AI sets up everything else, no DevOps needed." : "We'll detect and set up everything automatically."}
+                                {step === "import" ? "Pick your code. Opslin's AI sets up everything else, no DevOps needed." : planBlocked ? "Here is what we found." : "We'll detect and set up everything automatically."}
                             </p>
                         </div>
 

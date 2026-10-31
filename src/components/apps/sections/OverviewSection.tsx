@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Check, ChevronRight, Clock, Copy, Cpu, ExternalLink, Folder, GitBranch, Globe, MemoryStick, MoreHorizontal, Package, Pencil, RotateCcw, Server as ServerIcon, Timer } from "lucide-react";
 import { toast } from "sonner";
+import { ComposeServicesCard } from "@/components/apps/ComposeServicesCard";
 import { DeleteLifecycleNotice } from "@/components/apps/DeleteLifecycleNotice";
 import { DeployFailedCard, DeployingCard, deployActor } from "@/components/apps/deploy-ui";
 import { Button } from "@/components/ui/button";
@@ -366,6 +367,7 @@ export function OverviewSection({
                 </div>
 
                 <div className="min-w-0 space-y-5">
+                    <ComposeServicesCard appId={app.id} />
                     <Card className="gap-0 overflow-hidden rounded-2xl py-0 shadow-xs">
                         <div className="flex items-center justify-between px-5 py-4">
                             <h2 className="text-lg font-semibold text-foreground">Application details</h2>

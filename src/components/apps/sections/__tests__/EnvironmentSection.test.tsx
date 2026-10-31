@@ -119,4 +119,17 @@ describe("EnvironmentSection", () => {
         expect(screen.getByRole("button", { name: "Add variable" })).toBeDisabled();
         expect(screen.queryByText("super-secret-token")).not.toBeInTheDocument();
     });
+
+    it("blocks a hostname without a URL scheme before save or redeploy", () => {
+        renderEnvironment({ envVarsChanged: true, envVars: [{ key: "FRONTEND_URL", value: "dashboard.example.com" }] });
+        expect(screen.getByRole("alert")).toHaveTextContent("FRONTEND_URL must be a full web URL");
+        expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: /Save and redeploy/ })).toBeDisabled();
+    });
+
+    it("accepts the deploy-time app URL placeholder and masks connection credentials", () => {
+        renderEnvironment({ envVarsChanged: true, envVars: envRecordToMaskedList({ FRONTEND_URL: "{{opslin.app_url}}", REDIS_URL: "redis://:test-password@redis:6379" }) });
+        expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+        expect(screen.queryByText(/test-password/)).not.toBeInTheDocument();
+    });
 });

@@ -350,7 +350,7 @@ describe("dashboard email verification guard", () => {
             refetch: vi.fn(async () => undefined),
         };
         vi.spyOn(api, "getServers").mockResolvedValue([]);
-        vi.spyOn(api, "getCurrentPlan").mockResolvedValue(null);
+        vi.spyOn(api, "getCurrentPlan").mockRejectedValue(new Error("Pricing is unavailable in this auth-only fixture"));
     });
 
     it("redirects unverified dashboard users to /verify-email before product pages", async () => {
@@ -385,7 +385,7 @@ describe("dashboard email verification guard", () => {
         expect(navigationMocks.push).not.toHaveBeenCalledWith("/verify-email");
     });
 
-    it("still shows onboarding after email verification when no server exists", async () => {
+    it("allows product content after verification while setup stays in the Overview hub", async () => {
         navigationMocks.pathname = "/apps";
         authHookState.current.user = makeUser({
             emailVerified: true,
@@ -399,7 +399,8 @@ describe("dashboard email verification guard", () => {
             </DashboardLayout>
         );
 
-        expect(await screen.findByTestId("onboarding-wizard")).toBeInTheDocument();
+        expect(await screen.findByText("Apps page")).toBeInTheDocument();
+        expect(screen.queryByTestId("onboarding-wizard")).not.toBeInTheDocument();
         expect(navigationMocks.push).not.toHaveBeenCalledWith("/verify-email");
     });
 });

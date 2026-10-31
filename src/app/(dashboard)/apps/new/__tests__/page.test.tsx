@@ -45,6 +45,8 @@ vi.mock("@/lib/api", async () => {
             triggerAutoDeploy: vi.fn(),
             createApp: vi.fn(),
             deployApp: vi.fn(),
+            getDeployRoute: vi.fn(),
+            getServerFit: vi.fn(),
         },
     };
 });
@@ -72,6 +74,16 @@ async function reachReview(gitUrl = "https://github.com/acme/frontend.git") {
 }
 
 describe("NewAppPage (two-step deploy)", () => {
+    it("keeps Deploy disabled while the recommendation is still being worked out", async () => {
+        let release: (value: never) => void = () => undefined;
+        vi.mocked(api.getDeployRoute).mockReturnValue(new Promise((resolve) => { release = resolve as never; }));
+        renderPage();
+        fireEvent.click(await screen.findByTestId("repo-acme/api"));
+        expect(await screen.findByTestId("deploy-button")).toBeDisabled();
+        expect(screen.getByTestId("deploy-button")).toHaveTextContent("Checking your project");
+        release(undefined as never);
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(api.getServers).mockResolvedValue([
@@ -86,6 +98,9 @@ describe("NewAppPage (two-step deploy)", () => {
                 },
             ],
         });
+        // The page waits for the recommendation before it lets Deploy run; here it simply settles as "not available".
+        vi.mocked(api.getDeployRoute).mockRejectedValue(new Error("not available"));
+        vi.mocked(api.getServerFit).mockRejectedValue(new Error("not available"));
         vi.mocked(api.createApp).mockResolvedValue({ id: "app-1", name: "frontend", status: "pending", createdAt: "2026-01-01T00:00:00.000Z" });
         vi.mocked(api.deployApp).mockResolvedValue({
             id: "app-1", name: "frontend", status: "deploying", message: "Deploy started", jobId: "job-1", deploymentId: "deployment-1", gitSha: "abc123",
@@ -93,7 +108,7 @@ describe("NewAppPage (two-step deploy)", () => {
         vi.mocked(api.triggerAutoDeploy).mockResolvedValue({ jobId: "job-ai-1", serverId: "server-1" });
         vi.mocked(api.getServerJobStatus).mockResolvedValue({
             id: "job-ai-1", type: "auto_deploy", status: "RUNNING",
-            progress: { phase: "build", percent: 62, message: "compiling production bundle", status: "running" },
+            progress: { phase: "building", percent: 62, message: "compiling production bundle", status: "running" },
         });
     });
 
@@ -144,6 +159,50 @@ describe("NewAppPage (two-step deploy)", () => {
         });
     });
 
+    it("sends a pasted Git URL through DIL when the repository recommendation requires it", async () => {
+        vi.mocked(api.getDeployRoute).mockResolvedValue({ route: "ai", confidence: "high", reasons: ["API, worker and migration"], isMonorepo: false, units: [], needs: ["postgres", "redis"], composeServices: ["app", "postgres", "redis"], safeMigrationAvailable: true, resolvedSha: "abc" });
+        renderPage();
+        await reachReview("https://github.com/example/backend");
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("deploy-button"));
+        await waitFor(() => expect(api.triggerAutoDeploy).toHaveBeenCalledWith("server-1", expect.objectContaining({ gitUrl: "https://github.com/example/backend", appNamePrefix: "backend" })));
+        expect(api.createApp).not.toHaveBeenCalled();
+        expect(api.deployApp).not.toHaveBeenCalled();
+        expect(vi.mocked(api.triggerAutoDeploy).mock.calls[0][1]).not.toHaveProperty("seedInitialData");
+    });
+
+    it("shows only the reason, with no Deploy, when the plan is unsupported (doc 64 S1.8)", async () => {
+        const plan = { verdict: "unsupported", services: [], resources: [], skipped: [], steps: [], questions: [{ code: "unsupported", severity: "unsupported", message: "Unsupported: this repository has 8 or more separately built services (src/a, src/b). Nothing was created." }] };
+        vi.mocked(api.getDeployRoute).mockResolvedValue({ route: "ai", confidence: "low", reasons: ["unknown stack"], isMonorepo: false, units: [], needs: [], composeServices: [], safeMigrationAvailable: false, resolvedSha: "abc", plan } as never);
+        renderPage();
+        await reachReview("https://github.com/example/microservices");
+        expect(await screen.findByText("Opslin can't deploy this project yet")).toBeTruthy();
+        // The stop is the one thing on the screen: nothing that promises a deploy, no controls for one (jimmy-wax, 31 Oct 2026).
+        expect(screen.queryByTestId("deploy-button")).toBeNull();
+        expect(screen.queryByText("Opslin AI will set this up")).toBeNull();
+        expect(screen.queryByText(/Looks good/)).toBeNull();
+        expect(screen.queryByText(/set up everything automatically/)).toBeNull();
+        expect(screen.getByRole("heading", { name: "We checked your project" })).toBeTruthy();
+        expect(screen.queryByText(/Best way/)).toBeNull();
+        expect(screen.queryByText("Confident")).toBeNull();
+        expect(screen.queryByLabelText("Project name")).toBeNull();
+        expect(screen.queryByText("Deploying to")).toBeNull();
+        expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
+        expect(api.triggerAutoDeploy).not.toHaveBeenCalled();
+    });
+
+    it("requires an explicit selection before requesting repository sample data", async () => {
+        vi.mocked(api.getDeployRoute).mockResolvedValue({ route: "ai", confidence: "high", reasons: ["API, worker and migration"], isMonorepo: false, units: [{ path: "", seedCommand: "node src/database/seeds/run.js" }] as never, needs: ["postgres"], composeServices: [], safeMigrationAvailable: true, resolvedSha: "abc" });
+        renderPage();
+        await reachReview("https://github.com/example/backend");
+        const seedOption = await screen.findByRole("checkbox", { name: "Load repository sample data on first deploy" });
+        expect(seedOption).not.toBeChecked();
+        fireEvent.click(seedOption);
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("deploy-button"));
+        await waitFor(() => expect(api.triggerAutoDeploy).toHaveBeenCalledWith("server-1", expect.objectContaining({ seedInitialData: true })));
+    });
+
     it("keeps the project name editable and lets Change return to the import step with data intact", async () => {
         renderPage();
         await reachReview();
@@ -169,7 +228,8 @@ describe("NewAppPage (two-step deploy)", () => {
     it("deploys a GitHub repo with Opslin's AI and shows live progress", async () => {
         renderPage();
         fireEvent.click(await screen.findByTestId("repo-acme/api"));
-        fireEvent.click(await screen.findByTestId("deploy-button"));
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled()); // Deploy waits for the recommendation
+        fireEvent.click(screen.getByTestId("deploy-button"));
 
         await waitFor(() => {
             expect(api.triggerAutoDeploy).toHaveBeenCalledWith("server-1", expect.objectContaining({
@@ -181,7 +241,7 @@ describe("NewAppPage (two-step deploy)", () => {
         });
         expect(api.createApp).not.toHaveBeenCalled();
         expect(await screen.findByText("Deploying api…")).toBeInTheDocument();
-        expect(await screen.findByText("Opslin AI is writing your Dockerfile")).toBeInTheDocument();
+        expect(await screen.findByText("Reading your repository and writing the Dockerfile")).toBeInTheDocument();
         await waitFor(() => expect(screen.getByText("62%")).toBeInTheDocument());
     });
 
@@ -192,7 +252,8 @@ describe("NewAppPage (two-step deploy)", () => {
         });
         renderPage();
         fireEvent.click(await screen.findByTestId("repo-acme/api"));
-        fireEvent.click(await screen.findByTestId("deploy-button"));
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled()); // Deploy waits for the recommendation
+        fireEvent.click(screen.getByTestId("deploy-button"));
 
         expect(await screen.findByText("api is live")).toBeInTheDocument();
         expect(screen.getByRole("link", { name: /api\.example\.com/ })).toHaveAttribute("href", "https://api.example.com");

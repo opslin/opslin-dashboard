@@ -35,6 +35,12 @@ vi.mock("@/hooks/use-migrations", () => ({
   useMigrationsEnabled: () => migrationsEnabledMock(),
 }));
 
+const insightsEnabledMock = vi.hoisted(() => vi.fn(() => false));
+
+vi.mock("@/hooks/use-insights", () => ({
+  useInsightsEnabled: () => insightsEnabledMock(),
+}));
+
 vi.mock("@/hooks/use-media", () => ({
   useMediaEnabled: () => mediaEnabledMock(),
 }));
@@ -137,5 +143,25 @@ describe("DashboardShell Migrate navigation (feature-gated)", () => {
     const links = screen.getAllByRole("link").map((link) => link.textContent?.trim());
     expect(links.indexOf("Migrate")).toBe(links.indexOf("Backups") + 1);
     migrationsEnabledMock.mockReturnValue(false);
+  });
+});
+
+describe("DashboardShell Insights navigation (feature-gated)", () => {
+  it("hides Insights unless the API has confirmed it for the organization", () => {
+    insightsEnabledMock.mockReturnValue(false);
+    renderShell(baseUser);
+
+    expect(screen.queryByRole("link", { name: "Insights" })).not.toBeInTheDocument();
+  });
+
+  it("shows Insights right before Storage once enabled", () => {
+    insightsEnabledMock.mockReturnValue(true);
+    renderShell(baseUser);
+
+    const insights = screen.getByRole("link", { name: "Insights" });
+    expect(insights).toHaveAttribute("href", "/insights");
+    const links = screen.getAllByRole("link").map((link) => link.textContent?.trim());
+    expect(links.indexOf("Insights")).toBe(links.indexOf("Storage") - 1);
+    insightsEnabledMock.mockReturnValue(false);
   });
 });

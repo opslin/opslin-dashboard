@@ -1,7 +1,8 @@
 "use client";
 
+import { CapabilityList } from "./DeploymentCapabilities";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Circle, Loader2, TriangleAlert, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, CirclePause, Loader2, RotateCcw, TriangleAlert, XCircle } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +26,8 @@ type DeployProgressDialogProps = {
     serverId: string;
     jobId: string;
     appLabel?: string;
+    /** Marketplace deploys come from a published image, not from AI authoring, so they are not called AI-assisted. */
+    fromMarketplace?: boolean;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 };
@@ -36,7 +39,11 @@ const PHASE_LABEL: Record<string, string> = {
     wiring: "Connecting services",
     completed: "Deploy finished",
     failed: "Deploy failed",
+    review: "Needs your review",
 };
+
+// Doc 66: the API prefixes the reason; the dialog already says it needs a review.
+const REVIEW_PREFIX = /^This deploy needs your review before it can continue:\s*/;
 
 const UNIT_STATUS_META: Record<DeployProgressUnit["status"], { tone: StatusTone; label: string }> = {
     pending: { tone: "neutral", label: "Waiting" },
@@ -65,7 +72,7 @@ const ROLE_LABEL: Record<string, string> = {
     unknown: "Service",
 };
 
-export function DeployProgressDialog({ serverId, jobId, appLabel, open, onOpenChange }: DeployProgressDialogProps) {
+export function DeployProgressDialog({ serverId, jobId, appLabel, fromMarketplace, open, onOpenChange }: DeployProgressDialogProps) {
     const jobQuery = useQuery({
         queryKey: ["server-job-status", serverId, jobId],
         queryFn: () => api.getServerJobStatus(serverId, jobId),
@@ -80,20 +87,31 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, open, onOpenCh
     // back to the generic percent this route has always returned rather
     // than showing nothing.
     const percent = snapshot?.percent ?? job?.progress?.percent ?? (job?.status === "COMPLETED" ? 100 : 5);
-    const phaseLabel = job?.status === "FAILED"
+    // A run stopped for review is something to check, not a failure (DESIGN.md: blocked is neutral, not red).
+    const review = job?.status === "FAILED" && snapshot?.needsReview === true;
+    const phaseLabel = review
+        ? PHASE_LABEL.review
+        : job?.status === "FAILED"
         ? PHASE_LABEL.failed
         : job?.status === "COMPLETED"
             ? PHASE_LABEL.completed
             : (snapshot?.phase && PHASE_LABEL[snapshot.phase]) || "Starting…";
-    const result = job?.status === "COMPLETED" ? (job.result as AutoDeployResult | undefined) : undefined;
+    const result = job?.status === "COMPLETED" || job?.status === "FAILED" ? (job.result as AutoDeployResult | undefined) : undefined;
+
+    const capabilities = result?.units?.flatMap(unit => unit.outcome.stage === "done" ? unit.outcome.capabilities ?? [] : []) ?? [];
+    const incomplete = capabilities.some(item => item.state !== "configured" && item.state !== "scheduled");
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                        {job?.status === "FAILED" ? (
+                        {review ? (
+                            <CirclePause className="size-4 text-muted-foreground" />
+                        ) : job?.status === "FAILED" ? (
                             <XCircle className="size-4 text-destructive" />
+                        ) : job?.status === "COMPLETED" && incomplete ? (
+                            <TriangleAlert className="size-4 text-warning-text" />
                         ) : job?.status === "COMPLETED" ? (
                             <CheckCircle2 className="size-4 text-success-text" />
                         ) : (
@@ -102,7 +120,7 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, open, onOpenCh
                         Deploy progress
                     </DialogTitle>
                     <DialogDescription>
-                        {appLabel ? `AI-assisted deploy for ${appLabel}.` : "AI-assisted deploy."}
+                        {fromMarketplace ? `Deploying ${appLabel ?? "this software"} from the Opslin Marketplace.` : appLabel ? `AI-assisted deploy for ${appLabel}.` : "AI-assisted deploy."}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -121,11 +139,23 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, open, onOpenCh
                             </div>
                             <Progress
                                 value={percent}
-                                className={job.status === "FAILED" ? "bg-destructive/20 [&>div]:bg-destructive" : undefined}
+                                className={review ? "[&>div]:bg-muted-foreground" : job.status === "FAILED" ? "bg-destructive/20 [&>div]:bg-destructive" : undefined}
                             />
+                            {snapshot?.notice ? (
+                                <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+                                    <RotateCcw className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                                    {snapshot.notice}
+                                </p>
+                            ) : null}
                         </div>
 
-                        {job.status === "FAILED" && (
+                        {review && (
+                            <p className="rounded-md border border-border bg-secondary/40 p-3 text-xs leading-relaxed text-foreground">
+                                {(job.error || snapshot?.message || "").replace(REVIEW_PREFIX, "")}
+                            </p>
+                        )}
+
+                        {job.status === "FAILED" && !review && (
                             <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs leading-relaxed text-destructive">
                                 {job.error || snapshot?.message || "The deploy failed."}
                             </p>
@@ -161,6 +191,9 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, open, onOpenCh
                                 </ul>
                             </div>
                         )}
+
+                        {job.status === "COMPLETED" && incomplete && <p role="status" className="text-sm text-warning-text">Application deployed. Some features still need configuration.</p>}
+                        <CapabilityList capabilities={capabilities} />
 
                         {job.status === "COMPLETED" && result?.primaryAppId && (
                             <Button asChild className="w-full">

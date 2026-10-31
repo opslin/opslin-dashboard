@@ -1,4 +1,6 @@
 import type { Diagnosis, MigrationDomains, MigrationListItem, MigrationView } from "./migration-types";
+import type { DeployInsights } from "./insights-types";
+import type { DeployRecommendationData, FitAssessmentData } from "./deploy-route-types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -650,6 +652,27 @@ class ApiClient {
         return this.delete<void>(`/servers/${id}`);
     }
 
+    // Front door: which way to deploy a repository (docs/audit/37). Reads the repository, changes nothing.
+    async getDeployRoute(data: { gitUrl: string; branch?: string; githubInstallationId?: string }) {
+        return this.post<DeployRecommendationData>("/deploy-plans/route", data);
+    }
+
+    // Is this server big enough for what the front door found? Reads no repository.
+    async getServerFit(data: { serverId: string; units: DeployRecommendationData["units"]; needs: string[]; composeServices: string[]; serviceMemoryMb?: number[] }) {
+        return this.post<FitAssessmentData>("/deploy-plans/fit", {
+            serverId: data.serverId,
+            units: data.units.map((u) => ({ stack: u.stack, runnable: u.runnable, needs: u.needs })),
+            needs: data.needs,
+            composeServices: data.composeServices,
+            ...(data.serviceMemoryMb ? { serviceMemoryMb: data.serviceMemoryMb } : {}),
+        });
+    }
+
+    // Deploy insights: the organization's own deploy numbers (docs/audit/37).
+    async getDeployInsights(rangeDays: number) {
+        return this.get<DeployInsights>(`/insights/deploys?rangeDays=${rangeDays}`);
+    }
+
     // Server migration: move a running stack from one server to another.
     async getMigrations() {
         return this.get<{ migrations: MigrationListItem[] }>("/migrations");
@@ -874,6 +897,11 @@ class ApiClient {
 
     async createApp(serverId: string, data: CreateAppInput) {
         return this.post<App>(`/servers/${serverId}/apps`, data);
+    }
+
+    /** Doc 67: the services of a compose app (name, image, role), from its last deploy. Empty for any other app. */
+    async getComposeServices(appId: string): Promise<{ services: ComposeServiceItem[] }> {
+        return this.request<{ services: ComposeServiceItem[] }>(`/apps/${appId}/compose-services`);
     }
 
     async getAppDomains(appId: string): Promise<AppDomainsResponse> {
@@ -1123,6 +1151,13 @@ class ApiClient {
             githubInstallationId?: string;
             appNamePrefix: string;
             extraEnvVars?: Record<string, string>;
+            seedInitialData?: boolean;
+            /** Deploy the publisher's image (pinned by digest) instead of building the repository. */
+            imageRef?: string;
+            /** The Marketplace entry this deploy comes from. */
+            marketplaceSlug?: string;
+            /** Deploy the project's own published image (found by Opslin) instead of building the source. */
+            useOfficialImage?: boolean;
         }
     ) {
         return this.post<AutoDeployTrigger>("/dil/auto-deploy", { serverId, ...data });
@@ -1404,6 +1439,10 @@ class ApiClient {
         return this.post<BackupStorageTestResult>("/backup-storage/test", data);
     }
 
+    async useStorageBucketForBackups(bucketId: string) {
+        return this.put<BackupStorageStatus>("/backup-storage/from-storage-bucket", { bucketId });
+    }
+
     async saveBackupStorage(data: BackupStorageInput) {
         return this.put<BackupStorageStatus>("/backup-storage", data);
     }
@@ -1417,6 +1456,14 @@ class ApiClient {
     // customer's own Cloudflare account instead of a raw S3 bucket.
     async verifyR2Connection(token: string) {
         return this.post<CloudflareR2VerifyResult>("/r2-storage/connect/verify", { token });
+    }
+
+    async startStorageCloudflareSignIn() {
+        return this.post<{ authorizeUrl: string; expiresAt: string }>("/r2-storage/oauth/start", {});
+    }
+
+    async getStorageCloudflareAccounts() {
+        return this.get<{ accounts: CloudflareR2AccountSummary[] }>("/r2-storage/oauth/accounts");
     }
 
     async saveR2Connection(data: CloudflareR2ConnectInput) {
@@ -1510,6 +1557,14 @@ class ApiClient {
 
     // Opslin Media (docs/audit/26-28). The whole /media surface is feature-gated
     // (media.enabled): a 403 means "not enabled for this organization".
+    async getMarketplace() {
+        return this.get<MarketplaceCatalog>("/marketplace");
+    }
+
+    async prepareMarketplaceDeploy(slug: string, inputs?: Record<string, string>) {
+        return this.post<MarketplacePrepared>(`/marketplace/${encodeURIComponent(slug)}/prepare`, inputs && Object.keys(inputs).length > 0 ? { inputs } : {});
+    }
+
     async getMedia() {
         return this.get<MediaState>("/media");
     }
@@ -2468,6 +2523,8 @@ export interface AgentUpdateInfo {
 // that queue), this is DIL's own reduction of the same event stream,
 // persisted so it survives a refresh and doesn't require having been
 // subscribed to the live WS when an event actually fired.
+export type ComposeServiceItem = { name: string; image?: string; role: "app" | "database" | "supporting"; kind?: string; primary?: boolean; built?: boolean };
+
 export type DeployProgressUnit = {
     unitPath: string;
     role: "frontend" | "backend" | "worker" | "unknown";
@@ -2480,6 +2537,10 @@ export type DeployProgressSnapshot = {
     units: DeployProgressUnit[];
     message: string | null;
     updatedAt: string;
+    /** Shown for the rest of the run, e.g. that Opslin restarted and picked it up again (API doc 66). */
+    notice?: string | null;
+    /** The run stopped because a step's outcome cannot be known; the owner checks before it continues (API doc 66). */
+    needsReview?: boolean;
 };
 
 export type SshAuth =
@@ -2819,6 +2880,8 @@ export interface App {
     /** "DOCKER" for an app made from a site moved by a server migration; absent on older responses. */
     type?: string;
     adoptedFromMigrationId?: string | null;
+    /** Set when the app was deployed from the Opslin Marketplace: where it comes from. */
+    marketplace?: MarketplaceSource | null;
     domain?: string;
     publicStatus?: boolean;
     status: "deploying" | "running" | "stopping" | "stopped" | "deleting" | "delete_failed" | "error" | "pending";
@@ -2830,7 +2893,7 @@ export interface App {
     // `status` keeps meaning exactly what it always has (set at deploy/stop/restart
     // completion), so deployment success and current reachability stay two distinct signals.
     serverConnected?: boolean;
-    effectiveStatus?: "running" | "offline" | "unhealthy" | "stale" | App["status"];
+    effectiveStatus?: "running" | "offline" | "unhealthy" | "stale" | "needs_setup" | App["status"];
     gitUrl?: string;
     branch?: string;
     port?: number | null;
@@ -2888,6 +2951,13 @@ export type ScaleAppResult = {
 // orchestrator.ts's AutoDeployOutcome/MultiUnitDeployOutcome. retryResult
 // (the full per-attempt diagnose log) is deliberately omitted here — the
 // wizard only needs resolved/reason for messaging, not the full trail.
+export type DeploymentCapability = {
+    kind: "storage" | "backups";
+    state: "configured" | "scheduled" | "needs_setup" | "failed" | "not_checked";
+    message: string;
+    actionHref: "/storage" | "/backups";
+};
+
 export type AutoDeployUnitOutcome =
     | { stage: "plan_failed"; unitPath: string; reason: string }
     | { stage: "provision_failed"; unitPath: string; reason: string }
@@ -2899,6 +2969,7 @@ export type AutoDeployUnitOutcome =
         appId: string;
         databaseId: string | null;
         objectStorageBucketId: string | null;
+        capabilities?: DeploymentCapability[];
         resolved: boolean;
         alreadyHealthy: boolean;
         previewUrl?: string | null;
@@ -2912,6 +2983,8 @@ export type AutoDeployResult = {
     // "project" a caller-supplied name applies to); null for a single-unit
     // repo, matching orchestrator.ts's own >1-unit gate for creating one.
     deployGroupId: string | null;
+    /** What the run proved (API doc 64 S3.6); absent for older runs and for runs that did not pass. */
+    assurance?: { level: "application_verified" | "technical_release"; limits: string[] };
 };
 
 // DIL Phase 22 — POST /dil/auto-deploy's real response shape as of this
@@ -3385,7 +3458,7 @@ export interface AppMetricCurrent {
     // whether the server's agent is actually connected right now, not just the last-persisted
     // health-check row (which stops updating the instant the agent disconnects).
     serverConnected?: boolean;
-    effectiveStatus?: "running" | "offline" | "unhealthy" | "stale" | AppMetricCurrent["status"];
+    effectiveStatus?: "running" | "offline" | "unhealthy" | "stale" | "needs_setup" | AppMetricCurrent["status"];
     healthCheckedAt?: string | null;
     healthPath: string;
     timestamp?: string;
@@ -3848,7 +3921,9 @@ export interface CloudflareR2VerifyResult {
 }
 
 export interface CloudflareR2ConnectInput {
-    token: string;
+    /** A pasted API token, or `signIn: true` to use the "Sign in with Cloudflare" just completed (exactly one). */
+    token?: string;
+    signIn?: true;
     cloudflareAccountId: string;
     cloudflareAccountName?: string;
 }
@@ -3990,6 +4065,10 @@ export interface MediaSetupInput {
 
 export interface CloudflareR2ConnectionStatus {
     configured: boolean;
+    /** Not connected to a Cloudflare account yet, but the organization already signed in with Cloudflare (for example through Media). */
+    cloudflareSignedIn?: boolean;
+    /** The shared Cloudflare sign-in this connection relies on has expired: sign in again. */
+    needsReconnect?: boolean;
     cloudflareAccountId?: string;
     cloudflareAccountName?: string | null;
     lastVerifiedAt?: string | null;
@@ -4008,4 +4087,71 @@ export interface CloudflareR2BucketRecord {
 export interface CloudflareR2WireResult {
     addedKeys: string[];
     message: string;
+}
+
+// Opslin Marketplace (docs/audit/46)
+export interface MarketplaceEntry {
+    slug: string;
+    name: string;
+    category: string;
+    label: string;
+    /** File in /brands, or null (a letter tile is shown). */
+    logo: string | null;
+    needs: string[];
+    /** Settings the person types in before the deploy. Names and labels only; no value ever comes from the API. */
+    inputs: MarketplaceInput[];
+    /** Extra plain lines for "Technical details". */
+    details?: string[];
+    /** Who can open the app: a sign-in Opslin generates, none at all, or the app's own first-visit sign-up. */
+    access: MarketplaceAccess;
+    source: { kind: "Official image"; image: string; repository: string };
+    /** Set only after Opslin deployed it and the proofs passed; null means "Not tested yet". */
+    verified: { at: string; seconds: number; image: string } | null;
+}
+
+export interface MarketplaceInput {
+    key: string;
+    label: string;
+    help: string | null;
+    required: boolean;
+    secret: boolean;
+    /** A picker (tick boxes) instead of a text box; the value sent is the ticked values joined by commas. */
+    choices?: Array<{ value: string; label: string; help?: string }> | null;
+    /** What the picker starts with (comma list). */
+    defaultValue?: string | null;
+}
+
+export type MarketplaceAccess =
+    | { kind: "login"; label: string; runsCode: boolean }
+    | { kind: "open"; warning: string }
+    | { kind: "app"; label?: string | null; note?: string | null };
+
+/** Shown once, right after the deploy starts; the same value is saved in the app's settings. */
+export interface MarketplaceLogin {
+    label: string;
+    username: string | null;
+    secret: string;
+}
+
+export interface MarketplaceCatalog {
+    categories: string[];
+    entries: MarketplaceEntry[];
+}
+
+export interface MarketplacePrepared {
+    marketplaceSlug: string;
+    gitUrl: string;
+    branch: string;
+    imageRef: string;
+    appNamePrefix: string;
+    extraEnvVars: Record<string, string>;
+    login: MarketplaceLogin | null;
+}
+
+export interface MarketplaceSource {
+    slug: string;
+    name: string;
+    image: string;
+    pinnedImage: string | null;
+    repository: string;
 }

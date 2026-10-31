@@ -677,19 +677,13 @@ function AppDetailPageContent() {
             // First save the env vars
             await updateEnvVarsMutation.mutateAsync();
             // Then trigger deploy which will show the progress modal
-            deployMutation.mutate(undefined);
+            await deployMutation.mutateAsync(undefined);
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Save and redeploy failed");
+        } finally {
             setIsSavingAndRedeploying(false);
         }
     };
-
-    // Reset saving state when deploy completes
-    useEffect(() => {
-        if (!deployMutation.isPending && isSavingAndRedeploying) {
-            setIsSavingAndRedeploying(false);
-        }
-    }, [deployMutation.isPending, isSavingAndRedeploying]);
 
     const deploymentLive = useDeploymentLive(appId, {
         enabled: !!appData && deploymentDataActive,
@@ -1298,7 +1292,7 @@ function AppDetailPageContent() {
                 app={app}
                 server={server}
                 deleteFailureReason={deleteFailureReason}
-                deployPending={deployMutation.isPending}
+                deployPending={deployMutation.isPending || updateEnvVarsMutation.isPending || isSavingAndRedeploying}
                 stopPending={stopMutation.isPending}
                 deletePending={deleteMutation.isPending}
                 restartPending={restartMutation.isPending}

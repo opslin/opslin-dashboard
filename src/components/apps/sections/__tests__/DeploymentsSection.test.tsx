@@ -192,7 +192,7 @@ describe("DeploymentsSection", () => {
             },
         };
         renderDeployments({
-            app: { ...app, status: "running" },
+            app: { ...app, status: "running", healthStatus: "healthy" },
             deployments: [failedDeploy, deployments[0]],
             latestDeployment: failedDeploy,
             deployErrorClassification: failedDeploy.errorClassification,
@@ -203,6 +203,13 @@ describe("DeploymentsSection", () => {
         expect(screen.getByText("The last deploy did not work")).toBeVisible();
         expect(screen.getByText("Install step failed")).toBeVisible();
         expect(screen.getByText("Your previous version is still live")).toBeVisible();
+    });
+
+    it("does not claim a historical successful release is live when the app is unhealthy", () => {
+        const failedDeploy: DeploymentRecord = { ...deployments[2], id: "failed-now", startedAt: "2026-01-03T00:00:00.000Z" };
+        renderDeployments({ app: { ...app, healthStatus: "unhealthy" }, deployments: [failedDeploy, deployments[0]], latestDeployment: failedDeploy, deployErrorRaw: "startup failed" });
+        expect(screen.queryByText("Your previous version is still live")).not.toBeInTheDocument();
+        expect(screen.getByText("Previous successful deployment")).toBeVisible();
     });
 
     it("does not mark a skipped lock-busy attempt as failed or current", () => {

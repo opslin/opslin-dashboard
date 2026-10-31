@@ -234,11 +234,11 @@ export function DeployFailedCard({
                     <div className="mt-5 flex items-center gap-3 rounded-xl border border-success/25 bg-success-muted/60 p-4">
                         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground"><Check className="size-4" aria-hidden="true" /></span>
                         <div>
-                            <p className="font-semibold text-foreground">Your previous version is still live</p>
+                            <p className="font-semibold text-foreground">{app.status === "running" && app.healthStatus === "healthy" ? "Your previous version is still live" : "Previous successful deployment"}</p>
                             <p className="text-sm text-muted-foreground"><span className="font-mono">{shortSha(liveRelease.sha)}</span> · Deployed {formatRelativeTime(liveRelease.finishedAt ?? liveRelease.startedAt)}</p>
                         </div>
                     </div>
-                    <p className="mt-3 text-sm text-muted-foreground">Visitors can still use the previous working version.</p>
+                    <p className="mt-3 text-sm text-muted-foreground">{app.status === "running" && app.healthStatus === "healthy" ? "Visitors can still use the previous working version." : "A successful deployment record does not confirm that this version is reachable now. Check the app's current health."}</p>
                 </>
             ) : null}
         </section>
