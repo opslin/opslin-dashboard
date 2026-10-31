@@ -36,6 +36,8 @@ export interface DeployRecommendationData {
     resolvedSha: string | null;
     /** What an AI-assisted deploy will create and ask, compiled before anything is created (API doc 64 S1.8). */
     plan?: PlanPreview | null;
+  /** Doc 69 F5: the answers the owner gave at the last verified deploy of this project, to start from. */
+  savedChoices?: { database?: "create" | "own"; storage?: "skip" | "r2"; migration?: { mode: "auto" } | { mode: "none" } | { mode: "custom"; command: string }; settings?: Record<string, string> };
 }
 
 export interface PlanPreview {
@@ -47,6 +49,8 @@ export interface PlanPreview {
     questions: Array<{ code: string; severity: string; message: string }>;
     /** Folders kept on volumes across releases (API doc 64 S2.3). Absent from older API responses. */
     persistent?: Array<{ service: string; path: string }>;
+  /** Doc 69 Q2: the database and storage settings the services read, with what each means when Opslin is sure (no values). */
+  settings?: Array<{ key: string; resource: "database" | "storage"; role: string | null; sure: boolean }>;
     /** What the repository's Kubernetes files become on one server (API doc 64 S4). Absent for other repositories. */
     kubernetes?: {
         files: string[];

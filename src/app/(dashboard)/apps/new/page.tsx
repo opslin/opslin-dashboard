@@ -7,6 +7,7 @@ import { useDeployRoute, useServerFit } from "@/hooks/use-deploy-route";
 import { DeployRecommendation, type ChosenWay } from "@/components/apps/DeployRecommendation";
 import { AddressSettingsRow } from "@/components/apps/AddressSettingsRow";
 import { planBlocksDeploy } from "@/components/apps/PlanPreview";
+import { DeployQuestions, choicesProblem, choicesToRequest, type DeployChoicesValue } from "@/components/apps/DeployQuestions";
 import { DeployAssurance } from "@/components/apps/DeployAssurance";
 import { APP_URL_PLACEHOLDER, findLocalAddressSettings } from "@/lib/local-address-settings";
 import {
@@ -381,6 +382,15 @@ function NewAppPageContent() {
 
     useAiSocket(aiJobId, setAiLiveProgress);
 
+    // The owner's answers to the questions on this screen. They belong to the repository shown, so a different one starts clean.
+    const [choicesState, setChoicesState] = useState<{ key: string; value: DeployChoicesValue }>({ key: "", value: {} });
+    const choicesKey = `${gitUrl}@${branch}`;
+    // A repeat deploy starts from the answers of the last verified one (doc 69 F5), until the owner changes one.
+    const savedChoices = deployRoute.data && !deployRoute.data.locked ? deployRoute.data.data.savedChoices : undefined;
+    const answered = choicesState.key === choicesKey;
+    const choices = answered ? choicesState.value : (savedChoices ?? {});
+    const requestedChoices = choicesToRequest(choices);
+
     const triggerAiMutation = useMutation({
         mutationFn: async () => {
             const extraEnvVarsObj = envVarsObject();
@@ -391,6 +401,7 @@ function NewAppPageContent() {
                 appNamePrefix: finalName,
                 extraEnvVars: Object.keys(extraEnvVarsObj).length > 0 ? extraEnvVarsObj : undefined,
                 ...(seedInitialData ? { seedInitialData: true } : {}),
+                ...(requestedChoices ? { choices: requestedChoices } : {}),
                 ...(usesOfficialImage ? { useOfficialImage: true } : {}),
             });
         },
@@ -436,7 +447,7 @@ function NewAppPageContent() {
     const checkingProject = step === "deploy" && sourceType !== "upload" && deployRoute.isLoading;
     // A plan Opslin cannot run keeps Deploy disabled; the reason is shown in the recommendation box (doc 64 S1.8).
     const planBlocked = usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked ? planBlocksDeploy(deployRoute.data.data.plan) : false;
-    const canDeploy = Boolean(serverId && finalName && sourceReady && !checkingProject && !planBlocked);
+    const canDeploy = Boolean(serverId && finalName && sourceReady && !checkingProject && !planBlocked && !(usesAi && choicesProblem(choices)));
 
     const resetSource = (next: SourceType) => {
         setSourceType(next);
@@ -763,6 +774,10 @@ function NewAppPageContent() {
                 ) : null}
 
                 {!planBlocked ? (<>
+                {usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked ? (
+                    <DeployQuestions plan={deployRoute.data.data.plan} value={choices} disabled={isLoading} remembered={!answered && Boolean(savedChoices)}
+                        onChange={(next) => { setChoicesState({ key: choicesKey, value: next }); if (next.database === "own") setOptionalOpen(true); }} />
+                ) : null}
                 <AddressSettingsRow keys={localAddressKeys} applied={addressApplied} onApply={useAppAddress} disabled={isLoading} />
 
                 {usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked && deployRoute.data.data.units.some(unit => unit.seedCommand) ? (
