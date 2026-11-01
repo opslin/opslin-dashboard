@@ -25,3 +25,19 @@ describe("summarize a clean-up result", () => {
         expect(summarize(result).rows[0]).toBe("Reclaimed 916.0MB + 3.446GB of disk space");
     });
 });
+
+// A step that could not finish (the build-cache trim was cut off on 1 Nov 2026) must be shown, not hidden behind "clean and secure".
+describe("clean-up steps that did not finish", () => {
+    it("names each step that reported an error, in plain words", () => {
+        const result = {
+            ...base, apps: [],
+            prunes: [{ step: "containers", reclaimedSpace: "0B" }, { step: "builder_cache", reclaimedSpace: "", error: "context canceled" }, { step: "leftover_app_images", reclaimedSpace: "", error: "docker: not running" }],
+            hardening: { immediate: [], connectivityRisk: [] },
+        } as unknown as ServerCleanupResult;
+        expect(summarize(result).unfinished).toEqual(["Build cache", "Leftover app images"]);
+    });
+    it("is empty when every step finished", () => {
+        const result = { ...base, apps: [], prunes: [{ step: "images", reclaimedSpace: "1MB" }], hardening: { immediate: [], connectivityRisk: [] } } as unknown as ServerCleanupResult;
+        expect(summarize(result).unfinished).toEqual([]);
+    });
+});
