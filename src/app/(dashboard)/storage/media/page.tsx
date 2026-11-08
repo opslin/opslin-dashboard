@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ExternalLink, Loader2, Lock } from "lucide-react";
+import { Check, ExternalLink, Globe, Loader2, Lock } from "lucide-react";
 import { buildMediaSetupInput, mediaImageHostname } from "@/components/media/media-setup";
 import { AllowedWebsites, CopyButton, CopySnippetAction, RemoveHosting, UpdateRow, UsageSection, UseInYourApp } from "@/components/media/media-ready";
 import { CloudflareMark, Disclosure, LockedLine, Panel, Row, Section } from "@/components/media/media-rows";
@@ -17,6 +17,7 @@ import { SkeletonText } from "@/components/patterns/skeleton";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { placeholderColor, thumbSrc } from "@/components/media/library/use-library";
 import { followMediaSetup, useMedia } from "@/hooks/use-media";
 import { ApiRequestError, api, type MediaState } from "@/lib/api";
 import { cn, formatRelativeTime } from "@/lib/utils";
@@ -45,6 +46,31 @@ function MediaSkeleton() {
                 {Array.from({ length: 3 }, (_, index) => (
                     <Row key={index} label={<SkeletonText className="h-4 w-40" />} />
                 ))}
+            </Section>
+        </Panel>
+    );
+}
+
+/**
+ * Signed out of Cloudflare: Media is not shown at all, only the way back in. The API sends nothing else (no hostname,
+ * no files), and the page does not pretend otherwise. Founder rule 2026-11-08.
+ */
+function SignInRequired() {
+    const signIn = useCloudflareSignIn();
+    return (
+        <Panel>
+            <Section>
+                <Row
+                    leading={<CloudflareMark />}
+                    label="Sign in with Cloudflare to open Media"
+                    action={
+                        <Button onClick={signIn.start} disabled={signIn.pending}>
+                            {signIn.pending ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" /> : null}
+                            Sign in with Cloudflare
+                        </Button>
+                    }
+                />
+                {signIn.line ? <LockedLine>{signIn.line}</LockedLine> : null}
             </Section>
         </Panel>
     );
@@ -217,6 +243,42 @@ function PickState() {
     );
 }
 
+/** The top of Settings: where images are served from and what is in it, before any setting. Real images only. */
+function SettingsHero({ hostname }: { hostname: string }) {
+    const recent = useQuery({
+        queryKey: ["media", "recent-assets"],
+        queryFn: () => api.listMediaAssets({ limit: 4, sort: "created", order: "desc" }),
+        staleTime: 30_000,
+        retry: false,
+    });
+    const thumbs = (recent.data?.assets ?? []).filter((asset) => asset.urls).slice(0, 4);
+    return (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border/70 bg-muted/30 p-5">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card shadow-sm">
+                <Globe className="size-5 text-muted-foreground" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+                <p className="truncate text-lg font-semibold tracking-tight text-foreground">{hostname}</p>
+                <p className="text-sm text-muted-foreground">Your images load from here</p>
+            </div>
+            {thumbs.length > 0 ? (
+                <div className="flex -space-x-2" aria-hidden="true">
+                    {thumbs.map((asset) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                            key={asset.id}
+                            src={thumbSrc(asset) ?? undefined}
+                            alt=""
+                            className="size-10 rounded-lg object-cover ring-2 ring-card"
+                            style={{ backgroundColor: placeholderColor(asset.thumbhash) }}
+                        />
+                    ))}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
 function ProjectState({ media }: { media: Project }) {
     const queryClient = useQueryClient();
     const signIn = useCloudflareSignIn();
@@ -312,7 +374,9 @@ function ProjectState({ media }: { media: Project }) {
     ) : undefined;
 
     return (
+        <div className="space-y-4">
         <Panel>
+            {ready && media.publicHostname ? <SettingsHero hostname={media.publicHostname} /> : null}
             <Section>
                 <Row leading={<CloudflareMark />} label="Cloudflare" state={accountName} />
                 <Row
@@ -390,9 +454,11 @@ function ProjectState({ media }: { media: Project }) {
                 ) : null}
                 {retryLine ? <LockedLine>{retryLine}</LockedLine> : null}
             </Section>
+        </Panel>
 
-            {ready ? <UsageSection /> : null}
+        {ready ? <Panel><UsageSection /></Panel> : null}
 
+        <Panel>
             {collapseSteps ? (
                 <Disclosure label="Setup details">
                     <MediaStepRail steps={media.steps} />
@@ -403,9 +469,12 @@ function ProjectState({ media }: { media: Project }) {
                 </Section>
             )}
 
-            {ready ? <AllowedWebsites media={media} /> : null}
-            {ready ? <UseInYourApp media={media} /> : null}
+        </Panel>
 
+        {ready ? <Panel><AllowedWebsites media={media} /></Panel> : null}
+        {ready ? <Panel><UseInYourApp media={media} /></Panel> : null}
+
+        <Panel>
             <Disclosure label="Technical details">
                 <div className="divide-y divide-border/70">
                     <Row label="Storage bucket" state={<code className="font-mono text-sm text-foreground">{media.bucketName}</code>} />
@@ -414,29 +483,31 @@ function ProjectState({ media }: { media: Project }) {
             </Disclosure>
             <RemoveHosting media={media} />
         </Panel>
+        </div>
     );
 }
 
-type Tab = "library" | "guide" | "settings";
+type Tab = "library" | "install" | "settings";
 
 /** Once image hosting is ready the library is the page; the guide and the settings are one tab away. */
 function ReadyView({ media }: { media: Project }) {
     const params = useSearchParams();
     const router = useRouter();
     const raw = params.get("tab");
-    const tab: Tab = raw === "guide" || raw === "settings" ? raw : "library";
-    const go = (next: string) => router.replace(next === "library" ? "/media" : `/media?tab=${next}`, { scroll: false });
+    // "guide" is the old name of Install; links and bookmarks that still use it keep working.
+    const tab: Tab = raw === "install" || raw === "guide" ? "install" : raw === "settings" ? "settings" : "library";
+    const go = (next: string) => router.replace(next === "library" ? "/storage/media" : `/storage/media?tab=${next}`, { scroll: false });
     return (
         <Tabs value={tab} onValueChange={go} className="gap-6">
-            <TabsList variant="line" aria-label="Media sections" className="gap-8">
-                <TabsTrigger value="library">Library</TabsTrigger>
-                <TabsTrigger value="guide">Guide</TabsTrigger>
-                <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsList aria-label="Media views" className="w-fit">
+                <TabsTrigger value="library" className="px-4">Library</TabsTrigger>
+                <TabsTrigger value="install" className="px-4">Install</TabsTrigger>
+                <TabsTrigger value="settings" className="px-4">Settings</TabsTrigger>
             </TabsList>
             <TabsContent value="library">
                 <Library media={media} />
             </TabsContent>
-            <TabsContent value="guide">
+            <TabsContent value="install">
                 <Guide media={media} onGo={go} />
             </TabsContent>
             <TabsContent value="settings">
@@ -485,6 +556,9 @@ function MediaContent() {
     }
 
     const media = data.media;
+    if (media.configured && !media.cloudflareSignedIn) {
+        return <SignInRequired />;
+    }
     if (media.configured) {
         return media.state === "READY" ? <ReadyView media={media} /> : <ProjectState media={media} />;
     }
@@ -494,9 +568,7 @@ function MediaContent() {
 /** The library needs room for its toolbar; the setup and settings screens stay narrow. */
 function MediaFrame({ wide, children }: { wide: boolean; children: React.ReactNode }) {
     return (
-        <div className={cn("dashboard-page pt-6 lg:pt-8", wide ? "space-y-6" : "max-w-3xl space-y-4")}>
-            {/* The ready library draws its own "Media Library" heading; every other state keeps this one. */}
-            {wide ? null : <h1 className="text-xl font-semibold tracking-tight text-foreground">Media</h1>}
+        <div className={cn("dashboard-page", wide ? "space-y-6" : "max-w-5xl space-y-4")}>
             {children}
         </div>
     );
@@ -506,7 +578,7 @@ function MediaBody() {
     const params = useSearchParams();
     const { data } = useMedia();
     const tab = params.get("tab");
-    const wide = Boolean(data && !data.locked && data.media.configured && data.media.state === "READY" && tab !== "guide" && tab !== "settings");
+    const wide = Boolean(data && !data.locked && data.media.configured && data.media.state === "READY" && tab !== "guide" && tab !== "install" && tab !== "settings");
     return (
         <MediaFrame wide={wide}>
             <MediaContent />

@@ -343,6 +343,13 @@ class ApiClient {
         return this.request<T>(endpoint, { method: "GET" });
     }
 
+    /** Doc 69 Q3: holds a plain .sql file for the next deploy, which loads it into the new database. */
+    async uploadDemoData(file: File) {
+        const formData = new FormData();
+        formData.append("file", file);
+        return this.request<{ uploadId: string; sizeBytes: number; filename: string }>("/dil/demo-data", { method: "POST", body: formData });
+    }
+
     async post<T>(endpoint: string, data?: unknown): Promise<T> {
         return this.request<T>(endpoint, {
             method: "POST",
@@ -1158,6 +1165,8 @@ class ApiClient {
             marketplaceSlug?: string;
             /** Deploy the project's own published image (found by Opslin) instead of building the source. */
             useOfficialImage?: boolean;
+            /** The owner's answers from the review screen (doc 69 Q1): only what differs from the recommended ones. */
+            choices?: { database?: "own"; storage?: "r2"; migration?: { mode: "none" } | { mode: "custom"; command: string }; settings?: Record<string, string>; demoData?: { uploadId: string } };
         }
     ) {
         return this.post<AutoDeployTrigger>("/dil/auto-deploy", { serverId, ...data });
@@ -1474,6 +1483,11 @@ class ApiClient {
         return this.get<CloudflareR2ConnectionStatus>("/r2-storage/connect");
     }
 
+    /** Sign out of Cloudflare for Media, Buckets and Backups at once. Nothing is deleted in Cloudflare. */
+    async signOutCloudflare() {
+        return this.delete<{ success: boolean; bucketsKept: number }>("/cloudflare/connection");
+    }
+
     async disconnectR2() {
         return this.delete<{ success: boolean }>("/r2-storage/connect");
     }
@@ -1484,6 +1498,11 @@ class ApiClient {
 
     async createR2Bucket(data: { bucketName: string; jurisdiction?: "eu" }) {
         return this.post<CloudflareR2BucketRecord>("/r2-storage/buckets", data);
+    }
+
+    /** The four values of a bucket (owner or admin only). Never cached; the secret key is in the answer. */
+    async revealR2BucketCredentials(bucketId: string) {
+        return this.post<{ variables: Record<string, string> }>(`/r2-storage/buckets/${bucketId}/credentials`, {});
     }
 
     async deleteR2Bucket(bucketId: string) {
@@ -1652,12 +1671,26 @@ class ApiClient {
     }
 
     async getDatabaseTables(serverId: string, dbId: string) {
-        return this.get<{ tables: string[] }>(`/servers/${serverId}/databases/${dbId}/tables`);
+        return this.get<DatabaseTablesResult>(`/servers/${serverId}/databases/${dbId}/tables`);
     }
 
-    async getDatabaseTableData(serverId: string, dbId: string, tableName: string, limit: number, offset: number) {
+    async getDatabaseTableData(
+        serverId: string,
+        dbId: string,
+        tableName: string,
+        limit: number,
+        offset: number,
+        options: DatabaseTableDataOptions = {}
+    ) {
+        const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+        if (options.search) params.set("search", options.search);
+        if (options.sort) {
+            params.set("sort", options.sort.column);
+            params.set("order", options.sort.direction);
+        }
+        if (options.filters && options.filters.length > 0) params.set("filters", JSON.stringify(options.filters));
         return this.get<DatabaseTableDataResult>(
-            `/servers/${serverId}/databases/${dbId}/tables/${encodeURIComponent(tableName)}/data?limit=${limit}&offset=${offset}`
+            `/servers/${serverId}/databases/${dbId}/tables/${encodeURIComponent(tableName)}/data?${params.toString()}`
         );
     }
 
@@ -2553,6 +2586,8 @@ export interface SshConnectInput {
     port: number;
     username: string;
     auth: SshAuth;
+    /** The server identity seen by the connection test. A different one is refused at install. */
+    hostKey?: string | null;
 }
 
 export interface SshTestResult {
@@ -2562,6 +2597,9 @@ export interface SshTestResult {
     cpuCores?: number | null;
     memoryMb?: number | null;
     message?: string | null;
+    hostKey?: string | null;
+    user?: string | null;
+    elevation?: "root" | "sudo" | "sudo-password" | null;
 }
 
 export interface SshGeneratedKey {
@@ -3356,9 +3394,57 @@ export interface DatabaseQueryResult {
     rowsAffected: number;
 }
 
+export interface DatabaseTableDetail {
+    name: string;
+    kind: "table" | "collection" | "view";
+    rows: number;
+    sizeBytes: number;
+    columns?: number;
+}
+
+export interface DatabaseOverviewInfo {
+    version?: string;
+    sizeBytes?: number;
+    tableCount?: number;
+    rowCount?: number;
+    connections?: { active: number; max: number };
+    uptimeSeconds?: number;
+    charset?: string;
+    extensions?: string[];
+}
+
+/** `details` and `info` are missing when the agent on the server is older than the table browser. */
+export interface DatabaseTablesResult {
+    tables: string[];
+    details?: DatabaseTableDetail[];
+    info?: DatabaseOverviewInfo;
+}
+
+export interface DatabaseTableColumn {
+    name: string;
+    type: string;
+    kind: "id" | "text" | "number" | "boolean" | "datetime" | "json" | "uuid" | "vector" | "other";
+    primaryKey?: boolean;
+    nullable?: boolean;
+}
+
+export interface DatabaseTableFilter {
+    column: string;
+    op: "contains" | "equals" | "not_equals" | "gt" | "gte" | "lt" | "lte" | "is_null" | "not_null";
+    value?: string;
+}
+
+export interface DatabaseTableDataOptions {
+    search?: string;
+    sort?: { column: string; direction: "asc" | "desc" } | null;
+    filters?: DatabaseTableFilter[];
+}
+
 export interface DatabaseTableDataResult {
     rows: Record<string, unknown>[];
     totalCount: number;
+    columns?: DatabaseTableColumn[];
+    elapsedMs?: number;
 }
 
 export interface SeedScriptRun {
@@ -3424,6 +3510,8 @@ export interface CreateAppInput {
     envVars?: Record<string, string>;
     buildpackOverride?: BuildpackName;
     dockerfileOverride?: string;
+    /** Compose files of the repository itself (not at its top) to run, chosen by the front door. */
+    composePaths?: string[];
     registryCredentials?: RegistryCredentialsInput;
 }
 
@@ -3902,6 +3990,8 @@ export interface BackupStorageStatus {
     endpoint?: string | null;
     forcePathStyle?: boolean;
     lastVerifiedAt?: string | null;
+    /** A Cloudflare destination is hidden (no bucket name) while the Cloudflare sign-in is not live. */
+    needsCloudflareSignIn?: boolean;
 }
 
 export interface BackupStorageTestResult {

@@ -60,18 +60,26 @@ function parseResult(job?: ServerJobStatus | null): ServerCleanupResult | null {
     return job.result as ServerCleanupResult;
 }
 
-function summarize(result: ServerCleanupResult) {
-    const reclaimed = result.prunes.filter((p) => !p.error && p.reclaimedSpace && p.reclaimedSpace !== "0B").map((p) => p.reclaimedSpace);
-    const findings = [...result.hardening.immediate, ...result.hardening.connectivityRisk];
+const pruneStepLabels: Record<string, string> = {
+    containers: "Stopped containers", images: "Unused images", leftover_app_images: "Leftover app images", build_cache: "Old build cache", builder_cache: "Build cache",
+};
+
+// The agent sends null, not [], for an empty list (a server with no apps), so every list is read through ?? [].
+export function summarize(result: ServerCleanupResult) {
+    const apps = result.apps ?? [];
+    const reclaimed = (result.prunes ?? []).filter((p) => !p.error && p.reclaimedSpace && p.reclaimedSpace !== "0B").map((p) => p.reclaimedSpace);
+    const findings = [...(result.hardening?.immediate ?? []), ...(result.hardening?.connectivityRisk ?? [])];
     const applied = findings.filter((f) => f.applied && !f.error);
     const failed = findings.filter((f) => f.error);
-    const unhealthy = result.apps.filter((app) => app.restartAttempted && !app.healthyAfterRestart);
+    const unhealthy = apps.filter((app) => app.restartAttempted && !app.healthyAfterRestart);
     const rows = [
         reclaimed.length > 0 ? `Reclaimed ${reclaimed.join(" + ")} of disk space` : "No stale Docker data to remove",
         applied.length > 0 ? `${applied.length} security ${applied.length === 1 ? "fix" : "fixes"} applied (${applied.map((f) => hardeningKindLabel(f.kind)).join(", ")})` : "Security checks passed, nothing to fix",
-        result.apps.length > 0 ? `${result.apps.length} ${result.apps.length === 1 ? "app" : "apps"} checked after cleanup` : "No apps needed a health check",
+        apps.length > 0 ? `${apps.length} ${apps.length === 1 ? "app" : "apps"} checked after cleanup` : "No apps needed a health check",
     ];
-    return { rows, failed, unhealthy };
+    // A step that could not finish is said so; the page must not read "clean" when part of the clean-up did not happen.
+    const unfinished = (result.prunes ?? []).filter((p) => p.error).map((p) => pruneStepLabels[p.step] ?? p.step);
+    return { rows, failed, unhealthy, unfinished };
 }
 
 function CleanupProgress({ job, serverName }: { job: ServerJobStatus; serverName?: string }) {
@@ -81,7 +89,7 @@ function CleanupProgress({ job, serverName }: { job: ServerJobStatus; serverName
     const percent = job.status === "COMPLETED" ? 100 : (job.progress?.percent ?? (job.status === "PENDING" ? 5 : 30));
 
     if (result) {
-        const { rows, failed: failedChecks, unhealthy } = summarize(result);
+        const { rows, failed: failedChecks, unhealthy, unfinished } = summarize(result);
         return (
             <div className="space-y-5 text-center">
                 <span className="mx-auto flex size-16 items-center justify-center rounded-full bg-success-muted text-success-text"><Check className="size-8" aria-hidden="true" /></span>
@@ -94,10 +102,11 @@ function CleanupProgress({ job, serverName }: { job: ServerJobStatus; serverName
                         <li key={row} className="flex items-start gap-3 text-sm text-foreground"><Check className="mt-0.5 size-4 shrink-0 text-success-text" aria-hidden="true" />{row}</li>
                     ))}
                 </ul>
-                {failedChecks.length > 0 || unhealthy.length > 0 ? (
+                {failedChecks.length > 0 || unhealthy.length > 0 || unfinished.length > 0 ? (
                     <div role="alert" className="flex gap-2 rounded-xl border border-warning/30 bg-warning-muted px-4 py-3 text-left text-sm text-warning-text">
                         <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                         <span>
+                            {unfinished.length > 0 ? `Part of the clean-up did not finish: ${unfinished.join(", ")}. Try again. ` : ""}
                             {failedChecks.length > 0 ? `${failedChecks.map((f) => `${hardeningKindLabel(f.kind)}: ${f.error}`).join(" · ")}. ` : ""}
                             {unhealthy.length > 0 ? `${unhealthy.map((a) => a.appName).join(", ")} did not come back healthy after a restart. Check logs or deploy history.` : ""}
                         </span>

@@ -50,6 +50,10 @@ const nextConfig: NextConfig = {
         destination: "https://admin.opslin.com",
         permanent: false,
       },
+      // Backups, Buckets and Media now live together under Storage. The old addresses keep working
+      // (the Cloudflare sign-in returns to /media?cloudflare=..., and the query string is carried over).
+      { source: "/backups", destination: "/storage/backups", permanent: false },
+      { source: "/media", destination: "/storage/media", permanent: false },
     ];
   },
   async headers() {
@@ -78,8 +82,8 @@ const nextConfig: NextConfig = {
         : []),
       // One policy per page: Media gets the wider connect list, everything else the narrow one (two policies on one
       // response would be combined and the stricter would win).
-      { source: "/media", headers: [{ key: "Content-Security-Policy", value: mediaContentSecurityPolicy }] },
-      { source: "/((?!media$).*)", headers: [{ key: "Content-Security-Policy", value: contentSecurityPolicy }] },
+      { source: "/storage/media", headers: [{ key: "Content-Security-Policy", value: mediaContentSecurityPolicy }] },
+      { source: "/((?!storage/media$).*)", headers: [{ key: "Content-Security-Policy", value: contentSecurityPolicy }] },
       {
         source: "/(.*)",
         headers: [

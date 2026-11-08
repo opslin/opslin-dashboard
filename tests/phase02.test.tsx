@@ -194,5 +194,9 @@ describe("Phase 02 dashboard logic", () => {
         expect(shouldBypassOnboarding("/media")).toBe(true);
         expect(shouldBypassOnboarding("/media/anything")).toBe(true);
         expect(shouldBypassOnboarding("/mediabox")).toBe(false);
+        // The whole Storage section (Overview, Buckets, Backups, Media) needs only a Cloudflare account.
+        expect(shouldBypassOnboarding("/storage")).toBe(true);
+        expect(shouldBypassOnboarding("/storage/media")).toBe(true);
+        expect(shouldBypassOnboarding("/storagebox")).toBe(false);
     });
 });

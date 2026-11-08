@@ -158,7 +158,7 @@ export function SshForm({ onBack, onStarted, onUseCommand }: { onBack: () => voi
         setError(null);
         setInstalling(true);
         try {
-            const { jobId } = await api.startSshInstall(buildInput());
+            const { jobId } = await api.startSshInstall({ ...buildInput(), ...(result?.hostKey ? { hostKey: result.hostKey } : {}) });
             onStarted({ jobId, host: host.trim(), username: username.trim(), test: result });
         } catch (err) {
             handleFailure(err, "Couldn't start the install. Please try again.");

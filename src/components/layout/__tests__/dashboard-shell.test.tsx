@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DashboardShell } from "../dashboard-shell";
@@ -68,10 +69,14 @@ const baseUser: User = {
 };
 
 function renderShell(user: User | null) {
+  // The shell reads feature data with React Query, so it needs a provider (no retries: a failed read just hides the item).
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <DashboardShell user={user} onLogout={vi.fn()}>
-      <div>Dashboard content</div>
-    </DashboardShell>
+    <QueryClientProvider client={client}>
+      <DashboardShell user={user} onLogout={vi.fn()}>
+        <div>Dashboard content</div>
+      </DashboardShell>
+    </QueryClientProvider>
   );
 }
 
@@ -106,22 +111,15 @@ describe("DashboardShell Super Admin navigation", () => {
   });
 });
 
-describe("DashboardShell Media navigation (feature-gated)", () => {
-  it("hides Media unless the API has confirmed it for the organization", () => {
-    mediaEnabledMock.mockReturnValue(false);
-    renderShell(baseUser);
-
-    expect(screen.queryByRole("link", { name: "Media" })).not.toBeInTheDocument();
-  });
-
-  it("shows Media right after Storage once enabled", () => {
+describe("DashboardShell Storage navigation (one entry for Buckets, Backups and Media)", () => {
+  it("has one Storage entry and no separate Backups or Media entries", () => {
     mediaEnabledMock.mockReturnValue(true);
     renderShell(baseUser);
 
-    const media = screen.getByRole("link", { name: "Media" });
-    expect(media).toHaveAttribute("href", "/media");
-    const platformLinks = screen.getAllByRole("link").map((link) => link.textContent?.trim());
-    expect(platformLinks.indexOf("Media")).toBe(platformLinks.indexOf("Storage") + 1);
+    const storage = screen.getByRole("link", { name: "Storage" });
+    expect(storage).toHaveAttribute("href", "/storage");
+    expect(screen.queryByRole("link", { name: "Backups" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Media" })).not.toBeInTheDocument();
     mediaEnabledMock.mockReturnValue(false);
   });
 });
@@ -134,14 +132,14 @@ describe("DashboardShell Migrate navigation (feature-gated)", () => {
     expect(screen.queryByRole("link", { name: "Migrate" })).not.toBeInTheDocument();
   });
 
-  it("shows Migrate right after Backups once enabled", () => {
+  it("shows Migrate right after Storage once enabled", () => {
     migrationsEnabledMock.mockReturnValue(true);
     renderShell(baseUser);
 
     const migrate = screen.getByRole("link", { name: "Migrate" });
     expect(migrate).toHaveAttribute("href", "/migrations");
     const links = screen.getAllByRole("link").map((link) => link.textContent?.trim());
-    expect(links.indexOf("Migrate")).toBe(links.indexOf("Backups") + 1);
+    expect(links.indexOf("Migrate")).toBe(links.indexOf("Storage") + 1);
     migrationsEnabledMock.mockReturnValue(false);
   });
 });
@@ -163,5 +161,17 @@ describe("DashboardShell Insights navigation (feature-gated)", () => {
     const links = screen.getAllByRole("link").map((link) => link.textContent?.trim());
     expect(links.indexOf("Insights")).toBe(links.indexOf("Storage") - 1);
     insightsEnabledMock.mockReturnValue(false);
+  });
+});
+
+describe("DashboardShell Marketplace navigation (coming soon for everyone)", () => {
+  it("always lists Marketplace right after Databases, locked with a Soon tag, linking to the Coming soon page", () => {
+    renderShell(baseUser);
+
+    const marketplace = screen.getByRole("link", { name: /Marketplace/ });
+    expect(marketplace).toHaveAttribute("href", "/marketplace");
+    expect(marketplace).toHaveTextContent("Soon");
+    const links = screen.getAllByRole("link").map((link) => link.textContent?.replace("Soon", "").trim());
+    expect(links.indexOf("Marketplace")).toBe(links.indexOf("Databases") + 1);
   });
 });

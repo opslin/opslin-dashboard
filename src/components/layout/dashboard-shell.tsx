@@ -7,7 +7,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AppWindow,
-  Archive,
+  Cloud,
+  Lock,
   ArrowLeftToLine,
   ArrowRightToLine,
   Bell,
@@ -16,13 +17,11 @@ import {
   Command,
   Crown,
   Database,
-  History,
   Home,
   LayoutPanelLeft,
   LogOut,
   Menu,
   MonitorDot,
-  Play,
   Plus,
   Rocket,
   Search,
@@ -48,8 +47,6 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { cn, initialsFor } from "@/lib/utils";
-import { useMediaEnabled } from "@/hooks/use-media";
-import { useMarketplaceEnabled } from "@/hooks/use-marketplace";
 import { useMigrationsEnabled } from "@/hooks/use-migrations";
 import { useInsightsEnabled } from "@/hooks/use-insights";
 import { siteLinks } from "@/lib/site-links";
@@ -59,6 +56,8 @@ type NavItem = {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Not available yet: shown locked with a "Soon" tag, still a link to a page that says so. */
+  soon?: boolean;
 };
 
 const primaryNavigation: NavItem[] = [
@@ -72,8 +71,7 @@ const primaryNavigation: NavItem[] = [
 
 const secondaryNavigation: NavItem[] = [
   { label: "Databases", href: "/databases", icon: Database },
-  { label: "Backups", href: "/backups", icon: History },
-  { label: "Storage", href: "/storage", icon: Archive },
+  { label: "Storage", href: "/storage", icon: Cloud },
   { label: "Teams", href: "/teams", icon: Users },
   { label: "Transparency", href: "/transparency", icon: ShieldCheck },
   { label: "Security check", href: "/security-check", icon: ScanSearch },
@@ -81,11 +79,8 @@ const secondaryNavigation: NavItem[] = [
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
-// Opslin Media is feature-gated (media.enabled). The entry is only added once the API has
-// confirmed it for this organization, so organizations without access never see it.
-const mediaNavigationItem: NavItem = { label: "Media", href: "/media", icon: Play };
-// Opslin Marketplace is feature-gated (marketplace.enabled), same rule as Media.
-const marketplaceNavigationItem: NavItem = { label: "Marketplace", href: "/marketplace", icon: Store };
+// Marketplace is "coming soon" for everyone: always listed, locked, never hidden.
+const marketplaceNavigationItem: NavItem = { label: "Marketplace", href: "/marketplace", icon: Store, soon: true };
 // Server migration is feature-gated (smi.enabled). The entry only appears once the API says it is available.
 const migrationNavigationItem: NavItem = { label: "Migrate", href: "/migrations", icon: ArrowRightLeft };
 
@@ -126,6 +121,12 @@ function NavLink({ item, active, collapsed, onNavigate }: { item: NavItem; activ
       {active ? <span aria-hidden="true" className="absolute -left-3 top-0 h-full w-[3px] rounded-r-full bg-sidebar-primary" /> : null}
       <item.icon className={cn("size-[18px] shrink-0", active ? "text-sidebar-accent-foreground" : "text-muted-foreground")} />
       {!collapsed ? <span className="flex-1 truncate">{item.label}</span> : null}
+      {!collapsed && item.soon ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <Lock className="size-2.5" aria-hidden="true" />
+          Soon
+        </span>
+      ) : null}
     </Link>
   );
 }
@@ -307,37 +308,28 @@ export function DashboardShell({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const showAdminNavigation = user?.isPlatformAdmin === true;
-  const mediaEnabled = useMediaEnabled();
-  const marketplaceEnabled = useMarketplaceEnabled();
   const migrationsEnabled = useMigrationsEnabled();
   const insightsEnabled = useInsightsEnabled();
   const platformNavigation = useMemo(() => {
     let items = secondaryNavigation;
-    if (marketplaceEnabled) {
-      // Right after Databases: software to deploy sits next to what it runs on.
-      const databasesIndex = items.findIndex((item) => item.href === "/databases");
-      const insertAt = databasesIndex === -1 ? 0 : databasesIndex + 1;
-      items = [...items.slice(0, insertAt), marketplaceNavigationItem, ...items.slice(insertAt)];
-    }
-    if (mediaEnabled) {
+    // Right after Databases: software to deploy sits next to what it runs on. Always listed (locked, "Soon").
+    const databasesIndex = items.findIndex((item) => item.href === "/databases");
+    const insertAt = databasesIndex === -1 ? 0 : databasesIndex + 1;
+    items = [...items.slice(0, insertAt), marketplaceNavigationItem, ...items.slice(insertAt)];
+    if (migrationsEnabled) {
+      // Right after Storage, where moving data belongs (Backups now lives inside Storage).
       const storageIndex = items.findIndex((item) => item.href === "/storage");
       const insertAt = storageIndex === -1 ? items.length : storageIndex + 1;
-      items = [...items.slice(0, insertAt), mediaNavigationItem, ...items.slice(insertAt)];
-    }
-    if (migrationsEnabled) {
-      // Right after Servers' neighbours in the second group: next to Backups, where moving data belongs.
-      const backupsIndex = items.findIndex((item) => item.href === "/backups");
-      const insertAt = backupsIndex === -1 ? items.length : backupsIndex + 1;
       items = [...items.slice(0, insertAt), migrationNavigationItem, ...items.slice(insertAt)];
     }
     if (insightsEnabled) {
-      // Next to Monitoring's neighbours in the second group: right after Backups/Migrate, before Storage.
+      // Right before Storage.
       const storageIndex = items.findIndex((item) => item.href === "/storage");
       const insertAt = storageIndex === -1 ? items.length : storageIndex;
       items = [...items.slice(0, insertAt), insightsNavigationItem, ...items.slice(insertAt)];
     }
     return items;
-  }, [mediaEnabled, marketplaceEnabled, migrationsEnabled, insightsEnabled]);
+  }, [migrationsEnabled, insightsEnabled]);
 
   const routeMap = useMemo(
     () =>
