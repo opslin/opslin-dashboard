@@ -150,34 +150,72 @@ describe("DatabaseDetailPage", () => {
         });
     });
 
-    describe("Browse Tables", () => {
-        it("lists tables and loads rows for the selected one", async () => {
+    describe("General and Tables tabs", () => {
+        const openTablesTab = async () => {
+            const tab = await screen.findByTestId("database-tables-tab");
+            fireEvent.mouseDown(tab, { button: 0 });
+            fireEvent.click(tab);
+        };
+
+        it("shows the database overview on the General tab", async () => {
+            vi.mocked(api.getDatabaseTables).mockResolvedValue({
+                tables: ["orders", "users"],
+                details: [
+                    { name: "orders", kind: "table", rows: 1200, sizeBytes: 4_194_304 },
+                    { name: "users", kind: "table", rows: 300, sizeBytes: 65_536 },
+                ],
+                info: { version: "PostgreSQL 16.4", sizeBytes: 8_388_608, tableCount: 2, rowCount: 1500, connections: { active: 3, max: 100 }, charset: "UTF8" },
+            });
+            renderPage();
+
+            const overview = await screen.findByTestId("database-overview");
+            expect(await within(overview).findByText("8.0 MB")).toBeVisible();
+            expect(within(overview).getByText("PostgreSQL 16.4")).toBeVisible();
+            expect(within(overview).getByRole("button", { name: /orders/ })).toBeVisible();
+        });
+
+        it("lists tables and loads the first page of the selected one", async () => {
             vi.mocked(api.getDatabaseTableData).mockResolvedValue({
                 rows: [{ id: 1, email: "a@example.com" }],
                 totalCount: 1,
+                columns: [
+                    { name: "id", type: "bigint", kind: "number", primaryKey: true },
+                    { name: "email", type: "text", kind: "text" },
+                ],
             });
             renderPage();
+            await openTablesTab();
 
-            const select = await screen.findByTestId("browse-table-select");
-            await waitFor(() => expect(screen.getByRole("option", { name: "users" })).toBeInTheDocument());
-            fireEvent.change(select, { target: { value: "users" } });
+            const explorer = await screen.findByTestId("database-table-explorer");
+            fireEvent.click(await within(explorer).findByRole("button", { name: /users/ }));
 
             await waitFor(() => {
-                expect(api.getDatabaseTableData).toHaveBeenCalledWith("server-1", "db-1", "users", 50, 0);
+                expect(api.getDatabaseTableData).toHaveBeenCalledWith("server-1", "db-1", "users", 50, 0, { search: undefined, sort: null, filters: [] });
             });
-            const results = await screen.findByTestId("browse-table-results");
-            expect(within(results).getByText("a@example.com")).toBeVisible();
+            expect(await within(explorer).findByText("a@example.com")).toBeVisible();
+            expect(within(explorer).getByText("1 row")).toBeVisible();
+        });
+
+        it("sends the search to the server instead of filtering the visible page", async () => {
+            vi.mocked(api.getDatabaseTableData).mockResolvedValue({ rows: [{ id: 1, email: "a@example.com" }], totalCount: 1, columns: [{ name: "email", type: "text", kind: "text" }] });
+            renderPage();
+            await openTablesTab();
+
+            const explorer = await screen.findByTestId("database-table-explorer");
+            await within(explorer).findByText("a@example.com");
+            fireEvent.change(within(explorer).getByRole("textbox", { name: "Search table" }), { target: { value: "garcia" } });
+
+            await waitFor(() => {
+                expect(api.getDatabaseTableData).toHaveBeenCalledWith("server-1", "db-1", "users", 50, 0, { search: "garcia", sort: null, filters: [] });
+            });
         });
 
         it("shows an empty state when the table has no rows", async () => {
-            vi.mocked(api.getDatabaseTableData).mockResolvedValue({ rows: [], totalCount: 0 });
+            vi.mocked(api.getDatabaseTableData).mockResolvedValue({ rows: [], totalCount: 0, columns: [{ name: "id", type: "bigint", kind: "number" }] });
             renderPage();
+            await openTablesTab();
 
-            const select = await screen.findByTestId("browse-table-select");
-            await waitFor(() => expect(screen.getByRole("option", { name: "orders" })).toBeInTheDocument());
-            fireEvent.change(select, { target: { value: "orders" } });
-
-            expect(await screen.findByText("No rows in this table.")).toBeVisible();
+            expect(await screen.findByText("This table is empty")).toBeVisible();
         });
     });
 });

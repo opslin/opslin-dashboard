@@ -40,7 +40,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
 
 import { ApiRequestError } from "@/lib/api";
 import { MediaError, UploadLimitError } from "@/lib/media-sdk/errors";
-import MediaPage from "@/app/(dashboard)/media/page";
+import MediaPage from "@/app/(dashboard)/storage/media/page";
 
 // Radix needs a few browser features jsdom lacks.
 beforeEach(() => {
@@ -82,7 +82,7 @@ function resetWorld() {
 }
 
 const project = (over: Partial<Extract<MediaState, { configured: true }>> = {}): MediaState => ({
-    configured: true, cloudflareSignedIn: false, id: "p1", state: "READY", engine: "EDGE", cloudflareAccountId: "acct12345678", cloudflareAccountName: "Acme",
+    configured: true, cloudflareSignedIn: true, id: "p1", state: "READY", engine: "EDGE", cloudflareAccountId: "acct12345678", cloudflareAccountName: "Acme",
     publicHostname: "img.example.com", uploadUrl: "https://up.acme.workers.dev", workerUpdateAvailable: false, bucketName: "b", allowedOrigins: ["https://shop.example.com"],
     transformsEnabled: false, lastVerifiedAt: null, createdAt: "2026-10-06T00:00:00.000Z",
     steps: ["verify_access", "bucket", "upload_worker", "custom_domain", "zone_rules", "bucket_cors", "smoke_test"].map((step) => ({ step, status: "DONE" as const, attempts: 1, detail: null, finishedAt: null })), ...over,
@@ -110,15 +110,15 @@ beforeEach(() => {
 const rowText = (text: string | RegExp) => screen.findByText(text);
 
 describe("the page around the library", () => {
-    it("opens on the library when image hosting is ready, with the guide and the settings one tab away", async () => {
+    it("opens on the library when image hosting is ready, with Install and Settings one tab away", async () => {
         renderPage();
         expect(await rowText("Logo")).toBeInTheDocument();
         expect(screen.getByRole("tab", { name: "Library", selected: true })).toBeInTheDocument();
-        expect(screen.getByRole("tab", { name: "Guide" })).toBeInTheDocument();
+        expect(screen.getByRole("tab", { name: "Install" })).toBeInTheDocument();
         expect(screen.getByRole("tab", { name: "Settings" })).toBeInTheDocument();
-        fireEvent.mouseDown(screen.getByRole("tab", { name: "Guide" }));
-        fireEvent.click(screen.getByRole("tab", { name: "Guide" }));
-        await waitFor(() => expect(routerMock.replace).toHaveBeenCalledWith("/media?tab=guide", { scroll: false }));
+        fireEvent.mouseDown(screen.getByRole("tab", { name: "Install" }));
+        fireEvent.click(screen.getByRole("tab", { name: "Install" }));
+        await waitFor(() => expect(routerMock.replace).toHaveBeenCalledWith("/storage/media?tab=install", { scroll: false }));
     });
 
     it("keeps the full setup screen while setup is not finished", async () => {
@@ -469,7 +469,7 @@ describe("guide", () => {
         expect(screen.getAllByText(/imageUrl: "https:\/\/img\.example\.com"/).length).toBeGreaterThan(0);
         expect(screen.getByText(/curl -H "Authorization: Bearer \$KEY"/)).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Manage" }));
-        expect(routerMock.replace).toHaveBeenCalledWith("/media?tab=settings", { scroll: false });
+        expect(routerMock.replace).toHaveBeenCalledWith("/storage/media?tab=settings", { scroll: false });
     });
 
     it("shows the API key only on request to an owner, and never puts it in the page by itself", async () => {
@@ -477,6 +477,7 @@ describe("guide", () => {
         renderPage();
         await screen.findByText("Connect Cloudflare");
         expect(document.body.textContent).not.toContain("the-secret-key");
+        fireEvent.click(screen.getByRole("tab", { name: "On your server" }));
         fireEvent.click(screen.getByRole("button", { name: "Show key" }));
         expect(await screen.findByText("the-secret-key")).toBeInTheDocument();
         expect(screen.getByText("Keep it on your server. Anyone with this key can read and delete your images.")).toBeInTheDocument();
@@ -488,6 +489,7 @@ describe("guide", () => {
         authMock.role = "MEMBER";
         renderPage();
         await screen.findByText("Connect Cloudflare");
+        fireEvent.click(screen.getByRole("tab", { name: "On your server" }));
         expect(screen.queryByRole("button", { name: "Show key" })).not.toBeInTheDocument();
         expect(screen.getByText("Only owners and admins can see the API key.")).toBeInTheDocument();
         expect(apiMock.getMediaApiKey).not.toHaveBeenCalled();

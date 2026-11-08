@@ -137,18 +137,31 @@ export function UsageSection() {
 
     const data = usage.data;
     const line = usageLine(data);
+    const meter = (value: number, cap: number) => (cap > 0 ? Math.min(100, Math.round((value / cap) * 100)) : 0);
+    const tiles =
+        data.available && data.limitsActive
+            ? [
+                  ...(data.library ? [{ label: "Images", value: `${formatCount(data.library.assets)} in ${formatCount(data.library.folders)} ${data.library.folders === 1 ? "folder" : "folders"}`, percent: null as number | null }] : []),
+                  ...(data.library ? [{ label: "Storage used", value: formatBytes(data.library.storedBytes), percent: null as number | null }] : []),
+                  { label: "Uploads today", value: `${formatCount(data.objects)} of ${formatCount(data.caps.projectObjects)}`, percent: meter(data.objects, data.caps.projectObjects) },
+                  { label: "Data uploaded today", value: `${formatBytes(data.bytes)} of ${formatBytes(data.caps.projectBytes)}`, percent: meter(data.bytes, data.caps.projectBytes) },
+              ]
+            : [{ label: "Uploads today", value: "Not available", percent: null as number | null }];
     return (
         <Section label="Usage">
-            {data.available && data.limitsActive ? (
-                <>
-                    {data.library ? <Row label="Images" state={`${formatCount(data.library.assets)} in ${formatCount(data.library.folders)} ${data.library.folders === 1 ? "folder" : "folders"}`} /> : null}
-                    {data.library ? <Row label="Storage used" state={formatBytes(data.library.storedBytes)} /> : null}
-                    <Row label="Uploads today" state={`${formatCount(data.objects)} of ${formatCount(data.caps.projectObjects)}`} />
-                    <Row label="Data uploaded today" state={`${formatBytes(data.bytes)} of ${formatBytes(data.caps.projectBytes)}`} />
-                </>
-            ) : (
-                <Row label="Uploads today" state="Not available" />
-            )}
+            <div className="grid gap-3 p-5 pt-3 sm:grid-cols-2">
+                {tiles.map((tile) => (
+                    <div key={tile.label} className="rounded-lg bg-muted/50 p-4">
+                        <p className="text-xs font-medium text-muted-foreground">{tile.label}</p>
+                        <p className="mt-1.5 text-base font-semibold tabular-nums text-foreground">{tile.value}</p>
+                        {tile.percent !== null ? (
+                            <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-border/70" role="img" aria-label={`${tile.percent}% used`}>
+                                <div className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out motion-reduce:transition-none" style={{ width: `${Math.max(tile.percent, tile.percent > 0 ? 2 : 0)}%` }} />
+                            </div>
+                        ) : null}
+                    </div>
+                ))}
+            </div>
             {line ? <LockedLine>{line}</LockedLine> : null}
             {data.available && data.history.length > 0 ? (
                 <Disclosure label="Earlier days">
@@ -192,19 +205,26 @@ export function AllowedWebsites({ media }: { media: Project }) {
 
     const reconnect = needsSignIn(save.error);
     return (
-        <Disclosure label="Allowed websites">
+        <Disclosure label="Allowed websites" defaultOpen>
             <div className="divide-y divide-border/70">
-                {draft.map((origin) => (
-                    <Row
-                        key={origin}
-                        label={<span className={WRAPPING}>{origin}</span>}
-                        action={
-                            <Button variant="ghost" size="icon" aria-label={`Remove ${origin}`} onClick={() => setDraft(draft.filter((item) => item !== origin))}>
-                                <X className="size-4" aria-hidden="true" />
-                            </Button>
-                        }
-                    />
-                ))}
+                {draft.length > 0 ? (
+                    <ul className="flex flex-wrap gap-2 px-5 py-4" aria-label="Allowed websites">
+                        {draft.map((origin) => (
+                            <li key={origin} className="inline-flex max-w-full items-center gap-1 rounded-full bg-muted py-1 pl-3.5 pr-1 text-sm text-foreground animate-in fade-in zoom-in-95 duration-150 motion-reduce:animate-none">
+                                <span className={WRAPPING}>{origin}</span>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-6 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+                                    aria-label={`Remove ${origin}`}
+                                    onClick={() => setDraft(draft.filter((item) => item !== origin))}
+                                >
+                                    <X className="size-3.5" aria-hidden="true" />
+                                </Button>
+                            </li>
+                        ))}
+                    </ul>
+                ) : null}
                 <Row
                     label={
                         <Input

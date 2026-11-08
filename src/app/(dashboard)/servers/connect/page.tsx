@@ -5,7 +5,7 @@ import { Header } from "@/components/layout/header";
 import { ChooseMethod } from "@/components/servers/connect/choose-method";
 import { CommandMethod } from "@/components/servers/connect/command-method";
 import { InstallProgress } from "@/components/servers/connect/install-progress";
-import { PROVIDERS, ProviderTile } from "@/components/servers/connect/shared";
+import { PROVIDERS, ProviderTile, sshInstallAvailable } from "@/components/servers/connect/shared";
 import { SshForm, type SshStart } from "@/components/servers/connect/ssh-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,7 +17,7 @@ function Guide({ onBack, onChoose }: { onBack: () => void; onChoose: (view: View
         <div className="mx-auto max-w-3xl space-y-6">
             <div className="space-y-2 text-center">
                 <h1 className="text-4xl font-bold tracking-tight text-foreground">Where do I find my details?</h1>
-                <p className="text-lg text-muted-foreground">You need your server&apos;s IP address, username and password (or key).</p>
+                <p className="text-lg text-muted-foreground">You need your server&apos;s IP address and a way to open its terminal.</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
                 {PROVIDERS.filter((provider) => provider.id !== "other").map((provider) => (
@@ -38,7 +38,7 @@ function Guide({ onBack, onChoose }: { onBack: () => void; onChoose: (view: View
             </div>
             <div className="flex justify-center gap-3">
                 <Button variant="outline" onClick={onBack}>Back</Button>
-                <Button onClick={() => onChoose("ssh")}>Connect with password or SSH key</Button>
+                {sshInstallAvailable() ? <Button onClick={() => onChoose("ssh")}>Connect with password or SSH key</Button> : <Button onClick={() => onChoose("command")}>Run one command</Button>}
             </div>
         </div>
     );
@@ -53,7 +53,7 @@ export default function ConnectServerPage() {
             <Header title="Add server" description="Connect a VPS so Opslin can deploy to it." />
             <div className="dashboard-page mx-auto w-full max-w-5xl py-8">
                 {view === "choose" ? <ChooseMethod onChoose={setView} /> : null}
-                {view === "ssh" ? (
+                {view === "ssh" && sshInstallAvailable() ? (
                     <SshForm
                         onBack={() => setView("choose")}
                         onUseCommand={() => setView("command")}

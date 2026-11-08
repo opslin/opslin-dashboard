@@ -36,6 +36,11 @@ export interface DeployRecommendationData {
     resolvedSha: string | null;
     /** What an AI-assisted deploy will create and ask, compiled before anything is created (API doc 64 S1.8). */
     plan?: PlanPreview | null;
+    /** Compose route only, for a production project in a sub-folder: the compose files to run, in order, and the private env files they read. */
+    composePaths?: string[];
+    privateEnvFiles?: string[];
+    /** Compose route, production project: what the project requires from the person, and what Opslin sets up by itself. */
+    stackNeeds?: { needsInput: Array<{ name: string; why: string }>; replaceBeforeUse: string[]; willDo: string[] };
   /** Doc 69 F5: the answers the owner gave at the last verified deploy of this project, to start from. */
   savedChoices?: { database?: "create" | "own"; storage?: "skip" | "r2"; migration?: { mode: "auto" } | { mode: "none" } | { mode: "custom"; command: string }; settings?: Record<string, string> };
 }
@@ -60,4 +65,30 @@ export interface PlanPreview {
         refusals: string[];
         memoryMb: number;
     };
+}
+
+/**
+ * The compose files the front door chose for a repository whose compose project is not at its top, to send with the new app.
+ * Only when the person is following the recommendation for a plain Git deploy: never for the AI way, an official image or a
+ * way picked by hand.
+ */
+export function composePathsToSend(
+  data: DeployRecommendationData | null | undefined,
+  options: { usesAi: boolean; usesOfficialImage: boolean; overridden: boolean },
+): string[] | undefined {
+  if (!data || data.route !== "compose" || options.usesAi || options.usesOfficialImage || options.overridden) return undefined;
+  return data.composePaths && data.composePaths.length > 0 ? data.composePaths : undefined;
+}
+
+/**
+ * What the project's own start-up code requires from the person, asked on the review screen before Deploy (for the standard,
+ * compose and AI ways). Nothing when the project's own published image is deployed instead.
+ */
+export function stackNeedsToShow(
+  data: DeployRecommendationData | null | undefined,
+  options: { usesOfficialImage: boolean },
+): DeployRecommendationData["stackNeeds"] {
+  if (!data || options.usesOfficialImage) return undefined;
+  const needs = data.stackNeeds;
+  return needs && (needs.needsInput.length > 0 || needs.willDo.length > 0) ? needs : undefined;
 }

@@ -31,6 +31,8 @@ import { ApiRequestError, api, type AutoDeployResult, type BuildpackName, type H
 import { aiStepIndex } from "@/lib/ai-deploy-steps";
 import { generateAppNameFromGitUrl } from "@/lib/onboarding";
 import { cn, formatRelativeTime } from "@/lib/utils";
+import { composePathsToSend, stackNeedsToShow } from "@/lib/deploy-route-types";
+import { StackInputs, stackInputsComplete } from "@/components/apps/StackInputs";
 
 const CHUNK_SIZE = 5 * 1024 * 1024;
 
@@ -219,6 +221,8 @@ function NewAppPageContent() {
     const [nameEdited, setNameEdited] = useState(false);
     const [domain, setDomain] = useState("");
     const [envVars, setEnvVars] = useState<EnvVar[]>([]);
+    // Settings a production compose project requires from the person (asked on this screen, saved with the new app).
+    const [stackInputs, setStackInputs] = useState<Record<string, string>>({});
     const [optionalOpen, setOptionalOpen] = useState(false);
     const [buildpackOverride, setBuildpackOverride] = useState<BuildpackName | "">("");
     const [healthCheckMode, setHealthCheckMode] = useState<HealthCheckMode>("auto");
@@ -288,7 +292,11 @@ function NewAppPageContent() {
         return [...kept, ...localAddressKeys.map((key) => ({ key, value: APP_URL_PLACEHOLDER }))];
     });
 
-    const envVarsObject = () => envVars.reduce((acc, v) => { if (v.key) acc[v.key] = v.value; return acc; }, {} as Record<string, string>);
+    const envVarsObject = () => {
+        const base = envVars.reduce((acc, v) => { if (v.key) acc[v.key] = v.value; return acc; }, {} as Record<string, string>);
+        for (const [key, value] of Object.entries(stackInputs)) if (value.trim() !== "" && !(key in base && base[key].trim() !== "")) base[key] = value.trim();
+        return base;
+    };
 
     const isPricingUpgradeError = (error: unknown) => {
         if (!(error instanceof ApiRequestError)) return false;
@@ -356,6 +364,8 @@ function NewAppPageContent() {
                 healthCheckMode: healthCheckMode || undefined,
                 healthPath: healthPath.trim() || undefined,
                 dockerfileOverride: dockerfileOverride.trim() || undefined,
+                // A production project in a sub-folder (for example infrastructure/prod): the files the front door chose.
+                composePaths: composePathsToSend(deployRoute.data && !deployRoute.data.locked ? deployRoute.data.data : null, { usesAi, usesOfficialImage, overridden: wayOverride !== null }),
                 registryCredentials: registryCredentials(),
             });
             setGitPhase("starting");
@@ -447,7 +457,11 @@ function NewAppPageContent() {
     const checkingProject = step === "deploy" && sourceType !== "upload" && deployRoute.isLoading;
     // A plan Opslin cannot run keeps Deploy disabled; the reason is shown in the recommendation box (doc 64 S1.8).
     const planBlocked = usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked ? planBlocksDeploy(deployRoute.data.data.plan) : false;
-    const canDeploy = Boolean(serverId && finalName && sourceReady && !checkingProject && !planBlocked && !(usesAi && choicesProblem(choices)));
+    // What the project's own start-up code requires is asked here, before Deploy, never after a failed build (also for the AI way).
+    const routeData = deployRoute.data && !deployRoute.data.locked ? deployRoute.data.data : null;
+    const stackNeeds = stackNeedsToShow(routeData, { usesOfficialImage });
+    const stackReady = !stackNeeds || stackInputsComplete(stackNeeds.needsInput, envVarsObject());
+    const canDeploy = Boolean(serverId && finalName && sourceReady && !checkingProject && !planBlocked && stackReady && !(usesAi && choicesProblem(choices)));
 
     const resetSource = (next: SourceType) => {
         setSourceType(next);
@@ -771,6 +785,10 @@ function NewAppPageContent() {
                         onChoose={setWayOverride}
                         disabled={isLoading}
                     />
+                ) : null}
+
+                {stackNeeds ? (
+                    <StackInputs needs={stackNeeds.needsInput} willDo={stackNeeds.willDo} values={stackInputs} onChange={(name, value) => setStackInputs((current) => ({ ...current, [name]: value }))} disabled={isLoading} />
                 ) : null}
 
                 {!planBlocked ? (<>

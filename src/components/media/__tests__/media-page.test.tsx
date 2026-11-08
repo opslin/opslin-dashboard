@@ -33,6 +33,8 @@ const apiMock = vi.hoisted(() => ({
     getMediaCloudflareAccounts: vi.fn(),
     getMediaCloudflareZones: vi.fn(),
     setupMedia: vi.fn(),
+    listMediaAssets: vi.fn(),
+    getMediaUsage: vi.fn(),
 }));
 vi.mock("@/lib/api", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@/lib/api")>();
@@ -40,7 +42,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
 });
 
 import { ApiRequestError } from "@/lib/api";
-import MediaPage from "@/app/(dashboard)/media/page";
+import MediaPage from "@/app/(dashboard)/storage/media/page";
 
 function renderPage() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -127,12 +129,12 @@ describe("design rules (DESIGN.md)", () => {
         expect(ready.container.querySelector('img[src$="/brands/cloudflare.svg"]')).not.toBeNull();
     });
 
-    it("is flat: no glass surface, no nested card, one container (V7, S1)", async () => {
+    it("has no glass surface and never nests a card in a card (the founder asked for separate cards per group)", async () => {
         apiMock.getMedia.mockResolvedValue(project());
         const { container } = renderPage();
         await screen.findByRole("list", { name: "Setup progress" });
         expect(container.querySelector(".dashboard-surface")).toBeNull();
-        expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(1);
+        expect(container.querySelectorAll('[data-slot="card"]').length).toBeGreaterThan(0);
         expect(container.querySelector('[data-slot="card"] [data-slot="card"]')).toBeNull();
     });
 
@@ -145,12 +147,26 @@ describe("design rules (DESIGN.md)", () => {
         expect(container.textContent).not.toMatch(/→/);
     });
 
-    it("title or description, never both: the page has one heading and no subtitle", async () => {
+    it("signed out of Cloudflare: shows only the way back in, no tabs, library, addresses or settings", async () => {
+        apiMock.getMedia.mockResolvedValue({
+            configured: true, cloudflareSignedIn: false, id: "p1", state: "NEEDS_RECONNECT", engine: "EDGE", cloudflareAccountId: "", cloudflareAccountName: null,
+            publicHostname: null, bucketName: "", uploadUrl: null, allowedOrigins: [], transformsEnabled: false, workerUpdateAvailable: false,
+            lastVerifiedAt: null, createdAt: new Date().toISOString(), steps: [],
+        });
+        renderPage();
+        expect(await screen.findByText("Sign in with Cloudflare to open Media")).toBeInTheDocument();
+        expect(screen.getAllByRole("button", { name: "Sign in with Cloudflare" })).toHaveLength(1);
+        expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+        // Nothing about the library or usage is even asked for.
+        expect(apiMock.listMediaAssets).not.toHaveBeenCalled();
+        expect(apiMock.getMediaUsage).not.toHaveBeenCalled();
+    });
+
+    it("leaves the page title to the Storage section: no second heading inside Media", async () => {
         apiMock.getMedia.mockResolvedValue({ configured: false, cloudflareSignedIn: false });
         renderPage();
         await screen.findByText("Not connected");
-        expect(screen.getByRole("heading", { level: 1, name: "Media" })).toBeInTheDocument();
-        expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+        expect(screen.queryAllByRole("heading", { level: 1 })).toHaveLength(0);
     });
 });
 

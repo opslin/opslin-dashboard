@@ -28,7 +28,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
 });
 
 import { ApiRequestError } from "@/lib/api";
-import MediaPage from "@/app/(dashboard)/media/page";
+import MediaPage from "@/app/(dashboard)/storage/media/page";
 
 function renderPage() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -44,7 +44,7 @@ const STEPS = ["verify_access", "bucket", "upload_worker", "custom_domain", "zon
 function ready(overrides: Partial<Extract<MediaState, { configured: true }>> = {}): MediaState {
     return {
         configured: true,
-        cloudflareSignedIn: false,
+        cloudflareSignedIn: true,
         id: "p1",
         state: "READY",
         engine: "EDGE",
