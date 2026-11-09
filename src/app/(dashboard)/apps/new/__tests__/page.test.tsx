@@ -43,6 +43,7 @@ vi.mock("@/lib/api", async () => {
             getGitHubInstallUrl: vi.fn(() => "https://github.com/apps/opslin/installations/new"),
             getServerJobStatus: vi.fn(),
             triggerAutoDeploy: vi.fn(),
+            mergeAppEnvVars: vi.fn(),
             createApp: vi.fn(),
             deployApp: vi.fn(),
             getDeployRoute: vi.fn(),
@@ -327,5 +328,75 @@ describe("NewAppPage (two-step deploy)", () => {
         expect(screen.getByRole("link", { name: /api\.example\.com/ })).toHaveAttribute("href", "https://api.example.com");
         fireEvent.click(screen.getByRole("button", { name: "Open app" }));
         expect(routerMock.push).toHaveBeenCalledWith("/apps/app-9");
+    });
+
+    // Doc 75 M6: a failed AI deploy that carries a failure report opens the explanation dialog instead of the raw red text.
+    it("opens the failure dialog for a failed deploy, and hands the missing setting to the form above Deploy", async () => {
+        vi.mocked(api.getServerJobStatus).mockResolvedValue({
+            id: "job-ai-1", type: "auto_deploy", status: "FAILED", error: "the app: Exhausted 2 fix attempts without resolving verification.",
+            result: { units: [], failureReport: {
+                version: 1, stage: "verify", cause: "missing_settings", outcome: "needs_configuration",
+                title: "This app needs one setting before it can start: WHATSAPP_AUTH_MASTER_KEY", summary: "The app itself reported it as missing.",
+                missing: [{ kind: "setting", name: "WHATSAPP_AUTH_MASTER_KEY", why: "It is not set.", foundIn: "src/server/env.ts", howToFix: "Add it under Environment." }],
+                appSaid: "Invalid environment configuration: WHATSAPP_AUTH_MASTER_KEY", opslinDid: [], nextSteps: ["Add it.", "Deploy again."], technical: "log tail",
+            } },
+        });
+        renderPage();
+        fireEvent.click(await screen.findByTestId("repo-acme/api"));
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("deploy-button"));
+
+        const dialog = await screen.findByRole("dialog", { name: /needs one setting/i });
+        expect(within(dialog).getByTestId("failure-missing")).toBeInTheDocument();
+        expect(screen.queryByText("the app: Exhausted 2 fix attempts without resolving verification.")).toBeNull(); // no raw red text
+
+        fireEvent.click(within(dialog).getByRole("button", { name: "Add the settings and deploy again" }));
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+        expect(await screen.findByLabelText("WHATSAPP_AUTH_MASTER_KEY")).toBeInTheDocument(); // the input is now above Deploy
+        expect(screen.getByTestId("failure-banner")).toBeInTheDocument();
+        expect(screen.getByTestId("deploy-button")).toBeDisabled(); // Deploy waits until the value is typed
+
+        fireEvent.change(screen.getByLabelText("WHATSAPP_AUTH_MASTER_KEY"), { target: { value: "x".repeat(44) } });
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+    });
+
+    // Doc 75 M3: "Add and continue" saves the values on the app that failed and redeploys that same app.
+    it("Add and continue saves the settings on the failed app, redeploys it, and opens its page", async () => {
+        vi.mocked(api.getServerJobStatus).mockResolvedValue({
+            id: "job-ai-1", type: "auto_deploy", status: "FAILED", error: "the app: Setup required",
+            result: { units: [], failureReport: {
+                version: 1, stage: "verify", cause: "missing_settings", outcome: "needs_configuration",
+                title: "This app needs one setting before it can start: WHATSAPP_AUTH_MASTER_KEY", summary: "The app itself reported it as missing.",
+                missing: [{ kind: "setting", name: "WHATSAPP_AUTH_MASTER_KEY", why: "Not set.", howToFix: "Add it." }],
+                appSaid: null, opslinDid: [], nextSteps: [], technical: "log", resume: { serverId: "server-1", appId: "app-7" },
+            } },
+        });
+        vi.mocked(api.mergeAppEnvVars).mockResolvedValue({ addedKeys: ["WHATSAPP_AUTH_MASTER_KEY"], message: "ok" });
+        vi.mocked(api.deployApp).mockResolvedValue({ id: "app-7", name: "api", status: "deploying", message: "Deploy started", jobId: "job-9", deploymentId: "dep-9", gitSha: "abc" });
+        renderPage();
+        fireEvent.click(await screen.findByTestId("repo-acme/api"));
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("deploy-button"));
+
+        const dialog = await screen.findByRole("dialog", { name: /needs one setting/i });
+        const go = within(dialog).getByRole("button", { name: "Add and continue" });
+        expect(go).toBeDisabled();
+        fireEvent.change(within(dialog).getByLabelText("WHATSAPP_AUTH_MASTER_KEY"), { target: { value: "k".repeat(44) } });
+        fireEvent.click(go);
+
+        await waitFor(() => expect(api.mergeAppEnvVars).toHaveBeenCalledWith("server-1", "app-7", { WHATSAPP_AUTH_MASTER_KEY: "k".repeat(44) }));
+        await waitFor(() => expect(api.deployApp).toHaveBeenCalledWith("server-1", "app-7"));
+        await waitFor(() => expect(routerMock.push).toHaveBeenCalledWith("/apps/app-7"));
+        expect(api.triggerAutoDeploy).toHaveBeenCalledTimes(1); // the first deploy only: no new app was started
+    });
+
+    it("keeps the plain red message for a failed deploy that has no report (older runs)", async () => {
+        vi.mocked(api.getServerJobStatus).mockResolvedValue({ id: "job-ai-1", type: "auto_deploy", status: "FAILED", error: "the app: something old failed", result: { units: [] } });
+        renderPage();
+        fireEvent.click(await screen.findByTestId("repo-acme/api"));
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("deploy-button"));
+        expect(await screen.findByText("the app: something old failed")).toBeInTheDocument();
+        expect(screen.queryByRole("dialog")).toBeNull();
     });
 });

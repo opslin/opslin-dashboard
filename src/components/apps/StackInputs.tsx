@@ -7,7 +7,7 @@ export interface StackNeed { name: string; why: string }
 
 /** A setting whose name says it is a secret: hidden while typing. */
 export function looksSecret(name: string): boolean {
-    return /(?:SECRET|PASS|PASSWORD|TOKEN|PRIVATE_KEY|API_KEY|ACCESS_KEY|ENC_KEY)$/.test(name);
+    return /(?:SECRET|PASS|PASSWORD|TOKEN|PRIVATE_KEY|API_KEY|ACCESS_KEY|ENC_KEY|_KEY|KEY_BASE|CREDENTIALS?)$/.test(name);
 }
 
 /** True when every setting the project requires has a value (also when nothing is required). */

@@ -1125,6 +1125,11 @@ class ApiClient {
         return this.updateApp(serverId, appId, { envVars });
     }
 
+    /** Adds or replaces only these settings on the app, atomically (the other settings stay). Takes effect on the next deploy. */
+    async mergeAppEnvVars(serverId: string, appId: string, vars: Record<string, string>) {
+        return this.patch<{ addedKeys: string[]; message: string }>(`/servers/${serverId}/apps/${appId}/env-vars`, { vars });
+    }
+
     async deployApp(
         serverId: string,
         appId: string,
