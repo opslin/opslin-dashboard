@@ -82,8 +82,16 @@ export function latestFailure(items: DeploymentItem[], now = Date.now()): Deploy
     return null;
 }
 
-export function statusLabel(item: DeploymentItem): { label: string; tone: "success" | "danger" | "info" | "neutral" | "live" } {
+/** The app's server agent is not connected: nothing can honestly be called live or running. */
+export function isServerOffline(item: DeploymentItem): boolean {
+    const server = item.app.server;
+    if (typeof server?.isLiveConnected === "boolean") return !server.isLiveConnected;
+    return item.app.effectiveStatus === "offline";
+}
+
+export function statusLabel(item: DeploymentItem): { label: string; tone: "success" | "danger" | "info" | "neutral" | "live" | "warning" } {
     const { deployment } = item;
+    if (item.live && isServerOffline(item) && !isRunning(deployment)) return { label: "Server offline", tone: "warning" };
     if (isRunning(deployment)) return { label: "Deploying", tone: "info" };
     if (deployment.status === "failed") return { label: "Failed", tone: "danger" };
     if (deployment.status === "aborted") return { label: "Cancelled", tone: "neutral" };

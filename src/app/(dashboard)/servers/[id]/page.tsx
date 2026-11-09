@@ -7,6 +7,7 @@ import { Rocket, Server, Terminal } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Header } from "@/components/layout/header";
+import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -53,6 +54,7 @@ export default function ServerDetailPage() {
   const serverId = params.id as string;
   const [agentUpdateOpen, setAgentUpdateOpen] = useState(false);
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [tab, setTab] = useState<string>("overview");
 
   const { data: server, isLoading, error } = useQuery({
@@ -110,7 +112,7 @@ export default function ServerDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["servers"] });
       router.push("/servers");
     },
-    onError: () => toast.error("Couldn't delete the server. Please try again."),
+    onError: (error) => toast.error(error instanceof Error && error.message ? error.message : "Couldn't delete the server. Please try again."),
   });
 
   if (isLoading) {
@@ -220,15 +222,31 @@ export default function ServerDetailPage() {
             updateVersion={updateAvailable ? agentUpdateInfo?.latestVersion : null}
             onUpdate={() => setAgentUpdateOpen(true)}
             onClean={() => setCleanupOpen(true)}
-            onDelete={() => {
-              if (confirm("Delete this server? This cannot be undone.")) deleteMutation.mutate();
-            }}
+            onDelete={() => setDeleteOpen(true)}
           />
         </div>
       </div>
 
       <AgentUpdateModal serverId={serverId} open={agentUpdateOpen} onOpenChange={setAgentUpdateOpen} />
       <ServerCleanupModal serverId={serverId} serverName={server.name} open={cleanupOpen} onOpenChange={setCleanupOpen} />
+
+      {/* An in-page dialog, not window.confirm(): embedded browsers (the desktop app's pane) cannot show that popup, so the click did nothing. */}
+      <AlertDialog open={deleteOpen} onOpenChange={(open) => !deleteMutation.isPending && setDeleteOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {server.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the server and its apps, databases and domains from Opslin. Nothing on the server itself is touched, and this can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button variant="outline" disabled={deleteMutation.isPending} onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate()}>
+              {deleteMutation.isPending ? "Deleting…" : "Delete server"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-5">
@@ -290,9 +308,7 @@ export default function ServerDetailPage() {
             isLive={isLive}
             updateVersion={updateAvailable ? agentUpdateInfo?.latestVersion : null}
             onUpdate={() => setAgentUpdateOpen(true)}
-            onDelete={() => {
-              if (confirm("Delete this server? This cannot be undone.")) deleteMutation.mutate();
-            }}
+            onDelete={() => setDeleteOpen(true)}
           />
         </TabsContent>
       </Tabs>

@@ -62,19 +62,38 @@ export function ConnectedCard({ name, detail, onDeploy }: { name: string; detail
     );
 }
 
-export function InstallProgress({ start, onRetry }: { start: SshStart; onRetry: () => void }) {
+export function InstallProgress({ start, onRetry, fetchStatus }: { start: SshStart; onRetry: () => void; fetchStatus?: (jobId: string) => Promise<SshInstallStatus> }) {
+    const kind = start.kind ?? "add";
     const { data, error } = useQuery({
         queryKey: ["ssh-install", start.jobId],
-        queryFn: () => api.getSshInstall(start.jobId),
+        queryFn: () => (fetchStatus ?? api.getSshInstall.bind(api))(start.jobId),
         refetchInterval: (query) => {
             const status = query.state.data?.status;
             return status === "COMPLETED" || status === "FAILED" ? false : 2000;
         },
     });
 
+    if (data?.status === "COMPLETED" && kind === "cleanup") {
+        return (
+            <div className="space-y-8">
+                <ConnectStepper step={2} />
+                <Card className="mx-auto max-w-xl gap-0 py-0">
+                    <CardContent className="space-y-5 p-8 text-center">
+                        <span className="mx-auto flex size-16 items-center justify-center rounded-full bg-success-muted text-success-text">
+                            <CheckCircle2 className="size-8" aria-hidden="true" />
+                        </span>
+                        <h1 className="text-2xl font-bold tracking-tight text-foreground">The Opslin agent was removed</h1>
+                        <p className="text-muted-foreground">Your Docker containers and data are still on {start.host}.</p>
+                        <Button type="button" onClick={onRetry} className="w-full sm:w-auto">Connect it again</Button>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
     if (data?.status === "COMPLETED") {
         const detail = [start.host, start.test?.os, start.test?.cpuCores ? `${start.test.cpuCores} vCPU` : null, start.test?.memoryMb ? `${Math.round(start.test.memoryMb / 1024)} GB RAM` : null].filter(Boolean).join(" · ");
-        return <ConnectedCard name={start.host} detail={detail} />;
+        return <ConnectedCard name={start.name ?? start.host} detail={detail} />;
     }
 
     const failed = data?.status === "FAILED" || Boolean(error);
@@ -86,7 +105,7 @@ export function InstallProgress({ start, onRetry }: { start: SshStart; onRetry: 
             <Card className="mx-auto max-w-xl gap-0 py-0">
                 <CardContent className="space-y-6 p-8">
                     <div className="space-y-3">
-                        <h1 className="text-2xl font-bold tracking-tight text-foreground">{failed ? "Something went wrong" : "Setting up your server..."}</h1>
+                        <h1 className="text-2xl font-bold tracking-tight text-foreground">{failed ? "Something went wrong" : kind === "repair" ? "Reconnecting your server..." : kind === "cleanup" ? "Removing the agent..." : "Setting up your server..."}</h1>
                         {failed ? (
                             <div role="alert" className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-danger-text">
                                 <TriangleAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
@@ -123,7 +142,10 @@ export function InstallProgress({ start, onRetry }: { start: SshStart; onRetry: 
                     </ol>
 
                     {failed ? (
-                        <Button type="button" onClick={onRetry} className="w-full">Try again</Button>
+                        <div className="space-y-3">
+                            <Button type="button" onClick={onRetry} className="w-full">Try again</Button>
+                            <p className="text-center text-xs text-muted-foreground">Nothing is kept from this attempt. Log in again to retry, or to remove a half-finished install.</p>
+                        </div>
                     ) : (
                         <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                             <ShieldCheck className="size-4" aria-hidden="true" />

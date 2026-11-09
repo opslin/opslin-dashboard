@@ -1,11 +1,11 @@
 "use client";
 
-import { BookOpen, ChevronRight, KeyRound, Lock, SquareTerminal } from "lucide-react";
+import { BookOpen, ChevronRight, Cloud, KeyRound, Lock, SquareTerminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { ConnectStepper, PROVIDERS, ProviderTile, sshInstallAvailable } from "./shared";
+import { cloudInstallAvailable, ConnectStepper, PROVIDERS, ProviderTile, sshInstallAvailable } from "./shared";
 
-type Method = "ssh" | "command" | "guide";
+type Method = "ssh" | "command" | "guide" | "aws";
 
 function MethodCard({ icon: Icon, title, description, badge, highlighted, onClick, testId }: { icon: typeof KeyRound; title: string; description: string; badge?: string; highlighted?: boolean; onClick: () => void; testId: string }) {
     return (
@@ -88,6 +88,15 @@ export function ChooseMethod({ onChoose }: { onChoose: (method: Method) => void 
                 {sshAvailable ? null : (
                     <LockedMethodCard testId="method-ssh-locked" icon={KeyRound} title="Connect with password or SSH key" description="Opslin logs in once and installs everything for you." />
                 )}
+                {cloudInstallAvailable() ? (
+                    <MethodCard
+                        testId="method-aws"
+                        icon={Cloud}
+                        title="Connect an AWS server with your AWS account"
+                        description="No key file needed. Opslin uses a temporary key or Session Manager."
+                        onClick={() => onChoose("aws")}
+                    />
+                ) : null}
                 <MethodCard
                     testId="method-guide"
                     icon={BookOpen}

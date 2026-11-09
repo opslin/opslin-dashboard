@@ -50,6 +50,7 @@ const STATUS_CONFIG: Record<string, { label: string; dotColor: string; textColor
     creating: { label: "Creating", dotColor: "bg-warning", textColor: "text-warning-text" },
     pending: { label: "Pending", dotColor: "bg-warning", textColor: "text-warning-text" },
     running: { label: "Running", dotColor: "bg-success", textColor: "text-success-text" },
+    offline: { label: "Server offline", dotColor: "bg-warning", textColor: "text-warning-text" },
     stopped: { label: "Stopped", dotColor: "bg-muted-foreground/50", textColor: "text-muted-foreground" },
     stopping: { label: "Stopping", dotColor: "bg-warning", textColor: "text-warning-text" },
     error: { label: "Error", dotColor: "bg-danger", textColor: "text-danger-text" },
@@ -128,7 +129,7 @@ export default function DatabasesPage() {
         return allDatabases.filter(({ db }) => {
             if (searchQuery && !db.name.toLowerCase().includes(searchQuery.toLowerCase()) && !db.id.toLowerCase().includes(searchQuery.toLowerCase())) return false;
             if (engineFilter !== "all" && db.type.toLowerCase() !== engineFilter) return false;
-            if (statusFilter !== "all" && db.status.toLowerCase() !== statusFilter) return false;
+            if (statusFilter !== "all" && (db.effectiveStatus ?? db.status).toLowerCase() !== statusFilter) return false;
             if (accessFilter !== "all") {
                 if (accessFilter === "read-only" && !db.readOnly) return false;
                 if (accessFilter === "read-write" && db.readOnly) return false;
@@ -144,7 +145,7 @@ export default function DatabasesPage() {
 
     // Stats
     const totalCount = allDatabases.length;
-    const runningCount = allDatabases.filter(d => d.db.status.toLowerCase() === "running").length;
+    const runningCount = allDatabases.filter(d => (d.db.effectiveStatus ?? d.db.status).toLowerCase() === "running").length;
     const pgCount = allDatabases.filter(d => d.db.type.toLowerCase() === "postgresql" || d.db.type.toLowerCase() === "postgresql_vector").length;
     const mysqlCount = allDatabases.filter(d => d.db.type.toLowerCase() === "mysql").length;
     const mongoCount = allDatabases.filter(d => d.db.type.toLowerCase() === "mongodb").length;
@@ -351,7 +352,7 @@ export default function DatabasesPage() {
                                 <tbody>
                                     {paginatedDatabases.map(({ db, serverId, serverName }) => {
                                         const dbConfig = DB_ICONS[db.type.toLowerCase()] || DB_ICONS.postgresql;
-                                        const statusConfig = STATUS_CONFIG[db.status.toLowerCase()] || STATUS_CONFIG.error;
+                                        const statusConfig = STATUS_CONFIG[(db.effectiveStatus ?? db.status).toLowerCase()] || STATUS_CONFIG.error;
                                         const serverData = servers.find(s => s.id === serverId);
                                         const isServerLive = serverData?.isLiveConnected === true;
                                         const host = serverData?.publicIp || serverData?.ip || "—";

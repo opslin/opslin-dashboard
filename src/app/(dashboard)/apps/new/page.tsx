@@ -7,7 +7,7 @@ import { useDeployRoute, useServerFit } from "@/hooks/use-deploy-route";
 import { DeployRecommendation, type ChosenWay } from "@/components/apps/DeployRecommendation";
 import { AddressSettingsRow } from "@/components/apps/AddressSettingsRow";
 import { planBlocksDeploy } from "@/components/apps/PlanPreview";
-import { DeployQuestions, choicesProblem, choicesToRequest, type DeployChoicesValue } from "@/components/apps/DeployQuestions";
+import { DeployQuestions, choicesProblem, choicesToRequest, effectiveStorage, type CloudflareState, type DeployChoicesValue } from "@/components/apps/DeployQuestions";
 import { DeployAssurance } from "@/components/apps/DeployAssurance";
 import { APP_URL_PLACEHOLDER, findLocalAddressSettings } from "@/lib/local-address-settings";
 import {
@@ -249,7 +249,8 @@ function NewAppPageContent() {
     const [changingServer, setChangingServer] = useState(false);
     // Set when the person takes the front door's advice (or overrides the default way). Cleared whenever the source changes.
     const [wayOverride, setWayOverride] = useState<ChosenWay | null>(null);
-    const [seedInitialData, setSeedInitialData] = useState(false);
+    // null = not touched: Opslin loads the repository's sample data only into a brand-new database (best effort).
+    const [seedInitialData, setSeedInitialData] = useState<boolean | null>(null);
     const [dragOver, setDragOver] = useState(false);
     const [localAddressKeys, setLocalAddressKeys] = useState<string[]>([]);
 
@@ -398,7 +399,21 @@ function NewAppPageContent() {
     // A repeat deploy starts from the answers of the last verified one (doc 69 F5), until the owner changes one.
     const savedChoices = deployRoute.data && !deployRoute.data.locked ? deployRoute.data.data.savedChoices : undefined;
     const answered = choicesState.key === choicesKey;
-    const choices = answered ? choicesState.value : (savedChoices ?? {});
+    const rawChoices = answered ? choicesState.value : (savedChoices ?? {});
+    // Storage: when the project needs a bucket, whether Cloudflare is already signed in decides the recommended answer.
+    const asksStorage = Boolean(deployRoute.data && !deployRoute.data.locked && deployRoute.data.data.plan?.resources.some((r) => r.kind === "object_storage"));
+    const cloudflareQuery = useQuery({
+        queryKey: ["r2-storage", "connection"],
+        queryFn: () => api.getR2Connection(),
+        enabled: usesAi && asksStorage,
+        retry: false,
+        refetchOnWindowFocus: true,
+        // While the owner signs in on another tab, notice it without a reload.
+        refetchInterval: (query) => (query.state.data && !query.state.data.cloudflareSignedIn && !(query.state.data.configured && !query.state.data.needsReconnect) ? 5000 : false),
+    });
+    const cloudflare: CloudflareState = !cloudflareQuery.data ? undefined
+        : (cloudflareQuery.data.configured && !cloudflareQuery.data.needsReconnect) || cloudflareQuery.data.cloudflareSignedIn ? "ready" : "signin";
+    const choices: DeployChoicesValue = asksStorage ? { ...rawChoices, storage: effectiveStorage(rawChoices, cloudflare) } : rawChoices;
     const requestedChoices = choicesToRequest(choices);
 
     const triggerAiMutation = useMutation({
@@ -410,7 +425,7 @@ function NewAppPageContent() {
                 githubInstallationId: githubInstallationId || undefined,
                 appNamePrefix: finalName,
                 extraEnvVars: Object.keys(extraEnvVarsObj).length > 0 ? extraEnvVarsObj : undefined,
-                ...(seedInitialData ? { seedInitialData: true } : {}),
+                ...(seedInitialData !== null ? { seedInitialData } : {}),
                 ...(requestedChoices ? { choices: requestedChoices } : {}),
                 ...(usesOfficialImage ? { useOfficialImage: true } : {}),
             });
@@ -461,7 +476,7 @@ function NewAppPageContent() {
     const routeData = deployRoute.data && !deployRoute.data.locked ? deployRoute.data.data : null;
     const stackNeeds = stackNeedsToShow(routeData, { usesOfficialImage });
     const stackReady = !stackNeeds || stackInputsComplete(stackNeeds.needsInput, envVarsObject());
-    const canDeploy = Boolean(serverId && finalName && sourceReady && !checkingProject && !planBlocked && stackReady && !(usesAi && choicesProblem(choices)));
+    const canDeploy = Boolean(serverId && finalName && sourceReady && !checkingProject && !planBlocked && stackReady && !(usesAi && choicesProblem(choices)) && !(usesAi && asksStorage && choices.storage === "r2" && cloudflare === "signin"));
 
     const resetSource = (next: SourceType) => {
         setSourceType(next);
@@ -472,7 +487,7 @@ function NewAppPageContent() {
         setFiles(null);
         setNameEdited(false);
         setName("");
-        setWayOverride(null); setSeedInitialData(false);
+        setWayOverride(null); setSeedInitialData(null);
     };
 
     const chooseRepository = (repo: typeof repositories[0]) => {
@@ -481,7 +496,7 @@ function NewAppPageContent() {
         setBranch(repo.defaultBranch || "main");
         setGithubInstallationId(repo.installationId);
         setNameEdited(false);
-        setWayOverride(null); setSeedInitialData(false);
+        setWayOverride(null); setSeedInitialData(null);
         setStep("deploy");
     };
 
@@ -697,7 +712,7 @@ function NewAppPageContent() {
                                 <label htmlFor="git-url" className="mb-1.5 block text-sm font-medium text-foreground">Repository URL</label>
                                 <div className="relative">
                                     <Link2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                                    <Input id="git-url" data-testid="manual-git-url" value={gitUrl} onChange={(e) => { setGitUrl(e.target.value); setGithubInstallationId(null); setNameEdited(false); setWayOverride(null); setSeedInitialData(false); }} placeholder="https://github.com/user/app.git" className="h-11 pl-9" />
+                                    <Input id="git-url" data-testid="manual-git-url" value={gitUrl} onChange={(e) => { setGitUrl(e.target.value); setGithubInstallationId(null); setNameEdited(false); setWayOverride(null); setSeedInitialData(null); }} placeholder="https://github.com/user/app.git" className="h-11 pl-9" />
                                 </div>
                             </div>
                             <div>
@@ -793,21 +808,30 @@ function NewAppPageContent() {
 
                 {!planBlocked ? (<>
                 {usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked ? (
-                    <DeployQuestions plan={deployRoute.data.data.plan} value={choices} disabled={isLoading} remembered={!answered && Boolean(savedChoices)}
+                    <DeployQuestions plan={deployRoute.data.data.plan} value={choices} cloudflare={cloudflare} disabled={isLoading} remembered={!answered && Boolean(savedChoices)}
                         onChange={(next) => { setChoicesState({ key: choicesKey, value: next }); if (next.database === "own") setOptionalOpen(true); }} />
                 ) : null}
                 <AddressSettingsRow keys={localAddressKeys} applied={addressApplied} onApply={useAppAddress} disabled={isLoading} />
 
-                {usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked && deployRoute.data.data.units.some(unit => unit.seedCommand) ? (
-                    <div className="rounded-xl border p-4">
-                        <label className="flex items-center gap-2 text-sm font-medium">
-                            <input type="checkbox" checked={seedInitialData} onChange={event => setSeedInitialData(event.target.checked)} disabled={isLoading} />
-                            Load repository sample data on first deploy
-                        </label>
-                        <p className="mt-2 text-sm text-muted-foreground">Runs the declared seed command after schema setup on a new database. Review it before enabling; seeds can add sample accounts or records.</p>
-                        {deployRoute.data.data.units.filter(unit => unit.seedCommand).map(unit => <code key={unit.path} className="mt-1 block text-xs">{unit.seedCommand}</code>)}
-                    </div>
-                ) : null}
+                {usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked && deployRoute.data.data.units.some(unit => unit.seedCommand) ? (() => {
+                    const seeded = deployRoute.data.data.units.filter(unit => unit.seedCommand);
+                    const adminEmail = seeded.find(unit => unit.seedAdminEmail)?.seedAdminEmail;
+                    const passwordSetting = seeded.find(unit => unit.seedPasswordSettings?.length)?.seedPasswordSettings?.[0];
+                    const commands = [...new Set(seeded.map(unit => unit.seedCommand as string))];
+                    return (
+                        <div className="rounded-xl border p-4" data-testid="seed-choice">
+                            <label className="flex items-center gap-2 text-sm font-medium">
+                                <input type="checkbox" checked={seedInitialData ?? true} onChange={event => setSeedInitialData(event.target.checked)} disabled={isLoading} />
+                                Load the repository&apos;s sample data
+                            </label>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                                Runs the seed after the database is set up, only on a brand-new database. Existing data is never touched, and if the seed fails the app still deploys.
+                                {adminEmail ? <> Without it there is no login: it creates <span className="font-medium text-foreground">{adminEmail}</span>{passwordSetting ? <> with a random password, saved in the app&apos;s settings as <code className="text-xs">{passwordSetting}</code></> : null}.</> : passwordSetting ? <> The admin password is random, saved in the app&apos;s settings as <code className="text-xs">{passwordSetting}</code>.</> : null}
+                            </p>
+                            {commands.map(command => <code key={command} className="mt-1 block text-xs">{command}</code>)}
+                        </div>
+                    );
+                })() : null}
 
                 <div>
                     <label htmlFor="app-name" className="mb-1.5 block text-sm font-semibold text-foreground">Project name</label>

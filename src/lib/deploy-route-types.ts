@@ -10,6 +10,8 @@ export interface RouteUnit {
     needs: string[];
     migration: string | null;
     seedCommand?: string;
+    seedAdminEmail?: string;
+    seedPasswordSettings?: string[];
 }
 
 export interface FitAssessmentData {

@@ -777,6 +777,31 @@ class ApiClient {
         return this.get<SshInstallStatus>(`/servers/ssh/install/${jobId}`);
     }
 
+    async inspectSshKey(privateKey: string, passphrase?: string) {
+        return this.post<SshKeyInspection>("/servers/ssh/key-info", { privateKey, ...(passphrase ? { passphrase } : {}) });
+    }
+
+    async startSshCleanup(data: SshConnectInput & { confirm: true; purge?: boolean }) {
+        return this.post<{ jobId: string }>("/servers/ssh/cleanup", data);
+    }
+
+    // Connect an AWS instance with the person's AWS account (no .pem file).
+    async getAwsPolicy(method: AwsMethod, instanceId?: string) {
+        return this.get<Record<string, unknown>>(`/servers/cloud/aws/policy?method=${method}${instanceId ? `&instanceId=${encodeURIComponent(instanceId)}` : ""}`);
+    }
+
+    async testAws(data: AwsInstallInput) {
+        return this.post<AwsTestResult>("/servers/cloud/aws/test", data);
+    }
+
+    async installAws(data: AwsInstallInput) {
+        return this.post<{ jobId: string }>("/servers/cloud/aws/install", data);
+    }
+
+    async getCloudInstall(jobId: string) {
+        return this.get<SshInstallStatus>(`/servers/cloud/install/${jobId}`);
+    }
+
     async getConnectCommand(serverId: string) {
         return this.get<{ command: string }>(`/servers/${serverId}/connect-command`);
     }
@@ -2406,7 +2431,10 @@ export interface OrganizationSlaAppSummary {
     domain: string | null;
     publicStatus: boolean;
     currentHealthStatus: "UNKNOWN" | "HEALTHY" | "UNHEALTHY";
-    uptimePercent7d: number;
+    /** True when the app's server agent is not connected: health and uptime are unknown. */
+    serverOffline?: boolean;
+    /** null = no recent data (never a 100% from stale data). */
+    uptimePercent7d: number | null;
     totalSamples7d: number;
     healthySamples7d: number;
     lastSampleAt: string | null;
@@ -2428,10 +2456,12 @@ export interface OrganizationSlaOverview {
     windowDays: number;
     targetPercent: number;
     alertThresholdPercent: number;
-    uptimePercent7d: number;
+    uptimePercent7d: number | null;
     totalSamples7d: number;
     healthySamples7d: number;
     appsAtRisk: number;
+    /** Apps whose server is offline (left out of the uptime number). */
+    appsOffline?: number;
     apps: OrganizationSlaAppSummary[];
 }
 
@@ -2588,6 +2618,26 @@ export interface SshConnectInput {
     auth: SshAuth;
     /** The server identity seen by the connection test. A different one is refused at install. */
     hostKey?: string | null;
+    /** The password for sudo, when it differs from the login password or the login is a key. */
+    sudoPassword?: string;
+    /** "repair" reruns the installer on a server that already has the agent (needs serverId). */
+    mode?: "add" | "repair";
+    serverId?: string;
+}
+
+export interface SshPreflightCheck {
+    id: string;
+    status: "ok" | "warn" | "fail";
+    title: string;
+    detail: string;
+}
+
+export interface SshKeyInspection {
+    ok: boolean;
+    format: "openssh" | "pem" | "ppk2" | "ppk3" | "public" | "unknown";
+    encrypted: boolean;
+    type: string | null;
+    message: string | null;
 }
 
 export interface SshTestResult {
@@ -2600,6 +2650,9 @@ export interface SshTestResult {
     hostKey?: string | null;
     user?: string | null;
     elevation?: "root" | "sudo" | "sudo-password" | null;
+    checks?: SshPreflightCheck[];
+    needsSudoPassword?: boolean;
+    agentPresent?: boolean;
 }
 
 export interface SshGeneratedKey {
@@ -2607,9 +2660,27 @@ export interface SshGeneratedKey {
     publicKey: string;
 }
 
+export type AwsMethod = "instance-connect" | "ssm";
+
+export interface AwsInstallInput {
+    accessKeyId: string;
+    secretAccessKey: string;
+    sessionToken?: string;
+    region: string;
+    instanceId: string;
+    method: AwsMethod;
+    osUser?: string;
+    name?: string;
+}
+
+export interface AwsTestResult extends SshTestResult {
+    instance?: { id: string; name: string | null; state: string; publicIp: string | null; availabilityZone: string };
+}
+
 export type SshInstallPhase = "login" | "check" | "docker" | "agent" | "connect";
 
 export interface SshInstallStatus {
+    kind?: "add" | "repair" | "cleanup";
     status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
     phase?: SshInstallPhase | null;
     percent?: number | null;
@@ -3368,6 +3439,8 @@ export interface Database {
     name: string;
     type: "postgresql" | "postgresql_vector" | "mysql" | "mongodb" | "redis";
     status: "creating" | "running" | "stopped" | "error";
+    /** What to show: "offline" when stored running but the server's agent is not connected. */
+    effectiveStatus?: "creating" | "running" | "stopped" | "stopping" | "pending" | "error" | "offline";
     port?: number | null;
     hostPort?: number | null;
     username?: string;

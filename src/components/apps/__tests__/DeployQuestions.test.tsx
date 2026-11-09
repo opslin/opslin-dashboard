@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api";
-import { DeployQuestions, choicesProblem, choicesToRequest } from "../DeployQuestions";
+import { DeployQuestions, choicesProblem, choicesToRequest, effectiveStorage } from "../DeployQuestions";
 import type { PlanPreview } from "@/lib/deploy-route-types";
 
 const plan = (over: Partial<PlanPreview> = {}): PlanPreview => ({
@@ -171,5 +171,30 @@ describe("DeployQuestions data file", () => {
         fireEvent.click(screen.getByRole("radio", { name: "Load a .sql file" }));
         fireEvent.change(screen.getByLabelText("Data file"), { target: { files: [new File(["\\! ls"], "bad.sql")] } });
         expect(await screen.findByRole("alert")).toHaveTextContent(/meta-commands/);
+    });
+});
+
+// A project that needs a bucket: the recommended answer follows whether Cloudflare is already signed in.
+describe("DeployQuestions storage and Cloudflare sign-in", () => {
+    const storagePlan = () => plan({ resources: [{ id: "object_storage", kind: "object_storage", usedBy: ["api"] }], steps: [] });
+
+    it("recommends the bucket once Cloudflare state is known, and keeps Skip as the default while it is not", () => {
+        expect(effectiveStorage({}, undefined)).toBe("skip");
+        expect(effectiveStorage({}, "ready")).toBe("r2");
+        expect(effectiveStorage({}, "signin")).toBe("r2");
+        expect(effectiveStorage({ storage: "skip" }, "ready")).toBe("skip");
+    });
+
+    it("signed in: the bucket is chosen and no sign-in button is shown", () => {
+        render(<DeployQuestions plan={storagePlan()} value={{}} cloudflare="ready" onChange={vi.fn()} />);
+        expect(screen.getByRole("radio", { name: /Use my Cloudflare R2/ })).toBeChecked();
+        expect(screen.queryByRole("button", { name: "Sign in with Cloudflare" })).toBeNull();
+    });
+
+    it("not signed in: the sign-in button appears under the chosen bucket, and disappears on Skip", () => {
+        const { rerender } = render(<DeployQuestions plan={storagePlan()} value={{}} cloudflare="signin" onChange={vi.fn()} />);
+        expect(screen.getByRole("button", { name: "Sign in with Cloudflare" })).toBeTruthy();
+        rerender(<DeployQuestions plan={storagePlan()} value={{ storage: "skip" }} cloudflare="signin" onChange={vi.fn()} />);
+        expect(screen.queryByRole("button", { name: "Sign in with Cloudflare" })).toBeNull();
     });
 });

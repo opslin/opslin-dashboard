@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { ConfirmActionDialog, type ConfirmRequest } from "@/components/ui/confirm-action-dialog";
 import {
     Table, TableBody, TableCell, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -47,7 +48,8 @@ const SEED_SCRIPT_STATUS_STYLES: Record<string, string> = {
     TIMED_OUT: "bg-danger-muted text-danger-text",
 };
 
-function SeedScriptHistoryRow({ run }: { run: SeedScriptRun }) {
+/** `onRun` is given for a script that was uploaded but not run yet (it stays staged on the server, also after a page reload). */
+function SeedScriptHistoryRow({ run, onRun }: { run: SeedScriptRun; onRun?: (run: SeedScriptRun) => void }) {
     const [expanded, setExpanded] = useState(false);
     const when = run.createdAt ? new Date(run.createdAt).toLocaleString("en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
     const isRunningOrQueued = run.status === "QUEUED" || run.status === "RUNNING";
@@ -63,7 +65,12 @@ function SeedScriptHistoryRow({ run }: { run: SeedScriptRun }) {
                     </span>
                 </TableCell>
                 <TableCell className="text-xs font-mono">{run.exitCode ?? "—"}</TableCell>
-                <TableCell className="text-xs text-muted-foreground flex items-center gap-1">
+                <TableCell className="text-xs text-muted-foreground flex items-center gap-2">
+                    {run.status === "STAGED" && onRun ? (
+                        <Button size="sm" variant="outline" data-testid="seed-script-history-run-button" onClick={(event) => { event.stopPropagation(); onRun(run); }}>
+                            <Play className="h-3.5 w-3.5 mr-1" /> Run
+                        </Button>
+                    ) : null}
                     {when}
                     {run.output && <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} />}
                 </TableCell>
@@ -183,6 +190,7 @@ function DatabaseDetailPageContent() {
     const tableColumns = tableRowsData?.rows?.[0] ? Object.keys(tableRowsData.rows[0]) : [];
 
     const [stagedSeedRun, setStagedSeedRun] = useState<SeedScriptRun | null>(null);
+    const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
     const uploadSeedScriptMutation = useMutation({
         mutationFn: (file: File) => api.uploadSeedScript(serverId, dbId, file),
         onSuccess: (run) => {
@@ -294,7 +302,7 @@ function DatabaseDetailPageContent() {
                                     {database.readOnly ? <><Unlock className="h-4 w-4 mr-2" /> Enable Write</> : <><Lock className="h-4 w-4 mr-2" /> Set Read-Only</>}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-danger-text" onClick={() => { if (confirm("Delete this database? All data will be lost.")) deleteMutation.mutate(); }}>
+                                <DropdownMenuItem className="text-danger-text" onClick={() => setConfirmRequest({ title: "Delete this database?", description: `"${database.name}" and all of its data will be permanently removed. This cannot be undone.`, confirmLabel: "Delete database", destructive: true, onConfirm: () => deleteMutation.mutate() })}>
                                     <Trash2 className="h-4 w-4 mr-2" /> Delete Database
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -575,8 +583,8 @@ function DatabaseDetailPageContent() {
                                 size="sm"
                                 disabled={database.readOnly || !queryText.trim() || runQueryMutation.isPending}
                                 onClick={() => {
-                                    if (!confirm(`Run this query against "${database.name}"? This cannot be undone.\n\n${queryText}`)) return;
-                                    runQueryMutation.mutate(queryText);
+                                    const sql = queryText;
+                                    setConfirmRequest({ title: "Run this query?", description: `It runs against "${database.name}" and cannot be undone.`, detail: sql, confirmLabel: "Run query", onConfirm: () => runQueryMutation.mutate(sql) });
                                 }}
                             >
                                 {runQueryMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Play className="h-4 w-4 mr-1.5" />}
@@ -635,8 +643,8 @@ function DatabaseDetailPageContent() {
                                         size="sm"
                                         disabled={runSeedScriptMutation.isPending}
                                         onClick={() => {
-                                            if (!confirm(`Run "${stagedSeedRun.filename}" against "${database.name}"? This runs sandboxed but cannot be undone.`)) return;
-                                            runSeedScriptMutation.mutate(stagedSeedRun.id);
+                                            const run = stagedSeedRun;
+                                            setConfirmRequest({ title: "Run this seed script?", description: `"${run.filename}" runs against "${database.name}". It runs sandboxed, but what it writes cannot be undone.`, confirmLabel: "Run script", onConfirm: () => runSeedScriptMutation.mutate(run.id) });
                                         }}
                                     >
                                         {runSeedScriptMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Play className="h-4 w-4 mr-1.5" />}
@@ -661,7 +669,7 @@ function DatabaseDetailPageContent() {
                                         </TableHeader>
                                         <TableBody>
                                             {(seedScriptHistoryQuery.data?.runs ?? []).map((run) => (
-                                                <SeedScriptHistoryRow key={run.id} run={run} />
+                                                <SeedScriptHistoryRow key={run.id} run={run} onRun={(staged) => setConfirmRequest({ title: "Run this seed script?", description: `"${staged.filename}" runs against "${database.name}". It runs sandboxed, but what it writes cannot be undone.`, confirmLabel: "Run script", onConfirm: () => runSeedScriptMutation.mutate(staged.id) })} />
                                             ))}
                                         </TableBody>
                                     </Table>
@@ -810,6 +818,7 @@ function DatabaseDetailPageContent() {
                     )}
                 </TabsContent>
             </Tabs>
+            <ConfirmActionDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
         </div>
     );
 }

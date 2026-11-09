@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, Copy, Download, Info, Loader2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, Copy, Download, Loader2, PackageOpen, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
@@ -38,6 +38,54 @@ function updateBlockedReason(info: AgentUpdateInfo) {
         return `Manual update required. This version cannot receive the secure agent_update job yet. Run one manual update; after that, future updates are controlled from the dashboard.`;
     }
     return null;
+}
+
+/** "2.0.38-migration-dir-20261108" -> the number people read, and the build note shown small beside it. */
+export function versionParts(version: string | null | undefined) {
+    const match = (version ?? "").trim().match(/^v?(\d+\.\d+\.\d+)(?:[-+.](.+))?$/);
+    return match ? { number: match[1], note: match[2] ?? null } : { number: version?.trim() || "unknown", note: null };
+}
+
+export function formatBytes(bytes: number) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return null;
+    return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/** Plain words for a failed lookup; the raw message stays out of the way. */
+export function updateLookupMessage(error: unknown) {
+    const code = error instanceof ApiRequestError ? error.details.code : undefined;
+    if (code === "agent_release_unavailable") {
+        return { title: "No agent update has been published yet", body: "This Opslin has no agent release to offer right now. Once one is published, it shows up here." };
+    }
+    if (error instanceof ApiRequestError && error.status === 404) {
+        return { title: "This server was not found", body: "It may have been removed. Go back to your servers and try again." };
+    }
+    return { title: "Update details could not be loaded", body: "Check that the server is online, then try again." };
+}
+
+function VersionTile({ label, version, emphasis }: { label: string; version: string | null | undefined; emphasis?: boolean }) {
+    const { number, note } = versionParts(version);
+    return (
+        <div className={cn("min-w-0 flex-1 rounded-xl border px-4 py-3", emphasis ? "border-primary/30 bg-primary/5" : "bg-muted/30")}>
+            <p className="text-xs font-medium text-muted-foreground">{label}</p>
+            <p className="mt-1 font-mono text-xl font-semibold tabular-nums tracking-tight text-foreground">{number}</p>
+            {note ? <p className="mt-0.5 truncate text-xs text-muted-foreground" title={note}>{note}</p> : <p className="mt-0.5 text-xs text-transparent" aria-hidden="true">.</p>}
+        </div>
+    );
+}
+
+function UpdateUnavailable({ error, onRetry, retrying }: { error: unknown; onRetry: () => void; retrying: boolean }) {
+    const { title, body } = updateLookupMessage(error);
+    return (
+        <div role="alert" className="flex flex-col items-center px-2 py-8 text-center">
+            <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground"><PackageOpen className="size-6" aria-hidden="true" /></span>
+            <h2 className="mt-4 text-lg font-semibold tracking-tight text-foreground">{title}</h2>
+            <p className="mt-1.5 max-w-[34ch] text-sm leading-relaxed text-muted-foreground">{body}</p>
+            <Button type="button" variant="outline" className="mt-5 transition-transform duration-150 active:scale-[0.97]" onClick={onRetry} disabled={retrying}>
+                {retrying ? <Loader2 className="animate-spin" aria-hidden="true" /> : <RefreshCw aria-hidden="true" />} Check again
+            </Button>
+        </div>
+    );
 }
 
 function objectField(value: unknown, key: string) {
@@ -83,9 +131,14 @@ function formatEta(seconds?: number | null) {
     return `About ${Math.ceil(seconds / 60)}m`;
 }
 
-function phaseIndex(job?: ServerJobStatus | null, connected?: boolean, latest?: string, current?: string | null) {
+/** The server runs the offered version. The installed version is reported as its number only (2.0.38) while the offered one may carry a build note, so the server's own "update available" answer decides, never a string comparison. */
+export function runsLatest(info: Pick<AgentUpdateInfo, "updateAvailable">) {
+    return !info.updateAvailable;
+}
+
+function phaseIndex(job?: ServerJobStatus | null, connected?: boolean, onLatest?: boolean) {
     if (!job) return 0;
-    if (job.status === "COMPLETED" && connected && current === latest) {
+    if (job.status === "COMPLETED" && connected && onLatest) {
         return updateStages.length - 1;
     }
     if (job.status === "COMPLETED") {
@@ -106,9 +159,10 @@ const stepGroups = [
 ];
 
 function UpdateTracker({ info, job, targetName }: { info: AgentUpdateInfo; job: ServerJobStatus; targetName?: string }) {
-    const index = phaseIndex(job, info.connected, info.latestVersion, info.currentVersion);
+    const onLatest = runsLatest(info);
+    const index = phaseIndex(job, info.connected, onLatest);
     const failed = job.status === "FAILED";
-    const waitingReconnect = job.status === "COMPLETED" && (!info.connected || info.currentVersion !== info.latestVersion);
+    const waitingReconnect = job.status === "COMPLETED" && (!info.connected || !onLatest);
     const finished = job.status === "COMPLETED" && !waitingReconnect;
     const percent = finished ? 100 : (job.progress?.percent ?? (job.status === "PENDING" ? 5 : job.status === "COMPLETED" ? 95 : 35));
     const activeKey = updateStages[index]?.key ?? "queued";
@@ -119,7 +173,7 @@ function UpdateTracker({ info, job, targetName }: { info: AgentUpdateInfo; job: 
             <div>
                 <h2 className="text-2xl font-bold tracking-tight text-foreground">{finished ? "Agent updated" : failed ? "Update failed" : "Updating agent"}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    {finished ? `v${info.latestVersion} is running${targetName ? ` on ${targetName}` : ""}.` : `Installing v${info.latestVersion}${targetName ? ` on ${targetName}` : ""}`}
+                    {finished ? `v${versionParts(info.latestVersion).number} is running${targetName ? ` on ${targetName}` : ""}.` : `Installing v${versionParts(info.latestVersion).number}${targetName ? ` on ${targetName}` : ""}`}
                 </p>
             </div>
             <div>
@@ -272,12 +326,9 @@ export function AgentUpdateModal({ serverId, open, onOpenChange }: AgentUpdateMo
                     </div>
                 )}
 
-                {updateQuery.error && (
-                    <div role="alert" className="flex gap-2 rounded-xl border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger-text">
-                        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                        {updateQuery.error instanceof Error ? updateQuery.error.message : "Unable to load update details. Try again after the server reconnects."}
-                    </div>
-                )}
+                {updateQuery.error && !info ? (
+                    <UpdateUnavailable error={updateQuery.error} retrying={updateQuery.isFetching} onRetry={() => void updateQuery.refetch()} />
+                ) : null}
 
                 {info && trackedJob ? (
                     <>
@@ -288,18 +339,21 @@ export function AgentUpdateModal({ serverId, open, onOpenChange }: AgentUpdateMo
 
                 {info && !trackedJob ? (
                     <div className="space-y-5">
-                        <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><Download className="size-5" aria-hidden="true" /></span>
-                        <div>
-                            <h2 className="text-2xl font-bold tracking-tight text-foreground">Update agent</h2>
-                            <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-                                <span>v{info.currentVersion || "?"}</span>
-                                <ArrowRight className="size-3.5" aria-hidden="true" />
-                                <span className="font-medium text-foreground">v{info.latestVersion}</span>
-                            </p>
+                        <div className="flex items-center gap-3">
+                            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Download className="size-5" aria-hidden="true" /></span>
+                            <div>
+                                <h2 className="text-xl font-semibold tracking-tight text-foreground">{info.updateAvailable ? "Update the Opslin agent" : "Agent is up to date"}</h2>
+                                <p className="text-sm text-muted-foreground">{info.updateAvailable ? "A new version is ready for this server." : "Nothing to install right now."}</p>
+                            </div>
+                        </div>
+                        <div className="flex items-stretch gap-2">
+                            <VersionTile label="Installed" version={info.currentVersion} />
+                            <span className="flex items-center text-muted-foreground" aria-hidden="true"><ArrowRight className="size-4" /></span>
+                            <VersionTile label="Available" version={info.latestVersion} emphasis={info.updateAvailable} />
                         </div>
                         {highlights.length > 0 ? (
                             <section className="rounded-xl border bg-muted/30 p-4">
-                                <h3 className="text-sm font-semibold text-foreground">What&apos;s new in v{info.latestVersion}</h3>
+                                <h3 className="text-sm font-semibold text-foreground">What&apos;s new in v{versionParts(info.latestVersion).number}</h3>
                                 <ul className="mt-2.5 space-y-1.5 text-sm text-muted-foreground">
                                     {highlights.map((item) => (
                                         <li key={item} className="flex gap-2.5"><span className="mt-2 size-1 shrink-0 rounded-full bg-muted-foreground/60" aria-hidden="true" />{item}</li>
@@ -313,9 +367,9 @@ export function AgentUpdateModal({ serverId, open, onOpenChange }: AgentUpdateMo
                                 {blockedReason}
                             </div>
                         ) : (
-                            <div className="flex items-start gap-2.5 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
-                                <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                                Opslin checks the download&apos;s SHA-256, then restarts only the agent. Your apps keep running.
+                            <div className="flex items-start gap-2.5 rounded-xl bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+                                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success-text" aria-hidden="true" />
+                                <p>Opslin checks the download&apos;s checksum and version, then restarts only the agent. Your apps keep running.{formatBytes(info.artifact.sizeBytes) ? ` Download: ${formatBytes(info.artifact.sizeBytes)}.` : ""}</p>
                             </div>
                         )}
                         <details className="group rounded-xl border px-4 py-3 text-sm">
@@ -357,11 +411,11 @@ export function AgentUpdateModal({ serverId, open, onOpenChange }: AgentUpdateMo
                 ) : null}
 
                 <DialogFooter className="mt-6 flex-row justify-end gap-3 sm:justify-end">
-                    <Button id="agent-update-cancel" type="button" variant="outline" size="lg" onClick={() => onOpenChange(false)}>
+                    <Button id="agent-update-cancel" type="button" variant="outline" size="lg" className="transition-transform duration-150 active:scale-[0.97]" onClick={() => onOpenChange(false)}>
                         {trackedJob ? "Close" : "Cancel"}
                     </Button>
-                    {!trackedJob || canRetry ? (
-                        <Button id="agent-update-confirm" type="button" size="lg" disabled={!info || Boolean(blockedReason) || updateMutation.isPending} onClick={() => updateMutation.mutate()}>
+                    {info && (!trackedJob || canRetry) ? (
+                        <Button id="agent-update-confirm" type="button" size="lg" className="transition-transform duration-150 active:scale-[0.97]" disabled={!info || Boolean(blockedReason) || updateMutation.isPending} onClick={() => updateMutation.mutate()}>
                             {updateMutation.isPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
                             {canRetry ? "Retry update" : "Update now"}
                         </Button>

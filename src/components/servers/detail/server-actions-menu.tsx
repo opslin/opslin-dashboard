@@ -65,7 +65,7 @@ export function ServerActionsMenu({
                         <Download aria-hidden="true" />
                         <span className="flex flex-1 flex-col leading-tight">
                             <span>{updateVersion ? "Update agent" : "Check agent updates"}</span>
-                            {updateVersion ? <span className="text-xs font-medium text-primary">v{updateVersion} available</span> : null}
+                            {updateVersion ? <span className="text-xs font-medium text-primary">v{updateVersion.match(/^v?(\d+\.\d+\.\d+)/)?.[1] ?? updateVersion} available</span> : null}
                         </span>
                         <ChevronRight className="!size-4" aria-hidden="true" />
                     </DropdownMenuItem>

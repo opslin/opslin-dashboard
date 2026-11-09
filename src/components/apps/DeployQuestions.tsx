@@ -32,6 +32,14 @@ const ENGINE: Record<string, string> = { postgres: "PostgreSQL", postgres_vector
 const SAFE_COMMAND = /^[A-Za-z0-9_@./:=+ -]+$/;
 const UNSAFE_MESSAGE = "Use only letters, numbers, spaces and . / : = + - _ @ in a migration command.";
 
+/** Whether Cloudflare is signed in for storage: "ready" (a bucket can be made now), "signin" (the owner must sign in first), or unknown. */
+export type CloudflareState = "ready" | "signin" | undefined;
+
+/** Storage is recommended once Cloudflare state is known: a project that needs a bucket does not work without one. */
+export function effectiveStorage(value: DeployChoicesValue, cloudflare: CloudflareState): "skip" | "r2" {
+    return value.storage ?? (cloudflare ? "r2" : "skip");
+}
+
 /** What to send with the deploy: only the answers that differ from the recommended ones, or nothing. */
 export function choicesToRequest(value: DeployChoicesValue): RequestedChoices | undefined {
     const out: RequestedChoices = {};
@@ -101,7 +109,36 @@ function SettingsList({ items, resource, value, onChange, disabled }: { items: S
     );
 }
 
-export function DeployQuestions({ plan, value, onChange, disabled, remembered }: { plan: PlanPreview | null | undefined; value: DeployChoicesValue; onChange: (next: DeployChoicesValue) => void; disabled?: boolean; remembered?: boolean }) {
+/** Opens Cloudflare's sign-in in a new tab so the form on this page is kept; the page notices the sign-in when it is back in focus. */
+async function signInWithCloudflare(): Promise<string | null> {
+    const tab = typeof window !== "undefined" ? window.open("", "_blank") : null;
+    try {
+        const { authorizeUrl } = await api.startStorageCloudflareSignIn();
+        if (tab) tab.location.href = authorizeUrl;
+        else window.location.assign(authorizeUrl);
+        return null;
+    } catch (error) {
+        tab?.close();
+        return (error as Error).message || "Could not start the Cloudflare sign-in.";
+    }
+}
+
+function CloudflareSignIn({ disabled }: { disabled?: boolean }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    return (
+        <div className="mt-1.5">
+            <p className="text-sm text-muted-foreground">This project stores files. Sign in with Cloudflare and Opslin makes the bucket in your account when you deploy. Come back to this page afterwards; nothing here is lost.</p>
+            <button type="button" disabled={disabled || busy} className="mt-2 inline-flex h-9 items-center rounded-lg border bg-card px-3 text-sm font-medium hover:bg-muted disabled:opacity-60"
+                onClick={async () => { setBusy(true); setError(null); const failed = await signInWithCloudflare(); setError(failed); setBusy(false); }}>
+                Sign in with Cloudflare
+            </button>
+            {error ? <p role="alert" className="mt-1.5 text-sm text-warning-text">{error}</p> : null}
+        </div>
+    );
+}
+
+export function DeployQuestions({ plan, value, onChange, disabled, remembered, cloudflare }: { plan: PlanPreview | null | undefined; value: DeployChoicesValue; onChange: (next: DeployChoicesValue) => void; disabled?: boolean; remembered?: boolean; cloudflare?: CloudflareState }) {
     if (!plan) return null;
     const engines = [...new Set(plan.resources.map((r) => ENGINE[r.kind]).filter((name): name is string => Boolean(name)))];
     const asksStorage = plan.resources.some((r) => r.kind === "object_storage");
@@ -109,7 +146,7 @@ export function DeployQuestions({ plan, value, onChange, disabled, remembered }:
     if (engines.length === 0 && !asksStorage && !migrate) return null;
 
     const database = value.database ?? "create";
-    const storage = value.storage ?? "skip";
+    const storage = effectiveStorage(value, cloudflare);
     const migration = value.migration ?? { mode: "auto" as const };
     const asksData = database === "create" && plan.resources.some((r) => r.kind === "postgres" || r.kind === "postgres_vector" || r.kind === "mysql");
     const problem = choicesProblem(value);
@@ -134,7 +171,8 @@ export function DeployQuestions({ plan, value, onChange, disabled, remembered }:
                 <div role="radiogroup" aria-labelledby="deploy-q-storage" className={rowClass}>
                     <p id="deploy-q-storage" className={legendClass}>Storage</p>
                     <Choice name="deploy-storage" label="Skip for now" checked={storage === "skip"} disabled={disabled} onSelect={() => onChange({ ...value, storage: "skip" })} />
-                    <Choice name="deploy-storage" label="Use my Cloudflare R2" checked={storage === "r2"} disabled={disabled} onSelect={() => onChange({ ...value, storage: "r2" })} />
+                    <Choice name="deploy-storage" label={cloudflare === "ready" ? "Use my Cloudflare R2 (a bucket is made for this app)" : "Use my Cloudflare R2"} checked={storage === "r2"} disabled={disabled} onSelect={() => onChange({ ...value, storage: "r2" })} />
+                    {storage === "r2" && cloudflare === "signin" ? <CloudflareSignIn disabled={disabled} /> : null}
                     {storage === "r2" ? <SettingsList items={(plan.settings ?? []).filter((item) => item.resource === "storage")} resource="storage" value={value} onChange={onChange} disabled={disabled} /> : null}
                 </div>
             ) : null}
