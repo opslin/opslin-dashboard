@@ -245,16 +245,30 @@ describe("NewAppPage (two-step deploy)", () => {
         await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
     });
 
-    it("requires an explicit selection before requesting repository sample data", async () => {
-        vi.mocked(api.getDeployRoute).mockResolvedValue({ route: "ai", confidence: "high", reasons: ["API, worker and migration"], isMonorepo: false, units: [{ path: "", seedCommand: "node src/database/seeds/run.js" }] as never, needs: ["postgres"], composeServices: [], safeMigrationAvailable: true, resolvedSha: "abc" });
+    it("sample data is on by default (Opslin decides) and unticking sends an explicit no", async () => {
+        vi.mocked(api.getDeployRoute).mockResolvedValue({ route: "ai", confidence: "high", reasons: ["API, worker and migration"], isMonorepo: false, units: [{ path: "", seedCommand: "npx tsx src/seed.ts", seedAdminEmail: "admin@shotlin.local", seedPasswordSettings: ["SEED_ADMIN_PASSWORD"] }] as never, needs: ["postgres"], composeServices: [], safeMigrationAvailable: true, resolvedSha: "abc" });
         renderPage();
         await reachReview("https://github.com/example/backend");
-        const seedOption = await screen.findByRole("checkbox", { name: "Load repository sample data on first deploy" });
-        expect(seedOption).not.toBeChecked();
+        const seedOption = await screen.findByRole("checkbox", { name: "Load the repository's sample data" });
+        expect(seedOption).toBeChecked();
+        expect(screen.getByTestId("seed-choice")).toHaveTextContent("admin@shotlin.local");
+        expect(screen.getByTestId("seed-choice")).toHaveTextContent("SEED_ADMIN_PASSWORD");
         fireEvent.click(seedOption);
+        expect(seedOption).not.toBeChecked();
         await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
         fireEvent.click(screen.getByTestId("deploy-button"));
-        await waitFor(() => expect(api.triggerAutoDeploy).toHaveBeenCalledWith("server-1", expect.objectContaining({ seedInitialData: true })));
+        await waitFor(() => expect(api.triggerAutoDeploy).toHaveBeenCalledWith("server-1", expect.objectContaining({ seedInitialData: false })));
+    });
+
+    it("an untouched sample-data box sends nothing, so the API loads it only into a brand-new database", async () => {
+        vi.mocked(api.getDeployRoute).mockResolvedValue({ route: "ai", confidence: "high", reasons: ["API"], isMonorepo: false, units: [{ path: "", seedCommand: "node src/database/seeds/run.js" }] as never, needs: ["postgres"], composeServices: [], safeMigrationAvailable: true, resolvedSha: "abc" });
+        renderPage();
+        await reachReview("https://github.com/example/backend");
+        await screen.findByRole("checkbox", { name: "Load the repository's sample data" });
+        await waitFor(() => expect(screen.getByTestId("deploy-button")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("deploy-button"));
+        await waitFor(() => expect(api.triggerAutoDeploy).toHaveBeenCalled());
+        expect(vi.mocked(api.triggerAutoDeploy).mock.calls[0][1]).not.toHaveProperty("seedInitialData");
     });
 
     it("keeps the project name editable and lets Change return to the import step with data intact", async () => {

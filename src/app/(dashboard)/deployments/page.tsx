@@ -55,9 +55,10 @@ function StatusPill({ item }: { item: DeploymentItem }) {
         success: "bg-success-muted text-success-text",
         danger: "bg-danger-muted text-danger-text",
         info: "bg-info-muted text-info-text",
+        warning: "bg-warning-muted text-warning-text",
         neutral: "bg-secondary text-muted-foreground",
     }[status.tone];
-    const dot = { live: "bg-success", success: "bg-success", danger: "bg-danger", info: "bg-info", neutral: "bg-muted-foreground" }[status.tone];
+    const dot = { live: "bg-success", success: "bg-success", danger: "bg-danger", info: "bg-info", warning: "bg-warning", neutral: "bg-muted-foreground" }[status.tone];
     return <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", tone)}><span className={cn("size-1.5 rounded-full", dot)} aria-hidden="true" />{status.label}</span>;
 }
 

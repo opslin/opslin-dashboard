@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/layout/header";
+import { AwsForm } from "@/components/servers/connect/aws-form";
 import { ChooseMethod } from "@/components/servers/connect/choose-method";
 import { CommandMethod } from "@/components/servers/connect/command-method";
 import { InstallProgress } from "@/components/servers/connect/install-progress";
@@ -9,8 +11,9 @@ import { PROVIDERS, ProviderTile, sshInstallAvailable } from "@/components/serve
 import { SshForm, type SshStart } from "@/components/servers/connect/ssh-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { api } from "@/lib/api";
 
-type View = "choose" | "ssh" | "command" | "guide" | "installing";
+type View = "choose" | "ssh" | "command" | "guide" | "aws" | "installing";
 
 function Guide({ onBack, onChoose }: { onBack: () => void; onChoose: (view: View) => void }) {
     return (
@@ -44,18 +47,22 @@ function Guide({ onBack, onChoose }: { onBack: () => void; onChoose: (view: View
     );
 }
 
-export default function ConnectServerPage() {
-    const [view, setView] = useState<View>("choose");
+function ConnectServer() {
+    const params = useSearchParams();
+    const repairId = params.get("repair");
+    const repair = repairId ? { serverId: repairId, name: params.get("name") || "your server" } : undefined;
+    const [view, setView] = useState<View>(repair ? "ssh" : "choose");
     const [start, setStart] = useState<SshStart | null>(null);
 
     return (
         <>
-            <Header title="Add server" description="Connect a VPS so Opslin can deploy to it." />
+            <Header title={repair ? "Reconnect server" : "Add server"} description={repair ? "Log in once to repair the Opslin agent." : "Connect a VPS so Opslin can deploy to it."} />
             <div className="dashboard-page mx-auto w-full max-w-5xl py-8">
                 {view === "choose" ? <ChooseMethod onChoose={setView} /> : null}
                 {view === "ssh" && sshInstallAvailable() ? (
                     <SshForm
-                        onBack={() => setView("choose")}
+                        repair={repair}
+                        onBack={() => (repair ? window.history.back() : setView("choose"))}
                         onUseCommand={() => setView("command")}
                         onStarted={(next) => {
                             setStart(next);
@@ -63,10 +70,34 @@ export default function ConnectServerPage() {
                         }}
                     />
                 ) : null}
+                {view === "aws" ? (
+                    <AwsForm
+                        onBack={() => setView("choose")}
+                        onUseCommand={() => setView("command")}
+                        onStarted={(next) => {
+                            setStart({ ...next, kind: "add" });
+                            setView("installing");
+                        }}
+                    />
+                ) : null}
                 {view === "command" ? <CommandMethod onBack={() => setView("choose")} onUsePassword={() => setView("ssh")} /> : null}
                 {view === "guide" ? <Guide onBack={() => setView("choose")} onChoose={setView} /> : null}
-                {view === "installing" && start ? <InstallProgress start={start} onRetry={() => setView("ssh")} /> : null}
+                {view === "installing" && start ? (
+                    <InstallProgress
+                        start={start}
+                        onRetry={() => setView(start.username === "aws" ? "aws" : "ssh")}
+                        fetchStatus={start.username === "aws" ? (jobId) => api.getCloudInstall(jobId) : undefined}
+                    />
+                ) : null}
             </div>
         </>
+    );
+}
+
+export default function ConnectServerPage() {
+    return (
+        <Suspense fallback={null}>
+            <ConnectServer />
+        </Suspense>
     );
 }

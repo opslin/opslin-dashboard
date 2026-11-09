@@ -52,9 +52,12 @@ export default function TransparencyPage() {
     const firingEvents = useMemo(() => events.filter(e => e.status === "firing"), [events]);
     const recentIncidents = useMemo(() => events.slice(0, 5), [events]);
 
-    const uptimeValue = data?.uptimePercent7d || 0;
+    // Offline servers: no trustworthy data, so no uptime number and never "meeting target".
+    const offlineApps = useMemo(() => (data?.apps ?? []).filter(app => app.serverOffline), [data]);
+    const uptimeValue = data?.uptimePercent7d ?? null;
     const targetPercent = data?.targetPercent || 99.9;
-    const meetsTarget = uptimeValue >= targetPercent;
+    const noData = uptimeValue === null;
+    const meetsTarget = uptimeValue !== null && uptimeValue >= targetPercent;
 
     return (
         <div className="dashboard-page">
@@ -86,9 +89,9 @@ export default function TransparencyPage() {
                         <span className="text-xs text-muted-foreground">7-Day Uptime</span>
                         <TrendingUp size={20} />
                     </div>
-                    <div className="text-3xl font-mono font-bold text-foreground">{isLoading ? "…" : `${uptimeValue.toFixed(2)}%`}</div>
-                    <div className={`text-[11px] font-medium mt-1 ${meetsTarget ? "text-success-text" : "text-danger-text"}`}>{meetsTarget ? "Meeting target" : "Below target"}</div>
-                    <div className="text-[10px] text-muted-foreground">Rolling 7-day window</div>
+                    <div className="text-3xl font-mono font-bold text-foreground">{isLoading ? "…" : noData ? "—" : `${uptimeValue.toFixed(2)}%`}</div>
+                    <div className={`text-[11px] font-medium mt-1 ${noData ? "text-warning-text" : meetsTarget ? "text-success-text" : "text-danger-text"}`}>{noData ? "No recent data" : meetsTarget ? "Meeting target" : "Below target"}</div>
+                    <div className="text-[10px] text-muted-foreground">{noData ? "Server offline" : "Rolling 7-day window"}</div>
                 </div>
                 <div className="rounded-xl border border-border bg-card p-5">
                     <div className="flex items-center justify-between mb-2">
@@ -97,7 +100,7 @@ export default function TransparencyPage() {
                     </div>
                     <div className="text-3xl font-mono font-bold text-foreground">{isLoading ? "…" : `${targetPercent.toFixed(1)}%`}</div>
                     <div className="text-[11px] text-muted-foreground mt-1">7-day rolling target</div>
-                    <div className={`text-[10px] font-medium mt-0.5 ${meetsTarget ? "text-success-text" : "text-danger-text"}`}>{meetsTarget ? "You are meeting the target" : "You are below the target"}</div>
+                    <div className={`text-[10px] font-medium mt-0.5 ${noData ? "text-warning-text" : meetsTarget ? "text-success-text" : "text-danger-text"}`}>{noData ? "Can't tell while the server is offline" : meetsTarget ? "You are meeting the target" : "You are below the target"}</div>
                 </div>
                 <div className="rounded-xl border border-border bg-card p-5">
                     <div className="flex items-center justify-between mb-2">
@@ -106,6 +109,9 @@ export default function TransparencyPage() {
                     </div>
                     <div className="text-3xl font-mono font-bold text-foreground">{isLoading ? "…" : String(data?.appsAtRisk || 0)}</div>
                     <div className="text-[11px] text-muted-foreground mt-1">Below 7-day threshold</div>
+                    {offlineApps.length > 0 && (
+                        <div className="text-[10px] font-medium text-warning-text mt-0.5">{offlineApps.length} offline, not counted</div>
+                    )}
                     {(data?.appsAtRisk || 0) > 0 && (
                         <a href="#apps" className="text-[10px] text-info-text font-medium mt-0.5 inline-flex items-center gap-0.5">View affected apps <ArrowUpRight className="h-2.5 w-2.5" /></a>
                     )}
@@ -152,12 +158,16 @@ export default function TransparencyPage() {
                                         <div className="text-sm font-medium text-foreground">{app.appName}</div>
                                         {app.domain ? <div className="text-[10px] text-muted-foreground truncate">{app.domain}</div> : null}
                                     </div>
-                                    <StatusBadge status={app.currentHealthStatus} className="shrink-0" />
+                                    <StatusBadge status={app.serverOffline ? "server_offline" : app.currentHealthStatus} className="shrink-0" />
                                     <div className="flex-1 min-w-0">
-                                        <UptimeBar percent={app.uptimePercent7d} status={app.currentHealthStatus} />
+                                        {app.uptimePercent7d === null ? (
+                                            <div className="text-xs text-muted-foreground">No recent data. The server is not connected.</div>
+                                        ) : (
+                                            <UptimeBar percent={app.uptimePercent7d} status={app.currentHealthStatus} />
+                                        )}
                                     </div>
                                     <div className="text-right shrink-0 w-20">
-                                        <div className="text-sm font-mono font-bold text-foreground">{app.uptimePercent7d.toFixed(2)}%</div>
+                                        <div className="text-sm font-mono font-bold text-foreground">{app.uptimePercent7d === null ? "—" : `${app.uptimePercent7d.toFixed(2)}%`}</div>
                                         <div className="text-[10px] text-muted-foreground">Uptime</div>
                                     </div>
                                     <Link href={`/apps/${app.appId}`} className="text-xs text-info-text hover:text-info-text/80 font-medium flex items-center gap-1 shrink-0">
@@ -184,15 +194,15 @@ export default function TransparencyPage() {
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                         <h2 className="text-lg font-semibold text-foreground">Current Incidents</h2>
-                        {firingEvents.length > 0 && (
-                            <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-danger text-danger-foreground text-[10px] font-bold">{firingEvents.length}</span>
+                        {firingEvents.length + offlineApps.length > 0 && (
+                            <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-danger text-danger-foreground text-[10px] font-bold">{firingEvents.length + offlineApps.length}</span>
                         )}
                     </div>
                     <Link href="/alerts" className="text-xs text-info-text hover:text-info-text/80 font-medium flex items-center gap-1">View all incidents <ArrowUpRight className="h-3 w-3" /></Link>
                 </div>
                 <p className="text-sm text-muted-foreground mb-4">Active issues that may impact your applications.</p>
 
-                {firingEvents.length === 0 ? (
+                {firingEvents.length === 0 && offlineApps.length === 0 ? (
                     <div className="flex items-center gap-3 rounded-lg bg-success-muted border border-success/30 p-4">
                         <CheckCircle2 size={28} />
                         <div>
@@ -202,6 +212,18 @@ export default function TransparencyPage() {
                     </div>
                 ) : (
                     <div className="space-y-2">
+                        {offlineApps.map(app => (
+                            <div key={`offline-${app.appId}`} className="flex items-center justify-between rounded-lg border border-warning/30 bg-warning-muted p-4">
+                                <div className="flex items-center gap-3">
+                                    <CircleAlert size={24} />
+                                    <div>
+                                        <div className="text-sm font-medium text-foreground">Server offline for {app.appName}</div>
+                                        <div className="text-xs text-muted-foreground">Opslin cannot see this app right now{app.lastSampleAt ? `. Last health check ${new Date(app.lastSampleAt).toLocaleString()}` : ""}.</div>
+                                    </div>
+                                </div>
+                                <Link href={`/apps/${app.appId}`} className="text-xs text-info-text hover:text-info-text/80 font-medium">Open app</Link>
+                            </div>
+                        ))}
                         {firingEvents.map(event => (
                             <div key={event.id} className="flex items-center justify-between rounded-lg border border-danger/30 bg-danger-muted p-4">
                                 <div className="flex items-center gap-3">

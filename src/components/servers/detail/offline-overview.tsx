@@ -2,14 +2,14 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronRight, Copy, Cpu, Database, Globe, Clock, MemoryStick, RotateCw, SquareTerminal, TriangleAlert } from "lucide-react";
+import { Check, ChevronRight, Copy, Cpu, Database, Globe, Clock, KeyRound, MemoryStick, RotateCw, SquareTerminal, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { App, Server } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
-import { INSTALL_COMMANDS } from "../connect/shared";
+import { INSTALL_COMMANDS, sshInstallAvailable } from "../connect/shared";
 
 export function OfflineOverview({ server, apps }: { server: Server; apps: App[] }) {
     const [copied, setCopied] = useState(false);
@@ -45,6 +45,11 @@ export function OfflineOverview({ server, apps }: { server: Server; apps: App[] 
                 </div>
                 <div className="flex gap-2">
                     <Button variant="dark" onClick={() => void copy()}><RotateCw aria-hidden="true" /> Reconnect</Button>
+                    {sshInstallAvailable() ? (
+                        <Button asChild variant="outline">
+                            <Link href={`/servers/connect?repair=${encodeURIComponent(server.id)}&name=${encodeURIComponent(server.name)}`}><KeyRound aria-hidden="true" /> Reconnect with a login</Link>
+                        </Button>
+                    ) : null}
                     <Button variant="outline" onClick={() => card.current?.scrollIntoView({ behavior: "smooth", block: "center" })}><SquareTerminal aria-hidden="true" /> Show command</Button>
                 </div>
             </div>

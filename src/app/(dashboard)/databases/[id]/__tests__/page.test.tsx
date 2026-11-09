@@ -36,6 +36,9 @@ vi.mock("@/lib/api", async () => {
             runDatabaseQuery: vi.fn(),
             getDatabaseTables: vi.fn(),
             getDatabaseTableData: vi.fn(),
+            uploadSeedScript: vi.fn(),
+            runSeedScript: vi.fn(),
+            getSeedScriptHistory: vi.fn(),
         },
     };
 });
@@ -127,7 +130,11 @@ describe("DatabaseDetailPage", () => {
             fireEvent.change(input, { target: { value: "UPDATE users SET role = 'admin' WHERE id = 1" } });
             fireEvent.click(screen.getByTestId("run-query-button"));
 
-            expect(confirmSpy).toHaveBeenCalled();
+            // The confirmation is an in-page dialog, never the browser's pop-up (embedded browsers silently cancel that one).
+            expect(confirmSpy).not.toHaveBeenCalled();
+            expect(await screen.findByText("Run this query?")).toBeVisible();
+            expect(api.runDatabaseQuery).not.toHaveBeenCalled();
+            fireEvent.click(screen.getByTestId("confirm-action-button"));
             await waitFor(() => {
                 expect(api.runDatabaseQuery).toHaveBeenCalledWith(
                     "server-1",
@@ -138,15 +145,45 @@ describe("DatabaseDetailPage", () => {
         });
 
         it("never runs the query if the user cancels the confirmation", async () => {
-            confirmSpy.mockReturnValue(false);
             renderPage();
 
             const input = await screen.findByTestId("run-query-input");
             fireEvent.change(input, { target: { value: "DELETE FROM users" } });
             fireEvent.click(screen.getByTestId("run-query-button"));
 
-            expect(confirmSpy).toHaveBeenCalled();
+            expect(confirmSpy).not.toHaveBeenCalled();
+            fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+            await waitFor(() => expect(screen.queryByText("Run this query?")).toBeNull());
             expect(api.runDatabaseQuery).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("Seed Script", () => {
+        it("a script uploaded earlier and still staged (page reloaded) can be run from the history", async () => {
+            vi.mocked(api.getSeedScriptHistory).mockResolvedValue({ runs: [{ id: "run-9", filename: "old.js", language: "js", sizeBytes: 10, sha256: "ab", status: "STAGED", createdAt: new Date().toISOString() }] } as never);
+            vi.mocked(api.runSeedScript).mockResolvedValue({ jobId: "job-9" } as never);
+            renderPage();
+            fireEvent.click(await screen.findByTestId("seed-script-history-run-button"));
+            expect(confirmSpy).not.toHaveBeenCalled();
+            fireEvent.click(await screen.findByTestId("confirm-action-button"));
+            await waitFor(() => expect(api.runSeedScript).toHaveBeenCalledWith("server-1", "db-1", "run-9"));
+        });
+
+        it("asks in the page, then queues the staged script (the Run button must not depend on a browser pop-up)", async () => {
+            vi.mocked(api.uploadSeedScript).mockResolvedValue({ id: "run-1", filename: "seed.js", language: "js", sizeBytes: 2048, sha256: "abcdef0123456789", status: "staged" } as never);
+            vi.mocked(api.runSeedScript).mockResolvedValue({ jobId: "job-1" } as never);
+            vi.mocked(api.getSeedScriptHistory).mockResolvedValue({ runs: [] } as never);
+            renderPage();
+
+            const input = await screen.findByTestId("seed-script-file-input");
+            fireEvent.change(input, { target: { files: [new File(["x"], "seed.js", { type: "text/javascript" })] } });
+            fireEvent.click(await screen.findByTestId("seed-script-run-button"));
+
+            expect(confirmSpy).not.toHaveBeenCalled();
+            expect(await screen.findByText("Run this seed script?")).toBeVisible();
+            expect(api.runSeedScript).not.toHaveBeenCalled();
+            fireEvent.click(screen.getByTestId("confirm-action-button"));
+            await waitFor(() => expect(api.runSeedScript).toHaveBeenCalledWith("server-1", "db-1", "run-1"));
         });
     });
 

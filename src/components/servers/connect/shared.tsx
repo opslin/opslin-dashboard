@@ -24,6 +24,11 @@ export function sshInstallAvailable() {
     return process.env.NEXT_PUBLIC_SSH_INSTALL === "true";
 }
 
+/** Connecting with an AWS account (no .pem) needs the `cloud.install` override on the organization too. */
+export function cloudInstallAvailable() {
+    return process.env.NEXT_PUBLIC_CLOUD_INSTALL === "true";
+}
+
 export type ProviderId =
     | "hostinger"
     | "digitalocean"
