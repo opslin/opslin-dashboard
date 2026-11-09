@@ -61,7 +61,7 @@ function parseResult(job?: ServerJobStatus | null): ServerCleanupResult | null {
 }
 
 const pruneStepLabels: Record<string, string> = {
-    containers: "Stopped containers", images: "Unused images", leftover_app_images: "Leftover app images", build_cache: "Old build cache", builder_cache: "Build cache",
+    containers: "Stopped containers", images: "Unused images", leftover_app_images: "Leftover app images", build_cache: "Old build cache", build_cache_cap: "Build cache over the size limit", builder_cache: "Build cache",
 };
 
 // The agent sends null, not [], for an empty list (a server with no apps), so every list is read through ?? [].

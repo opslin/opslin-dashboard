@@ -33,6 +33,8 @@ import { generateAppNameFromGitUrl } from "@/lib/onboarding";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { composePathsToSend, stackNeedsToShow } from "@/lib/deploy-route-types";
 import { StackInputs, stackInputsComplete } from "@/components/apps/StackInputs";
+import { FailureReportDialog } from "@/components/deploy/failure-report-dialog";
+import { mergeNeeds as mergeReportNeeds, reportFromJob, type Need as ReportNeed } from "@/lib/failure-report";
 
 const CHUNK_SIZE = 5 * 1024 * 1024;
 
@@ -223,6 +225,9 @@ function NewAppPageContent() {
     const [envVars, setEnvVars] = useState<EnvVar[]>([]);
     // Settings a production compose project requires from the person (asked on this screen, saved with the new app).
     const [stackInputs, setStackInputs] = useState<Record<string, string>>({});
+    // Doc 75 M6: the settings a failed deploy said are missing (handed over by the failure dialog), asked above Deploy.
+    const [reportNeeds, setReportNeeds] = useState<ReportNeed[]>([]);
+    const [dismissedReportJob, setDismissedReportJob] = useState<string | null>(null);
     const [optionalOpen, setOptionalOpen] = useState(false);
     const [buildpackOverride, setBuildpackOverride] = useState<BuildpackName | "">("");
     const [healthCheckMode, setHealthCheckMode] = useState<HealthCheckMode>("auto");
@@ -454,6 +459,7 @@ function NewAppPageContent() {
             ? describeAutoDeployFailure(aiResult)
             : null;
     const aiDone = Boolean(aiResult?.primaryAppId);
+    const failureReport = useMemo(() => reportFromJob(trackedAiJob as { status?: string; result?: unknown } | null), [trackedAiJob]);
     const aiIsRunning = triggerAiMutation.isPending || (Boolean(aiJobId) && trackedAiJob?.status !== "COMPLETED" && trackedAiJob?.status !== "FAILED");
 
     const handleSubmit = () => {
@@ -464,7 +470,9 @@ function NewAppPageContent() {
 
     const isLoading = uploadMutation.isPending || gitMutation.isPending || aiIsRunning || (usesAi && aiDone);
     const error = uploadMutation.error || gitMutation.error || triggerAiMutation.error || (aiFailureMessage ? new Error(aiFailureMessage) : null);
-    const showInlineError = error && !isPricingUpgradeError(error);
+    // A failed deploy that has a report is explained by the dialog; the raw text stays only for failures without one.
+    const showInlineError = error && !isPricingUpgradeError(error) && !failureReport;
+    const reportOpen = failureReport !== null && aiJobId !== dismissedReportJob && !isLoading;
 
     const sourceReady = sourceType === "upload" ? Boolean(files?.length) : Boolean(gitUrl.trim());
     // Deploy waits for the recommendation: pressed too early, the page deployed the repo the standard way (a dev compose
@@ -474,7 +482,10 @@ function NewAppPageContent() {
     const planBlocked = usesAi && !usesOfficialImage && deployRoute.data && !deployRoute.data.locked ? planBlocksDeploy(deployRoute.data.data.plan) : false;
     // What the project's own start-up code requires is asked here, before Deploy, never after a failed build (also for the AI way).
     const routeData = deployRoute.data && !deployRoute.data.locked ? deployRoute.data.data : null;
-    const stackNeeds = stackNeedsToShow(routeData, { usesOfficialImage });
+    const baseStackNeeds = stackNeedsToShow(routeData, { usesOfficialImage });
+    const stackNeeds = reportNeeds.length > 0
+        ? { needsInput: mergeReportNeeds(baseStackNeeds?.needsInput, reportNeeds), replaceBeforeUse: baseStackNeeds?.replaceBeforeUse ?? [], willDo: baseStackNeeds?.willDo ?? [] }
+        : baseStackNeeds;
     const stackReady = !stackNeeds || stackInputsComplete(stackNeeds.needsInput, envVarsObject());
     const canDeploy = Boolean(serverId && finalName && sourceReady && !checkingProject && !planBlocked && stackReady && !(usesAi && choicesProblem(choices)) && !(usesAi && asksStorage && choices.storage === "r2" && cloudflare === "signin"));
 
@@ -941,6 +952,32 @@ function NewAppPageContent() {
                     ) : null}
                 </div>
 
+                {failureReport ? (
+                    <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger-text" data-testid="failure-banner">
+                        <span className="min-w-48 flex-1 font-medium [overflow-wrap:anywhere]">{failureReport.title}</span>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setDismissedReportJob(null)}>See what happened</Button>
+                    </div>
+                ) : null}
+                {failureReport ? (
+                    <FailureReportDialog
+                        report={failureReport}
+                        open={reportOpen}
+                        onOpenChange={(next) => { if (!next) setDismissedReportJob(aiJobId); }}
+                        onFillSettings={(needs) => {
+                            setReportNeeds(needs);
+                            window.setTimeout(() => document.querySelector('[data-testid="stack-inputs"]')?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
+                        }}
+                        onDeployAgain={handleSubmit}
+                        onContinue={async (values) => {
+                            // Doc 75 M3: save the settings on the app that failed and redeploy that same app, not a new one.
+                            const target = failureReport.resume;
+                            if (!target) return;
+                            await api.mergeAppEnvVars(target.serverId, target.appId, values);
+                            await api.deployApp(target.serverId, target.appId);
+                            router.push(`/apps/${target.appId}`);
+                        }}
+                    />
+                ) : null}
                 {showInlineError ? (
                     <div role="alert" className="rounded-lg border border-danger/30 bg-danger-muted p-4 text-sm text-danger-text">
                         {(error as Error).message}
