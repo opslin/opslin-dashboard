@@ -7,6 +7,7 @@ import { useDeployRoute, useServerFit } from "@/hooks/use-deploy-route";
 import { DeployRecommendation, type ChosenWay } from "@/components/apps/DeployRecommendation";
 import { AddressSettingsRow } from "@/components/apps/AddressSettingsRow";
 import { planBlocksDeploy } from "@/components/apps/PlanPreview";
+import { DeployProgressDialog } from "@/components/apps/DeployProgressDialog";
 import { DeployQuestions, choicesProblem, choicesToRequest, effectiveStorage, type CloudflareState, type DeployChoicesValue } from "@/components/apps/DeployQuestions";
 import { DeployAssurance } from "@/components/apps/DeployAssurance";
 import { APP_URL_PLACEHOLDER, findLocalAddressSettings } from "@/lib/local-address-settings";
@@ -385,6 +386,8 @@ function NewAppPageContent() {
     // AI deploy: dispatched as a job, tracked by polling + a live socket (same as agent updates and firewall applies).
     const [aiJobId, setAiJobId] = useState<string | null>(null);
     const [aiLiveProgress, setAiLiveProgress] = useState<NonNullable<ServerJobStatus["progress"]> | null>(null);
+    // API doc 80: the deploy can pause to ask for something only the owner has. The questions open in the progress dialog.
+    const [questionsDismissedFor, setQuestionsDismissedFor] = useState<string | null>(null);
 
     const aiJobQuery = useQuery({
         queryKey: ["server-job", serverId, aiJobId],
@@ -460,6 +463,7 @@ function NewAppPageContent() {
             : null;
     const aiDone = Boolean(aiResult?.primaryAppId);
     const failureReport = useMemo(() => reportFromJob(trackedAiJob as { status?: string; result?: unknown } | null), [trackedAiJob]);
+    const aiPaused = trackedAiJob?.status === "RUNNING" && Boolean((trackedAiJob as { deployProgress?: { needsInput?: unknown } | null }).deployProgress?.needsInput);
     const aiIsRunning = triggerAiMutation.isPending || (Boolean(aiJobId) && trackedAiJob?.status !== "COMPLETED" && trackedAiJob?.status !== "FAILED");
 
     const handleSubmit = () => {
@@ -1002,6 +1006,23 @@ function NewAppPageContent() {
             <div className="space-y-8">
                 <Stepper step={deploying ? "deploy" : step} />
 
+                {aiJobId && aiPaused ? (
+                    <>
+                        <DeployProgressDialog
+                            serverId={serverId}
+                            jobId={aiJobId}
+                            appLabel={gitUrl}
+                            open={questionsDismissedFor !== aiJobId}
+                            onOpenChange={(next) => { if (!next) setQuestionsDismissedFor(aiJobId); }}
+                        />
+                        {questionsDismissedFor === aiJobId ? (
+                            <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-secondary/40 px-4 py-3 text-sm">
+                                <span className="min-w-48 flex-1">The deploy is paused and waiting for your answer.</span>
+                                <Button type="button" size="sm" onClick={() => setQuestionsDismissedFor(null)}>Answer the questions</Button>
+                            </div>
+                        ) : null}
+                    </>
+                ) : null}
                 {progressView ?? (
                     <>
                         <div className="space-y-3 text-center">
