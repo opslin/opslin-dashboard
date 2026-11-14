@@ -830,6 +830,21 @@ class ApiClient {
         return this.get<ServerJobStatus>(`/servers/${serverId}/jobs/${jobId}`);
     }
 
+    /** A deploy run as the owner sees it: the questions it waits on and the steps its investigation took (API doc 80). */
+    async getDilRun(jobId: string) {
+        return this.get<DilRunView>(`/dil/runs/${encodeURIComponent(jobId)}`);
+    }
+
+    /** Gives up on a paused deploy instead of answering it. What it created stays in the apps list. */
+    async cancelDilRun(jobId: string) {
+        return this.post<{ jobId: string; state: string }>(`/dil/runs/${encodeURIComponent(jobId)}/cancel`, {});
+    }
+
+    /** Answers a paused deploy; the same run goes on from where it stopped. */
+    async answerDilRun(jobId: string, answers: { settings?: Record<string, string>; decisions?: Record<string, string> }) {
+        return this.post<{ jobId: string; state: string }>(`/dil/runs/${encodeURIComponent(jobId)}/answers`, answers);
+    }
+
     async runServerCleanup(serverId: string) {
         return this.post<ServerCleanupQueued>(`/servers/${serverId}/cleanup`, {});
     }
@@ -2609,7 +2624,37 @@ export type DeployProgressSnapshot = {
     notice?: string | null;
     /** The run stopped because a step's outcome cannot be known; the owner checks before it continues (API doc 66). */
     needsReview?: boolean;
+    /** The run is paused until the owner answers (API doc 80). The questions themselves come from getDilRun. */
+    needsInput?: { questions: unknown[] } | null;
 };
+
+/** One question of a paused deploy, worded by Opslin (API doc 80). A value typed for it is never sent back. */
+export type DilRunQuestion = { id: string; kind: "secret" | "decision"; title: string; body: string; options?: string[] };
+
+/** One readable step of the deploy investigation (API doc 80): what it looked at, changed, deployed or concluded. */
+export type DilRunStep = {
+    kind: "agent_step" | "agent_plan" | "agent_exec" | "agent_question" | "agent_outcome";
+    scope?: string | null;
+    at: string;
+    note?: string;
+    action?: string;
+    refused?: string;
+    ok?: boolean;
+    reason?: string;
+    changes?: string[];
+    version?: number;
+    started?: boolean;
+    finished?: boolean;
+    verified?: boolean;
+    stage?: string;
+    outcome?: string;
+    category?: string;
+    explanation?: string;
+    nextStep?: string;
+    level?: number;
+};
+
+export type DilRunView = { jobId: string; state: "RUNNING" | "PAUSED" | "SUCCEEDED" | "FAILED" | "NEEDS_REVIEW"; questions: DilRunQuestion[]; steps: DilRunStep[] };
 
 export type SshAuth =
     | { type: "password"; password: string }
@@ -3090,7 +3135,7 @@ export type AutoDeployUnitOutcome =
     };
 
 export type AutoDeployResult = {
-    units: Array<{ unitPath: string; role: "frontend" | "backend" | "worker" | "unknown"; outcome: AutoDeployUnitOutcome }>;
+    units: Array<{ unitPath: string; role: "frontend" | "backend" | "worker" | "unknown"; /** Whose Dockerfile ran: the project's own, or one Opslin wrote. */ recipe?: "own" | "written"; outcome: AutoDeployUnitOutcome }>;
     primaryUrl: string | null;
     primaryAppId: string | null;
     // DIL Phase 22 — set when this repo deployed as more than one app (the

@@ -21,3 +21,20 @@ describe("AgentUpdateModal when no release is published", () => {
         await waitFor(() => expect(spy.mock.calls.length).toBeGreaterThan(calls));
     });
 });
+
+it("does not keep tracking the previous completed update when reopened for a newer release", async () => {
+    let latest = "2.0.45";
+    vi.spyOn(api, "getAgentUpdateInfo").mockImplementation(async () => ({ currentVersion: "2.0.44", latestVersion: latest, updateAvailable: true, connected: true, canSelfUpdate: true, canQueueUpdate: true, activeUpdateJob: null, lastUpdateJob: null, release: { whyUpdate: [], bugFixes: [], newFunctions: [], vpsChanges: [], securityNotes: [] }, artifact: { sizeBytes: 100 } }) as never);
+    vi.spyOn(api, "updateAgent").mockResolvedValue({ jobId: "old-job" } as never);
+    vi.spyOn(api, "getServerJobStatus").mockResolvedValue({ id: "old-job", status: "COMPLETED", payload: { version: "2.0.45" } } as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = (open: boolean) => <QueryClientProvider client={client}><AgentUpdateModal serverId="s1" open={open} onOpenChange={vi.fn()} /></QueryClientProvider>;
+    const rendered = render(view(true));
+    fireEvent.click(await screen.findByRole("button", { name: /Update now/ }));
+    await screen.findByText(/Waiting for the agent to reconnect/);
+    rendered.rerender(view(false));
+    latest = "2.0.46";
+    await client.invalidateQueries({ queryKey: ["agent-update", "s1"] });
+    rendered.rerender(view(true));
+    expect(await screen.findByRole("button", { name: /Update now/ })).toBeTruthy();
+});

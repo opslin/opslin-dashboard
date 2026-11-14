@@ -1,7 +1,8 @@
 "use client";
 
 import { CapabilityList } from "./DeploymentCapabilities";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { DeployQuestions, InvestigationSteps } from "./DeployInvestigation";
 import { CheckCircle2, Circle, CirclePause, Loader2, RotateCcw, TriangleAlert, XCircle } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,27 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, fromMarketplac
 
     const job = jobQuery.data;
     const snapshot = job?.deployProgress ?? null;
+    // API doc 80: a deploy can pause to ask the owner, and keeps a readable list of what its investigation did.
+    const waiting = job?.status === "RUNNING" && Boolean(snapshot?.needsInput);
+    const queryClient = useQueryClient();
+    const runQuery = useQuery({
+        queryKey: ["dil-run", jobId],
+        queryFn: () => api.getDilRun(jobId),
+        enabled: open && Boolean(jobId) && jobId.startsWith("dil-autodeploy-"),
+        refetchInterval: () => (job?.status === "RUNNING" && !waiting ? 5000 : false),
+        retry: false,
+    });
+    const cancel = useMutation({
+        mutationFn: () => api.cancelDilRun(jobId),
+        onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["server-job-status", serverId, jobId] }); },
+    });
+    const answer = useMutation({
+        mutationFn: (answers: { settings: Record<string, string>; decisions: Record<string, string> }) => api.answerDilRun(jobId, answers),
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ["server-job-status", serverId, jobId] });
+            void queryClient.invalidateQueries({ queryKey: ["dil-run", jobId] });
+        },
+    });
     // A job created before this phase shipped (or one whose very first
     // onProgress tick hasn't landed yet) has no durable snapshot — fall
     // back to the generic percent this route has always returned rather
@@ -89,7 +111,9 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, fromMarketplac
     const percent = snapshot?.percent ?? job?.progress?.percent ?? (job?.status === "COMPLETED" ? 100 : 5);
     // A run stopped for review is something to check, not a failure (DESIGN.md: blocked is neutral, not red).
     const review = job?.status === "FAILED" && snapshot?.needsReview === true;
-    const phaseLabel = review
+    const phaseLabel = waiting
+        ? "Waiting for you"
+        : review
         ? PHASE_LABEL.review
         : job?.status === "FAILED"
         ? PHASE_LABEL.failed
@@ -103,10 +127,11 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, fromMarketplac
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
+            {/* Fits any screen: never taller than 92% of the viewport, the header stays put and the body scrolls. */}
+            <DialogContent className="flex max-h-[min(92dvh,50rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+                <DialogHeader className="shrink-0 gap-1 border-b border-border px-5 py-4 pr-14 text-left sm:px-6 sm:pr-14">
                     <DialogTitle className="flex items-center gap-2">
-                        {review ? (
+                        {review || waiting ? (
                             <CirclePause className="size-4 text-muted-foreground" />
                         ) : job?.status === "FAILED" ? (
                             <XCircle className="size-4 text-destructive" />
@@ -124,6 +149,7 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, fromMarketplac
                     </DialogDescription>
                 </DialogHeader>
 
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6">
                 {jobQuery.isLoading ? (
                     <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
                 ) : jobQuery.isError || !job ? (
@@ -141,6 +167,9 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, fromMarketplac
                                 value={percent}
                                 className={review ? "[&>div]:bg-muted-foreground" : job.status === "FAILED" ? "bg-destructive/20 [&>div]:bg-destructive" : undefined}
                             />
+                            {job.status === "RUNNING" && !waiting && snapshot?.message ? (
+                                <p className="text-xs leading-relaxed text-muted-foreground" aria-live="polite">{snapshot.message}</p>
+                            ) : null}
                             {snapshot?.notice ? (
                                 <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
                                     <RotateCcw className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
@@ -148,6 +177,16 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, fromMarketplac
                                 </p>
                             ) : null}
                         </div>
+
+                        {waiting && (runQuery.data?.questions.length ?? 0) > 0 && (
+                            <DeployQuestions
+                                questions={runQuery.data!.questions}
+                                submitting={answer.isPending}
+                                error={answer.isError ? (answer.error as Error).message : null}
+                                onSubmit={(answers) => answer.mutate(answers)}
+                                onCancel={() => cancel.mutate()}
+                            />
+                        )}
 
                         {review && (
                             <p className="rounded-md border border-border bg-secondary/40 p-3 text-xs leading-relaxed text-foreground">
@@ -192,8 +231,11 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, fromMarketplac
                             </div>
                         )}
 
+                        <InvestigationSteps steps={runQuery.data?.steps ?? []} />
+
                         {job.status === "COMPLETED" && incomplete && <p role="status" className="text-sm text-warning-text">Application deployed. Some features still need configuration.</p>}
                         <CapabilityList capabilities={capabilities} />
+                        {job.status === "COMPLETED" && recipeLine(result?.units) && <p className="text-sm text-muted-foreground">{recipeLine(result?.units)}</p>}
 
                         {job.status === "COMPLETED" && result?.primaryAppId && (
                             <Button asChild className="w-full">
@@ -202,7 +244,17 @@ export function DeployProgressDialog({ serverId, jobId, appLabel, fromMarketplac
                         )}
                     </div>
                 )}
+                </div>
             </DialogContent>
         </Dialog>
     );
+}
+
+/** Says whose Dockerfile ran, so an app bug under the owner's unchanged recipe is plainly the project's. */
+export function recipeLine(units: Array<{ recipe?: "own" | "written" }> | undefined): string | null {
+    const recipes = (units ?? []).map((unit) => unit.recipe).filter((r): r is "own" | "written" => !!r);
+    if (recipes.length === 0) return null;
+    if (recipes.every((r) => r === "own")) return "Built with the project's own Dockerfile, unchanged.";
+    if (recipes.every((r) => r === "written")) return "Built with a Dockerfile Opslin wrote for this project.";
+    return "Some apps use the project's own Dockerfile; others use one Opslin wrote.";
 }

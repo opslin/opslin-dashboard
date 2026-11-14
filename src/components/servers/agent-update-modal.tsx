@@ -233,6 +233,13 @@ export function AgentUpdateModal({ serverId, open, onOpenChange }: AgentUpdateMo
     });
 
     useEffect(() => {
+        if (!open) {
+            setTrackingJobId(null);
+            setLiveProgress(null);
+        }
+    }, [open, serverId]);
+
+    useEffect(() => {
         if (open && updateQuery.data?.activeUpdateJob?.id && !trackingJobId) {
             setTrackingJobId(updateQuery.data.activeUpdateJob.id);
         }
